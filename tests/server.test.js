@@ -48,25 +48,28 @@ test('server: aanmelden, beveiliging en synchronisatie', async () => {
   assert.match(login.headers.get('set-cookie'), /HttpOnly/);
   const cookie = login.cookie;
 
+  // Een verouderde app (zonder schemaversie) mag niets meer terugzetten
+  assert.equal((await call('POST', '/api/sync', { changes: { transactions: [{ id: 'oud' }] }, rev: 0 }, cookie)).status, 409);
+
   // Toestel A uploadt alles
   const a = Store.demoState('2026-10-13');
   const T = Date.now();
   const keys = C.stampChanges(null, a, T);
-  const up = await call('POST', '/api/sync', { changes: C.extractChanges(a, keys), rev: 0 }, cookie);
+  const up = await call('POST', '/api/sync', { changes: C.extractChanges(a, keys), rev: 0, schema: Store.VERSION }, cookie);
   assert.equal(up.status, 200);
   assert.equal(up.json.rev, 1);
   assert.equal(up.json.state.transactions.length, a.transactions.length);
 
   // Toestel B met verouderde rev krijgt de volledige staat; up-to-date krijgt enkel rev
-  const b = await call('POST', '/api/sync', { changes: null, rev: 0 }, cookie);
+  const b = await call('POST', '/api/sync', { changes: null, rev: 0, schema: Store.VERSION }, cookie);
   assert.equal(b.json.state.transactions.length, a.transactions.length);
-  const same = await call('POST', '/api/sync', { changes: null, rev: 1 }, cookie);
+  const same = await call('POST', '/api/sync', { changes: null, rev: 1, schema: Store.VERSION }, cookie);
   assert.deepEqual(same.json, { rev: 1 });
 
   // Gedeeltelijke wijziging + verwijdering
   const removed = a.transactions[0].id;
   const delta = { tombstones: { ['transactions:' + removed]: T + 5 }, budgets: [Object.assign({}, a.budgets[0], { limit: 1, updatedAt: T + 5 })] };
-  const d = await call('POST', '/api/sync', { changes: delta, rev: 1 }, cookie);
+  const d = await call('POST', '/api/sync', { changes: delta, rev: 1, schema: Store.VERSION }, cookie);
   assert.equal(d.json.rev, 2);
   assert.ok(!d.json.state.transactions.some(t => t.id === removed));
   assert.equal(d.json.state.budgets.find(x => x.id === a.budgets[0].id).limit, 1);
@@ -86,8 +89,19 @@ test('server: aanmelden, beveiliging en synchronisatie', async () => {
   assert.equal((await call('POST', '/api/login', { username: 'tester', password: 'nieuw-geheim-2' })).status, 200);
 });
 
+test('server: gegevens van een oudere versie worden bij de update gewist, met back-up', async () => {
+  const file = path.join(dir, 'user-' + Buffer.from('tester').toString('hex') + '.json');
+  fs.writeFileSync(file, JSON.stringify({ rev: 7, state: { version: 2, transactions: [{ id: 'oud' }] } }));
+  const login = await call('POST', '/api/login', { username: 'tester', password: 'nieuw-geheim-2' });
+  const d = await call('GET', '/api/data', null, login.cookie);
+  assert.equal(d.json.state.version, Store.VERSION);
+  assert.equal(d.json.state.transactions.length, 0);
+  assert.equal(d.json.rev, 8);
+  assert.ok(fs.existsSync(file + '.v2.bak'), 'oude gegevens bewaard als back-up op de server');
+});
+
 test('server: te veel foute aanmeldpogingen worden geblokkeerd', async () => {
   let last;
-  for (let i = 0; i < 12; i++) last = await call('POST', '/api/login', { username: 'tester', password: 'fout' + i });
+  for (let i = 0; i < 12; i++) last = await call('POST', '/api/login', { username: 'niemand', password: 'fout' + i });
   assert.equal(last.status, 429);
 });

@@ -11,6 +11,7 @@
   const C = root.FluxCore;
   const META_KEY = 'flux-sync-v1';
   const POLL_MS = 60000;
+  const SCHEMA = root.FluxStore.VERSION;
 
   let opts = null;
   let meta = loadMeta();
@@ -21,8 +22,12 @@
   let pushTimer = null, pollTimer = null, inFlight = null, seq = 0;
 
   function loadMeta() {
-    try { return Object.assign({ user: null, rev: 0, dirty: {} }, JSON.parse(localStorage.getItem(META_KEY) || '{}')); }
-    catch (e) { return { user: null, rev: 0, dirty: {} }; }
+    try {
+      const m = Object.assign({ user: null, rev: 0, dirty: {} }, JSON.parse(localStorage.getItem(META_KEY) || '{}'));
+      // Na een update van het gegevensschema: niets ouds meer versturen, alles opnieuw ophalen
+      if (m.schema !== SCHEMA) return { user: m.user, rev: 0, dirty: {}, schema: SCHEMA };
+      return m;
+    } catch (e) { return { user: null, rev: 0, dirty: {}, schema: SCHEMA }; }
   }
   function saveMeta() {
     try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) { /* negeren */ }
@@ -45,6 +50,7 @@
     if (!res.ok) {
       const err = new Error((data && data.error) || ('HTTP ' + res.status));
       err.status = res.status;
+      err.code = data && data.code;
       throw err;
     }
     if (!data) { const err = new Error('Geen Flux-server'); err.status = 0; throw err; }
@@ -69,7 +75,7 @@
       const keys = Object.keys(sent);
       const changes = keys.length ? C.extractChanges(opts.getState(), keys) : null;
       try {
-        const res = await api('POST', '/api/sync', { changes, rev: meta.rev });
+        const res = await api('POST', '/api/sync', { changes, rev: meta.rev, schema: SCHEMA });
         for (const k of keys) if (meta.dirty[k] === sent[k]) delete meta.dirty[k];
         if (res.state) applyServerState(res.state);
         meta.rev = res.rev;
@@ -79,6 +85,7 @@
         setStatus('ok');
       } catch (e) {
         if (e.status === 401) { mode = 'auth'; setStatus('error', 'Opnieuw aanmelden nodig'); opts.onAuthRequired({ setupRequired: false }); }
+        else if (e.status === 409) { mode = 'server'; setStatus('error', e.message); if (opts.onOutdated) opts.onOutdated(e.message); }
         else { mode = 'offline'; setStatus('offline', e.message); }
       }
     })();
@@ -120,7 +127,7 @@
     const local = opts.getState();
     const localHasData = local.transactions.length > 0;
     const sameUser = meta.user === user;
-    if (!sameUser) meta = { user, rev: 0, dirty: {} };
+    if (!sameUser) meta = { user, rev: 0, dirty: {}, schema: SCHEMA };
     mode = 'server';
 
     if (!server.state) {
@@ -199,7 +206,7 @@
     if (Object.keys(meta.dirty).length && !confirm('Er zijn nog wijzigingen die niet naar de server gestuurd zijn. Toch afmelden? Die wijzigingen gaan dan verloren.')) return false;
     try { await api('POST', '/api/logout', { everywhere: !!everywhere }); } catch (e) { /* toch lokaal afmelden */ }
     clearInterval(pollTimer);
-    meta = { user: null, rev: 0, dirty: {} };
+    meta = { user: null, rev: 0, dirty: {}, schema: SCHEMA };
     saveMeta();
     mode = 'auth';
     return true;
@@ -213,8 +220,13 @@
     return api('POST', '/api/lookup', body);
   }
 
+  /** Haalt je Degiro-gegevens op via de Flux-server. Inloggegevens worden niet bewaard. */
+  async function degiro(username, password, otp) {
+    return api('POST', '/api/degiro/sync', { username, password, otp });
+  }
+
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup,
+    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro,
     get mode() { return mode; },
     get user() { return meta.user; },
     get features() { return features; },

@@ -235,7 +235,8 @@ test('demodata is consistent', () => {
   const s = Store.demoState('2026-10-13');
   assert.ok(s.transactions.length > 100);
   assert.ok(s.transactions.some(t => t.isTransfer && t.transferPairId));
-  assert.ok(s.transactions.some(t => t.refundOf));
+  assert.ok(s.transactions.some(t => C.txKind(t, s.categories) === 'repayment'));
+  assert.ok(s.demo, 'voorbeelddata is gemarkeerd');
   assert.ok(s.transactions.some(t => t.splits.length));
   const rec = C.detectRecurring(s, '2026-10-13');
   assert.ok(rec.some(r => r.key === 'netflix'));

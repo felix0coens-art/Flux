@@ -1,0 +1,4 @@
+Rekeningnummer;Rubrieknaam;Naam;Munt;Afschriftnummer;Datum;Omschrijving;Valuta;Bedrag;Saldo;credit;debet;rekeningnummer tegenpartij;BIC tegenpartij;Naam tegenpartij;Adres tegenpartij;gestructureerde mededeling;Vrije mededeling
+BE68 5390 0754 7034;Zichtrekening;FELIX;EUR;2026010;12/10/2026;BETALING VIA BANCONTACT 12-10 COLRUYT GENT;12/10/2026;-45,20;1.204,80;;45,20;;;;;;
+BE68 5390 0754 7034;Zichtrekening;FELIX;EUR;2026010;12/10/2026;EUROPESE DOMICILIERING NETFLIX;12/10/2026;-17,99;1.250,00;;17,99;;;NETFLIX.COM;;;Netflix abonnement
+BE68 5390 0754 7034;Zichtrekening;FELIX;EUR;2026009;01/10/2026;OVERSCHRIJVING HUUR;01/10/2026;-925,00;1.267,99;;925,00;BE43068999999501;GKCCBEBB;Immo Verhuur BV;;;Huur oktober

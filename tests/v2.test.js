@@ -123,9 +123,9 @@ test('synchronisatie: wijzigingen op twee toestellen worden samengevoegd', () =>
 test('synchronisatie: herberekende velden tellen niet als wijziging', () => {
   const s = Store.demoState('2026-10-13');
   const snap = C.snapshot(s);
-  s.rules.push({ id: 'r', name: 'x', field: 'any', operator: 'name', value: 'de lijn', categoryId: 'cat_vervoer', enabled: true, priority: 10 });
+  s.rules.push({ id: 'r', name: 'x', field: 'any', operator: 'name', value: 'kruidvat', categoryId: 'cat_huishouden', enabled: true, priority: 10 });
   C.recompute(s);
-  assert.equal(s.transactions.find(t => t.counterparty === 'De Lijn').categoryId, 'cat_vervoer');
+  assert.equal(s.transactions.find(t => t.counterparty === 'KRUIDVAT GENT').categoryId, 'cat_huishouden');
   assert.deepEqual(C.stampChanges(snap, s, 5), ['rules:r']);
 });
 
@@ -137,8 +137,11 @@ test('synchronisatie: nieuwste versie van hetzelfde object wint', () => {
   assert.equal(merged2.transactions[0].amount, -300);
 });
 
-test('migratie van versie 1 voegt zoekwoorden toe', () => {
-  const old = { version: 1, categories: [{ id: 'cat_boodschappen', name: 'Boodschappen', kind: 'expense' }], transactions: [] };
+test('gegevens van een oudere versie worden bij de update gewist (proper starten)', () => {
+  const old = { version: 2, categories: [], transactions: [{ id: 'oud', date: '2026-01-01', amount: -100 }], rules: [{ id: 'r' }] };
   const m = Store.migrate(old);
-  assert.match(m.categories[0].lookupTags, /supermarket/);
+  assert.equal(m.version, Store.VERSION);
+  assert.equal(m.transactions.length, 0);
+  assert.equal(m.rules.length, 0);
+  assert.ok(m.categories.some(c => c.id === 'sys_voorschot'));
 });

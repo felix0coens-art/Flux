@@ -235,7 +235,7 @@
     let changed = 0;
     const rules = sortedRules(state.rules);
     for (const tx of state.transactions) {
-      if (tx.categorySource === 'manual' || (tx.splits && tx.splits.length) || tx.isTransfer || tx.refundOf) continue;
+      if (tx.categorySource === 'manual' || tx.categorySource === 'system' || (tx.splits && tx.splits.length) || tx.isTransfer || tx.refundOf) continue;
       const rule = rules.find(r => ruleMatches(r, tx));
       const newCat = rule ? rule.categoryId : null;
       const newSrc = rule ? 'rule' : null;
@@ -302,12 +302,12 @@
   /** Categorielijnen van één transactie (rekening houdend met splitsingen). */
   function splitLines(tx) {
     if (tx.splits && tx.splits.length) {
-      const lines = tx.splits.map(s => ({ categoryId: s.categoryId || null, amount: s.amount, note: s.note || '' }));
+      const lines = tx.splits.map(s => ({ categoryId: s.categoryId || null, amount: s.amount, note: s.note || '', person: s.person || '' }));
       const rest = tx.amount - sum(lines.map(l => l.amount));
-      if (rest !== 0) lines.push({ categoryId: tx.categoryId || null, amount: rest, note: 'rest' });
+      if (rest !== 0) lines.push({ categoryId: tx.categoryId || null, amount: rest, note: 'rest', person: tx.person || '' });
       return lines;
     }
-    return [{ categoryId: tx.categoryId || null, amount: tx.amount, note: '' }];
+    return [{ categoryId: tx.categoryId || null, amount: tx.amount, note: '', person: tx.person || '' }];
   }
 
   /**
@@ -347,7 +347,7 @@
         continue;
       }
       for (const l of splitLines(tx)) {
-        lines.push({ txId: tx.id, date: tx.date, categoryId: l.categoryId, amount: l.amount, refund: false, accountId: tx.accountId });
+        lines.push({ txId: tx.id, date: tx.date, categoryId: l.categoryId, amount: l.amount, refund: false, accountId: tx.accountId, person: l.person });
       }
     }
     return lines;
@@ -416,14 +416,19 @@
     const byCategory = {};
     const byIncome = {};
     const src = id => (byIncome[id] = byIncome[id] || { gross: 0, costs: 0, net: 0, costsByCategory: {} });
-    let income = 0, incomeCosts = 0, expenses = 0;
+    let income = 0, incomeCosts = 0, expenses = 0, advanced = 0, repaid = 0, invested = 0;
     for (const l of lines) {
       if (!inRange(l.date, range)) continue;
       const key = l.categoryId || '__none__';
       byCategory[key] = (byCategory[key] || 0) + l.amount;
       const c = l.categoryId ? cats.get(l.categoryId) : null;
       const kind = c ? c.kind : (l.amount > 0 ? 'income' : 'expense');
-      if (kind === 'income') {
+      if (kind === 'advance') {
+        // Voorgeschoten voor iemand anders / terugbetaald: geen inkomen, geen uitgave
+        if (l.amount < 0) advanced -= l.amount; else repaid += l.amount;
+      } else if (kind === 'investment') {
+        invested -= l.amount;
+      } else if (kind === 'income') {
         income += l.amount;
         src(c ? c.id : '__none__').gross += l.amount;
       } else if (c && c.incomeId && cats.has(c.incomeId)) {
@@ -441,7 +446,7 @@
       if (tx.isTransfer && tx.amount < 0 && inRange(tx.date, range)) transfers -= tx.amount;
     }
     const netIncome = income - incomeCosts;
-    return { income, incomeCosts, netIncome, expenses, net: netIncome - expenses, byCategory, byIncome, transfers };
+    return { income, incomeCosts, netIncome, expenses, net: netIncome - expenses, byCategory, byIncome, transfers, advanced, repaid, invested };
   }
 
   // ---------- Budgetten ----------
@@ -508,6 +513,7 @@
     const groups = new Map();
     for (const tx of state.transactions) {
       if (tx.isTransfer || tx.excludeRecurring || tx.refundOf) continue;
+      if (tx.categoryId === 'sys_belegging' || tx.categoryId === 'sys_voorschot') continue; // geen vaste last of inkomen
       if (incoming ? tx.amount <= 0 : tx.amount >= 0) continue;
       const base = recurringKey(tx);
       if (!base) continue;
@@ -743,8 +749,116 @@
       if (tx.splits) tx.splits = tx.splits.filter(s => state.categories.some(c => c.id === s.categoryId));
     }
     detectTransfers(state);
+    detectInvestments(state);
     applyRules(state);
     return state;
+  }
+
+  // ---------- Beleggingen, voorschotten, saldo ----------
+
+  const SYS_ADVANCE = 'sys_voorschot';
+  const SYS_INVEST = 'sys_belegging';
+
+  /**
+   * Overschrijvingen naar/van je beleggingsrekening (standaard: Degiro / flatex) zijn geen
+   * uitgave of inkomen maar een belegging. Manuele keuzes worden gerespecteerd.
+   */
+  function detectInvestments(state) {
+    const pattern = (state.settings && state.settings.investPattern) || 'degiro|flatex';
+    let re = null;
+    try { re = new RegExp(pattern, 'i'); } catch (e) { re = null; }
+    const hasCat = state.categories.some(c => c.id === SYS_INVEST);
+    for (const tx of state.transactions) {
+      if (tx.categorySource === 'manual' || (tx.splits && tx.splits.length) || tx.isTransfer || tx.refundOf) continue;
+      const hit = hasCat && re && re.test((tx.counterparty || '') + ' ' + (tx.description || ''));
+      if (hit) { tx.categoryId = SYS_INVEST; tx.categorySource = 'system'; tx.ruleId = null; }
+      else if (tx.categorySource === 'system') { tx.categoryId = null; tx.categorySource = null; }
+    }
+  }
+
+  /**
+   * Soort van een transactie, voor een duidelijke weergave:
+   * todo (nog te verwerken) | income | expense | transfer | investment | advance (voorgeschoten) |
+   * repayment (terugbetaald voorschot) | refund (terugbetaling van een uitgave) | split
+   */
+  function txKind(tx, categories) {
+    if (tx.isTransfer) return 'transfer';
+    if (tx.refundOf) return 'refund';
+    const cats = categories instanceof Map ? categories : new Map((categories || []).map(c => [c.id, c]));
+    const kinds = new Set(splitLines(tx).map(l => {
+      const c = l.categoryId ? cats.get(l.categoryId) : null;
+      if (!c) return 'todo';
+      if (c.kind === 'advance') return tx.amount < 0 ? 'advance' : 'repayment';
+      if (c.kind === 'investment') return 'investment';
+      return c.kind === 'income' ? 'income' : 'expense';
+    }));
+    if (kinds.size > 1) return kinds.has('todo') ? 'todo' : 'split';
+    return kinds.values().next().value;
+  }
+
+  /**
+   * Voorschotten: wat je voor iemand anders betaalde en wat je terugkreeg.
+   * Een terugbetaling kan gekoppeld zijn aan een specifiek voorschot (advanceOf) of enkel aan een persoon;
+   * in dat laatste geval wordt ze op de oudste openstaande voorschotten van die persoon afgeboekt.
+   */
+  function advancesOverview(state) {
+    const items = [];
+    const repayments = [];
+    for (const tx of state.transactions) {
+      if (tx.isTransfer) continue;
+      for (const l of splitLines(tx)) {
+        if (l.categoryId !== SYS_ADVANCE) continue;
+        const person = (l.person || tx.person || '').trim() || 'Onbekend';
+        if (l.amount < 0) items.push({ txId: tx.id, date: tx.date, person, amount: -l.amount, repaid: 0, note: l.note || tx.description || tx.counterparty || '' });
+        else repayments.push({ txId: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null });
+      }
+    }
+    items.sort((a, b) => a.date.localeCompare(b.date));
+    // Eerst gekoppelde terugbetalingen, dan de rest per persoon (oudste eerst)
+    const unassigned = [];
+    for (const r of repayments) {
+      let left = r.amount;
+      if (r.advanceOf) {
+        for (const it of items.filter(i => i.txId === r.advanceOf)) {
+          const take = Math.min(left, it.amount - it.repaid);
+          it.repaid += take; left -= take;
+        }
+      }
+      if (left > 0) unassigned.push(Object.assign({}, r, { amount: left }));
+    }
+    const credit = {};
+    for (const r of unassigned) {
+      let left = r.amount;
+      for (const it of items.filter(i => i.person.toLowerCase() === r.person.toLowerCase())) {
+        if (left <= 0) break;
+        const take = Math.min(left, it.amount - it.repaid);
+        it.repaid += take; left -= take;
+      }
+      if (left > 0) credit[r.person] = (credit[r.person] || 0) + left; // meer terug dan voorgeschoten
+    }
+    const people = {};
+    for (const it of items) {
+      const p = people[it.person] = people[it.person] || { person: it.person, advanced: 0, repaid: 0, open: 0, items: [] };
+      p.advanced += it.amount; p.repaid += it.repaid; p.open += it.amount - it.repaid; p.items.push(it);
+    }
+    for (const [person, amount] of Object.entries(credit)) {
+      const p = people[person] = people[person] || { person, advanced: 0, repaid: 0, open: 0, items: [] };
+      p.repaid += amount; p.open -= amount;
+    }
+    const list = Object.values(people).sort((a, b) => b.open - a.open);
+    return { items, people: list, totalOpen: sum(list.map(p => p.open)) };
+  }
+
+  /**
+   * Saldo van een rekening: vertrekt van een gekend saldo (bv. de saldokolom van een KBC-export
+   * of manueel ingegeven) en telt de latere transacties erbij.
+   */
+  function accountBalance(state, accountId) {
+    const acc = state.accounts.find(a => a.id === accountId);
+    if (!acc || !acc.balance || acc.balance.amount == null) return null;
+    let bal = acc.balance.amount;
+    for (const t of state.transactions) if (t.accountId === accountId && t.date > acc.balance.date) bal += t.amount;
+    return { amount: bal, since: acc.balance.date };
   }
 
   // ---------- Synchronisatie tussen toestellen ----------
@@ -755,13 +869,14 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports'];
+  const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 
   function entityHash(item) {
     const copy = Object.assign({}, item);
     delete copy.updatedAt; delete copy.isTransfer; delete copy.transferPairId; delete copy.ruleId;
-    if (copy.categorySource === 'rule') { delete copy.categoryId; delete copy.categorySource; }
+    if (copy.categorySource === 'rule' || copy.categorySource === 'system') { delete copy.categoryId; delete copy.categorySource; }
     if (copy.categorySource == null) delete copy.categorySource;
     if (copy.categoryId == null) delete copy.categoryId;
     return JSON.stringify(copy, Object.keys(copy).sort());
@@ -776,7 +891,7 @@
     }
     snap.subscriptions = {};
     for (const [k, v] of Object.entries(state.subscriptions || {})) snap.subscriptions[k] = entityHash(v);
-    snap.settings = entityHash(state.settings || {});
+    for (const k of SYNC_SINGLETONS) snap[k] = entityHash(state[k] || {});
     return snap;
   }
 
@@ -803,9 +918,12 @@
     for (const [k, v] of Object.entries(state.subscriptions || {})) {
       if (subsBefore[k] !== entityHash(v)) { v.updatedAt = now; changed.push('subscriptions:' + k); }
     }
-    if (!prev || prev.settings !== entityHash(state.settings || {})) {
-      state.settings = Object.assign({}, state.settings, { updatedAt: now });
-      changed.push('settings:');
+    for (const k of SYNC_SINGLETONS) {
+      if (!state[k]) continue;
+      if (!prev || prev[k] !== entityHash(state[k])) {
+        state[k] = Object.assign({}, state[k], { updatedAt: now });
+        changed.push(k + ':');
+      }
     }
     return changed;
   }
@@ -818,7 +936,7 @@
     for (const key of new Set(keys)) {
       const i = key.indexOf(':');
       const c = key.slice(0, i), id = key.slice(i + 1);
-      if (c === 'settings') { out.settings = state.settings; continue; }
+      if (SYNC_SINGLETONS.includes(c)) { if (state[c]) out[c] = state[c]; continue; }
       if (c === 'subscriptions') { if (state.subscriptions && state.subscriptions[id]) out.subscriptions[id] = state.subscriptions[id]; continue; }
       const it = (state[c] || []).find(x => x.id === id);
       if (it) out[c].push(it);
@@ -849,10 +967,14 @@
       if (!subs[k] || (v.updatedAt || 0) >= (subs[k].updatedAt || 0)) subs[k] = v;
     }
     out.subscriptions = subs;
-    const bs = base.settings || {}, is = incoming.settings;
-    out.settings = is && (is.updatedAt || 0) >= (bs.updatedAt || 0) ? is : bs;
+    for (const k of SYNC_SINGLETONS) {
+      const b = base[k], i = incoming[k];
+      out[k] = i && (!b || (i.updatedAt || 0) >= (b.updatedAt || 0)) ? i : (b || (k === 'settings' ? {} : undefined));
+      if (out[k] === undefined) delete out[k];
+    }
+    if (incoming.schema && (!out.schema || incoming.schema > out.schema)) out.schema = incoming.schema;
     out.tombstones = tomb;
-    if (incoming.version && !out.version) out.version = incoming.version;
+    if (incoming.version && (!out.version || incoming.version > out.version)) out.version = incoming.version;
     return out;
   }
 
@@ -923,8 +1045,8 @@
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
-    recompute,
-    SYNC_COLLECTIONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
+    recompute, detectInvestments, txKind, advancesOverview, accountBalance, SYS_ADVANCE, SYS_INVEST,
+    SYNC_COLLECTIONS, SYNC_SINGLETONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
     categoryTags, matchCategory, lookupCandidates
   };
 

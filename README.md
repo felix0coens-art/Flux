@@ -1,40 +1,92 @@
 # Flux — persoonlijke boekhouding
 
-Flux houdt je persoonlijke boekhouding bij: inkomsten en uitgaven, budgetten, vaste lasten en abonnementen.
+Flux houdt je persoonlijke boekhouding bij: bankrekeningen, inkomsten en uitgaven, voorschotten aan vrienden, budgetten, vaste lasten en je beleggingen bij Degiro.
 Je host Flux zelf en gebruikt het op al je toestellen: laptop, tablet en iPhone (als app op je beginscherm).
 Je gegevens staan op je eigen server, niet bij een derde partij.
 
 ---
 
-## Functies
+## Hoe Flux werkt
 
-**Inkomsten**
-- **Inkomstenbronnen.** Elke inkomstencategorie is een bron. Standaard zijn er drie: *Loon*, *Bijberoep / zelfstandige* en *Andere inkomsten*. Je kan ze hernoemen en er bronnen bij maken.
-- **Kosten aftrekken van inkomsten.** Een uitgavecategorie kan je koppelen aan een inkomstenbron, bijvoorbeeld *Kosten bijberoep* aan *Bijberoep*. Die kosten worden dan van die bron afgetrokken en tellen niet mee bij je gewone uitgaven.
-- **Afgehouden kosten.** Kreeg je € 900 binnen terwijl je € 1.000 factureerde en het platform € 100 commissie afhield? Splits de ontvangst in `1000` (bron) en `-100` (kostcategorie).
-- **Tabblad *Inkomsten*.** Per bron zie je bruto, kosten en netto, per maand en per jaar. Je ziet ook wanneer de volgende betaling verwacht wordt, bijvoorbeeld je loon op de 25ste.
+Flux heeft zes tabbladen:
 
-**Uitgaven en beheer**
-- **Automatische categorisatieregels** op tegenpartij, mededeling of IBAN. Beschikbare voorwaarden: *bevat*, *is gelijk aan*, *begint met*, *naam bevat* (ongevoelig voor leestekens) en *regex*.
-- **Online opzoeken in plaats van een vaste lijst.** Flux bevat geen lijst van winkels of bedrijven. Een onbekende tegenpartij wordt online opgezocht:
-  - **Wikidata**: wat voor organisatie het is, bijvoorbeeld "Vlaamse vervoersmaatschappij" of "Belgische supermarktketen".
-  - **OpenStreetMap**: wat voor zaak het is, bijvoorbeeld `shop=supermarket` of `amenity=pharmacy`.
-  - Optioneel **Claude (AI) met webzoekfunctie**, voor afgekorte of onduidelijke namen op je rekeninguittreksel.
+| Tabblad | Waarvoor |
+|---|---|
+| **Overzicht** | De maand in één oogopslag: netto inkomsten, uitgaven, wat er overblijft, wat je belegde, je vermogen (banksaldi + beleggingen + wat vrienden je nog schuldig zijn) en wat aandacht vraagt. |
+| **Bank** | Je rekeningen, de **opgeladen bestanden** en alle transacties. Hier laad je de CSV van je bank op en koppel je elke transactie aan wat ze is. |
+| **Inkomsten** | Per inkomstenbron: bruto, kosten en netto. Daaronder de ontvangen bedragen, om te koppelen. |
+| **Uitgaven** | Per categorie, budgetten, vaste lasten (automatisch herkend) en alle betalingen, om te koppelen. |
+| **Beleggingen** | Je Degiro-portefeuille: waarde, inleg, winst, dividend, **TWR** en **MWR**, een grafiek door de jaren met elke bijstorting, en het rendement per jaar. |
+| **Instellingen** | Account, rekeningen, categorieën, automatische regels, online opzoeken, back-up. |
 
-  Het resultaat wordt gekoppeld aan je categorieën via **zoekwoorden per categorie**. Die beschrijven een *soort* zaak (bijvoorbeeld "supermarket, bakkerij"), geen merknamen, en je past ze aan bij *Instellingen*. Je keurt elk voorstel zelf goed. Wat je goedkeurt, wordt een regel, zodat volgende transacties van die tegenpartij vanzelf goed staan. Na een import stelt Flux voor om nieuwe tegenpartijen op te zoeken. In een transactie kan je ook op **🔎 Zoek online** klikken.
-- **Opsplitsen van transacties** over meerdere categorieën.
-- **Interne overschrijvingen** tussen je eigen rekeningen worden herkend aan de IBAN en niet meegeteld als inkomen of uitgave.
-- **Terugbetalingen.** Een Tikkie of Payconiq koppel je aan de oorspronkelijke uitgave. Die uitgave wordt dan verminderd, in plaats van dat de terugbetaling als inkomen telt.
-- **Budgetten per maand of jaar**, met waarschuwingen, het resterende bedrag per dag en een prognose.
-- **Vaste lasten en abonnementen** worden automatisch herkend, met de volgende vervaldatum, het verwachte bedrag en seizoenspatronen.
-- **Manuele transacties en correcties**, **CSV-import** van Belgische banken, **back-up** en export.
+### Altijd duidelijk wat er in Flux zit
 
-**Op al je toestellen**
-- Aanmelden met gebruikersnaam en wachtwoord.
-- Synchronisatie tussen toestellen. Werkt ook **offline**: wat je zonder verbinding aanpast, wordt samengevoegd zodra je weer online bent. Per transactie, regel of budget wint de nieuwste versie, dus wijzigingen op twee toestellen overschrijven elkaar niet.
-- Installeerbaar als app op je iPhone of Android (PWA).
+- **Elk bestand is een import.** Per import zie je de bestandsnaam, de bank, de rekening, de periode, het aantal toegevoegde transacties en het aantal rijen dat overgeslagen werd. Bij elke transactie zie je uit welk bestand ze komt, of dat je ze manueel invoerde.
+- **Hetzelfde bestand kan geen tweede keer opgeladen worden.** Flux herkent de inhoud, dus ook als je het bestand hernoemde.
+- **Overlappende bestanden zijn geen probleem.** Laad je bijvoorbeeld september–oktober op terwijl september er al in zit, dan worden enkel de nieuwe rijen toegevoegd. Flux toont vooraf hoeveel er nieuw is en hoeveel er al in zat, en uit welk bestand.
+- **Elke import kan je ongedaan maken.** In het tabblad Bank verwijder je met één klik alle transacties van één bestand.
+- **Voorbeeldgegevens zitten in een aparte zandbak** (*Instellingen → Voorbeeldmodus*). Zolang die aanstaat zie je bovenaan een duidelijke balk. Je eigen gegevens worden er nooit door aangeraakt en de zandbak wordt niet gesynchroniseerd.
+- **Bij de update naar deze versie zijn alle vroegere gegevens gewist**, zoals je vroeg: lokaal in elke browser en op de server. Op de server blijft een back-up bewaard (`user-….json.v2.bak` in de datamap), maar Flux zet die nooit vanzelf terug.
 
----
+### Bankbestanden: KBC/CBC en Argenta
+
+Beide banken worden automatisch herkend, inclusief de IBAN van je rekening. Bij de eerste import maakt Flux de rekening aan. Bevat een KBC-export meerdere rekeningen, dan worden die per rekening opgesplitst.
+
+- **KBC/CBC**: KBC Touch op de computer → *Rekeningen* → je rekening → *Verrichtingen* → periode kiezen → *Exporteren* → **CSV**. Het saldo wordt automatisch overgenomen uit de saldokolom.
+- **Argenta**: internetbankieren → *Rekeningen* → je rekening → *Verrichtingen* → *Downloaden* → **CSV**. Elke rij heeft een unieke referentie, dus dubbels worden exact herkend. Het saldo geef je één keer zelf in, via de rekening → *Bewerk*.
+- **Andere banken** gaan ook: je duidt dan zelf de kolommen aan.
+
+Menunamen kunnen licht verschillen per versie van de app of website.
+
+### Een transactie koppelen
+
+Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat ze is:
+
+- een **inkomst** (en van welke bron) of een **uitgave** (en welke categorie);
+- **↗ Voorgeschoten voor iemand**: je betaalde iets voor een vriend. Dit telt niet als uitgave; het komt op de lijst "wie is mij nog wat schuldig". Betaalde je ook voor jezelf? Splits de betaling dan, bijvoorbeeld € 50 restaurant voor jezelf en 2 × € 50 voorschot voor Pieter en Sofie;
+- **↙ Terugbetaling van een voorschot**: een Tikkie of overschrijving van een vriend. Dit telt niet als inkomen en verkleint wat die persoon je nog schuldig is. Je koppelt het aan een specifiek voorschot, of enkel aan de naam: dan wordt het op diens oudste openstaande voorschotten afgeboekt;
+- **↩ Terugbetaling van een uitgave**: had je de hele rekening als jouw uitgave geboekt, dan wordt die uitgave verminderd;
+- **📈 Belegging**: stortingen naar of opnames van Degiro. Overschrijvingen naar Degiro/flatex worden automatisch zo herkend;
+- **↔ Eigen rekening**: overschrijvingen tussen je eigen rekeningen worden automatisch herkend op IBAN;
+- **✂ Opsplitsen** over meerdere categorieën.
+
+Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
+
+### Inkomsten met kosten
+
+Elke inkomstencategorie is een **bron**; standaard zijn dat *Loon*, *Bijberoep / zelfstandige* en *Andere inkomsten*, die je kan hernoemen. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
+
+### Vaste lasten
+
+Vaste lasten zijn geen apart tabblad. Ze worden **automatisch herkend** in je transacties: minstens drie betalingen aan dezelfde tegenpartij met een vast ritme. Je ziet ze als 🔁-label bij die transacties, en bij *Uitgaven* staat een overzicht met de volgende vervaldatum, het verwachte bedrag en eventuele seizoenspatronen. Verwachte inkomsten, zoals je loon, staan bij *Inkomsten*.
+
+## Beleggingen (Degiro)
+
+### Rechtstreeks ophalen
+
+Dit kan wanneer Flux op je eigen server draait. Ga naar *Beleggingen → Ophalen uit Degiro…* en log in met je Degiro-gebruikersnaam, je wachtwoord en je 2FA-code. Flux haalt dan je portefeuille, transacties en kasbewegingen op.
+
+- Je wachtwoord en 2FA-code worden **niet bewaard**. Je logt elke keer opnieuw in, en de Degiro-sessie wordt meteen weer afgesloten.
+- Degiro heeft **geen officiële API**. Deze koppeling gebruikt dezelfde webdiensten als de Degiro-website. Ze kan stoppen met werken als Degiro iets wijzigt, en ze is niet door Degiro goedgekeurd. De exportbestanden hieronder werken altijd.
+- Elke keer ophalen voegt een waarderingspunt toe aan de grafiek. Historische standen levert deze weg niet: daarvoor gebruik je de portefeuille-export per 31 december.
+
+### Wat moet je exact exporteren uit Degiro?
+
+Op de Degiro-website:
+
+1. **Rekeningoverzicht** (nodig voor stortingen, dividend, kosten en het rendement): *Inbox* → *Rekeningoverzicht*. Kies als periode **van de dag van je allereerste storting tot vandaag** → *Exporteren* → **CSV** (`Account.csv`).
+2. **Transacties** (aan- en verkopen, voor de aankoopprijs per positie): *Inbox* → *Transacties* → dezelfde volledige periode → *Exporteren* → **CSV** (`Transactions.csv`).
+3. **Portefeuille van vandaag**: *Portefeuille* → *Exporteren* → **CSV** (`Portfolio.csv`). Kies bij het opladen de datum van vandaag.
+4. **Portefeuille op elke 31 december** sinds je begon: bij het exporteren van je portefeuille kies je de **datum** 31/12/jjjj. Laad elk bestand op met die datum. Dit is nodig voor een correct rendement per jaar en een precieze TWR. Wil je een fijnere grafiek, exporteer dan ook per kwartaal of per maand.
+
+Je kan alle bestanden tegelijk opladen; Flux herkent zelf welk bestand wat is. Hetzelfde bestand twee keer opladen voegt niets dubbel toe.
+
+### Rendement: TWR en MWR
+
+- **MWR / MWRR** (money-weighted, berekend als XIRR) is **jouw persoonlijke rendement**. Het houdt rekening met wanneer en hoeveel je stortte. Deze berekening is exact: ze heeft enkel al je stortingen en opnames nodig, plus de huidige waarde.
+- **TWR** (time-weighted) is het **rendement van je beleggingen zelf**, los van je stortingen. Dit cijfer vergelijk je met een index of fonds. Flux berekent het per periode tussen twee waarderingen (Modified Dietz) en ketent die periodes aan elkaar. Met een portefeuille-export per 31/12 is elk jaar correct; ontbreekt er een jaareinde, dan toont Flux welke export nodig is.
+- **Per jaar** zie je de beginwaarde, stortingen, opnames, eindwaarde, het resultaat (= eind − begin − netto stortingen), de TWR, de MWR en het dividend. Voor het lopende jaar is dat het rendement tot nu, niet omgerekend naar een jaar.
+- Dividend en kosten blijven binnen de portefeuille en tellen dus mee in het rendement. Ze tellen niet als stortingen.
 
 ## Hosten
 
@@ -134,11 +186,14 @@ manifest.webmanifest, sw.js  installeerbaar en offline (PWA)
 js/core.js                 rekenlogica: regels, splitsingen, transfers, terugbetalingen, inkomsten, budgetten,
                            vaste lasten, CSV, synchronisatie (samenvoegen), categorie kiezen uit online info
 js/lookup.js               online opzoeken (Wikidata, OpenStreetMap)
+js/banks.js                bankimport: profielen KBC/Argenta, dubbels, imports ongedaan maken
+js/invest.js               Degiro-exports, portefeuille, TWR/MWR, rendement per jaar
 js/store.js                lokale opslag, standaardcategorieën, demodata
 js/sync.js                 synchronisatie met de server (offline first)
 js/app.js                  gebruikersinterface
 server/server.js           HTTP-server: app, login, synchronisatie, opzoeken (met cache)
 server/ai.js               optionele classificatie via Claude
+server/degiro.js           rechtstreekse Degiro-koppeling
 tests/                     tests (npm test)
 ```
 

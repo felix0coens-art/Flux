@@ -3,8 +3,8 @@
  * De app-bestanden worden uit de cache geladen en op de achtergrond ververst
  * ("stale-while-revalidate"); /api-verzoeken gaan altijd naar het netwerk.
  */
-const CACHE = 'flux-app-v2';
-const ASSETS = ['./', 'index.html', 'css/style.css', 'js/core.js', 'js/store.js', 'js/lookup.js', 'js/sync.js', 'js/app.js',
+const CACHE = 'flux-app-v3';
+const ASSETS = ['./', 'index.html', 'css/style.css', 'js/core.js', 'js/store.js', 'js/lookup.js', 'js/banks.js', 'js/invest.js', 'js/sync.js', 'js/app.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', event => {

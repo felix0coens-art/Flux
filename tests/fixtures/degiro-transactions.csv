@@ -1,0 +1,3 @@
+Datum,Tijd,Product,ISIN,Beurs,Uitvoeringsplaats,Aantal,Koers,,Lokale waarde,,Waarde,,Wisselkoers,Transactiekosten en/of,,Totaal,,Order ID
+05-01-2026,09:04,VANGUARD FTSE ALL-WORLD UCITS ETF USD DIS,IE00B3RBWM25,EAM,XAMS,10,"110,50",EUR,"-1105,00",EUR,"-1105,00",EUR,,"-1,00",EUR,"-1106,00",EUR,a1b2
+10-02-2026,15:30,APPLE INC. - COMMON ST,US0378331005,NDQ,XNAS,2,"180,00",USD,"-360,00",USD,"-331,20",EUR,"1,0870","-2,00",EUR,"-333,20",EUR,c3d4

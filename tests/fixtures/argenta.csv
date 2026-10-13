@@ -1,0 +1,3 @@
+Rekening;Boekdatum;Valutadatum;Referentie;Beschrijving;Bedrag;Munt;Verrichtingsdatum;Rekening tegenpartij;Naam tegenpartij;Mededeling
+BE12 9730 0000 0092;14-10-2026;14-10-2026;B6J14AH1LKA00001;Betaling Bancontact;-12,40;EUR;13-10-2026;;KRUIDVAT GENT;
+BE12 9730 0000 0092;15-10-2026;15-10-2026;B6J15AH1LKA00002;Overschrijving;250,00;EUR;15-10-2026;BE68539007547034;Felix;Sparen

@@ -23,6 +23,7 @@ const C = require('../js/core.js');
 const Store = require('../js/store.js');
 const Lookup = require('../js/lookup.js');
 const AI = require('./ai.js');
+const Degiro = require('./degiro.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.resolve(process.env.FLUX_DATA_DIR || path.join(ROOT, 'data'));
@@ -184,8 +185,16 @@ async function initSetup() {
 
 async function loadUserData(username) {
   const d = await readJson(userFile(username), null);
-  if (d) return d;
-  return { rev: 0, state: null };
+  if (!d) return { rev: 0, state: null };
+  // Gegevens van een oudere versie: proper opnieuw beginnen (zie Store.VERSION)
+  if (d.state && (d.state.version || 1) < Store.VERSION) {
+    const fresh = { rev: (d.rev || 0) + 1, state: Store.defaultState(), updated: new Date().toISOString(), resetFrom: d.state.version || 1 };
+    await writeJson(userFile(username) + '.v' + (d.state.version || 1) + '.bak', d);
+    await writeJson(userFile(username), fresh);
+    console.log(`Gegevens van "${username}" gewist bij de update naar versie ${Store.VERSION} (back-up bewaard).`);
+    return fresh;
+  }
+  return d;
 }
 
 /** Voegt de wijzigingen van een toestel samen met wat op de server staat. */
@@ -259,7 +268,7 @@ async function lookupItems(body) {
 
 // ---------- HTTP ----------
 
-function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
+function httpError(status, message, code) { const e = new Error(message); e.status = status; if (code) e.code = code; return e; }
 
 function send(res, status, body, headers) {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
@@ -371,7 +380,24 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === '/api/sync' && req.method === 'POST') {
     const b = await readBody(req);
+    // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
+    if (b.schema !== Store.VERSION) throw httpError(409, 'Er is een nieuwe versie van Flux. Herlaad de pagina.');
     return send(res, 200, await syncUser(user, b.changes || null, b.rev));
+  }
+
+  if (pathname === '/api/degiro/sync' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+    if (!b.username || !b.password) throw httpError(400, 'Geef je Degiro-gebruikersnaam en wachtwoord');
+    try {
+      const data = await Degiro.fetchAll(fetch, { username: String(b.username), password: String(b.password), otp: b.otp ? String(b.otp) : '' }, { fromDate: b.fromDate });
+      return send(res, 200, data);
+    } catch (e) {
+      if (e.code === 'auth') recordAttempt(req);
+      if (e instanceof Degiro.DegiroError) throw httpError(e.code === 'otp' || e.code === 'auth' ? 401 : 502, e.message, e.code);
+      console.error('Degiro:', e.message);
+      throw httpError(502, 'Degiro is niet bereikbaar of antwoordde onverwacht. Probeer later opnieuw, of gebruik de exportbestanden.');
+    }
   }
 
   if (pathname === '/api/data' && req.method === 'GET') {
@@ -405,7 +431,7 @@ function createServer() {
       else send(res, 405, 'Niet toegestaan');
     } catch (e) {
       if (!e.status) console.error(e);
-      if (!res.headersSent) send(res, e.status || 500, { error: e.status ? e.message : 'Interne fout' });
+      if (!res.headersSent) send(res, e.status || 500, Object.assign({ error: e.status ? e.message : 'Interne fout' }, e.code && e.status ? { code: e.code } : {}));
     }
   });
 }
