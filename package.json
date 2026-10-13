@@ -1,0 +1,11 @@
+{
+  "name": "flux",
+  "version": "1.0.0",
+  "description": "Flux — persoonlijke boekhouding in je browser",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test tests/*.test.js"
+  },
+  "license": "MIT"
+}

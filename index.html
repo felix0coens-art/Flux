@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flux — persoonlijke boekhouding</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233b5bdb'/><path d='M8 22c4-10 8-10 16-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">≈</span> Flux</div>
+    <nav id="nav">
+      <button data-view="dashboard">Overzicht</button>
+      <button data-view="transactions">Transacties</button>
+      <button data-view="rules">Regels</button>
+      <button data-view="budgets">Budgetten</button>
+      <button data-view="recurring">Vaste lasten</button>
+      <button data-view="settings">Instellingen</button>
+    </nav>
+  </header>
+  <main id="main"></main>
+  <div id="modal-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/core.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
