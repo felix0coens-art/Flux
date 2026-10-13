@@ -1,0 +1,36 @@
+# Flux + Caddy (automatische HTTPS-certificaten via Let's Encrypt).
+# 1. Laat een (sub)domein naar je server wijzen, bv. flux.jouwdomein.be
+# 2. Vul DOMAIN in een .env-bestand in (zie .env.example)
+# 3. docker compose up -d   en bekijk de setupcode met: docker compose logs flux
+services:
+  flux:
+    build: .
+    restart: unless-stopped
+    environment:
+      - FLUX_SECURE_COOKIES=1
+      - FLUX_TRUST_PROXY=1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - flux-data:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?Vul DOMAIN in .env in}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - flux
+
+volumes:
+  flux-data:
+  caddy-data:
+  caddy-config:

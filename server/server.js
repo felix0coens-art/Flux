@@ -1,0 +1,439 @@
+#!/usr/bin/env node
+'use strict';
+/*
+ * Flux-server: serveert de app, beheert login en synchroniseert je gegevens tussen toestellen.
+ * Geen database nodig: elke gebruiker heeft één JSON-bestand in de datamap.
+ *
+ * Omgevingsvariabelen:
+ *   PORT                 poort (standaard 8080)
+ *   FLUX_DATA_DIR        map voor gegevens (standaard ./data)
+ *   FLUX_USERNAME        + FLUX_PASSWORD: maakt bij de eerste start meteen deze gebruiker aan
+ *   FLUX_SECURE_COOKIES  "1" om cookies enkel via https te sturen (automatisch achter een https-proxy)
+ *   ANTHROPIC_API_KEY    optioneel: tegenpartijen laten classificeren door Claude (met webzoekfunctie)
+ *
+ * Gebruikers beheren:  node server/server.js adduser <naam>   |   node server/server.js passwd <naam>
+ */
+
+const http = require('http');
+const fs = require('fs');
+const fsp = fs.promises;
+const path = require('path');
+const crypto = require('crypto');
+const C = require('../js/core.js');
+const Store = require('../js/store.js');
+const Lookup = require('../js/lookup.js');
+const AI = require('./ai.js');
+
+const ROOT = path.resolve(__dirname, '..');
+const DATA_DIR = path.resolve(process.env.FLUX_DATA_DIR || path.join(ROOT, 'data'));
+const PORT = Number(process.env.PORT || 8080);
+const SESSION_DAYS = 120;
+const MAX_BODY = 30 * 1024 * 1024;
+const USER_AGENT = 'Flux-persoonlijke-boekhouding/2.0 (self-hosted)';
+
+// ---------- Opslag ----------
+
+fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+
+async function readJson(file, fallback) {
+  try { return JSON.parse(await fsp.readFile(path.join(DATA_DIR, file), 'utf8')); }
+  catch (e) { if (e.code === 'ENOENT') return fallback; throw e; }
+}
+
+async function writeJson(file, data) {
+  const target = path.join(DATA_DIR, file);
+  const tmp = target + '.' + process.pid + '.' + Date.now() + '.tmp';
+  await fsp.writeFile(tmp, JSON.stringify(data), { mode: 0o600 });
+  await fsp.rename(tmp, target);
+}
+
+// Schrijfacties per bestand na elkaar uitvoeren
+const locks = new Map();
+function withLock(key, fn) {
+  const prev = locks.get(key) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  locks.set(key, run.catch(() => {}));
+  return run;
+}
+
+function userFile(username) { return 'user-' + Buffer.from(username).toString('hex') + '.json'; }
+
+// ---------- Gebruikers en sessies ----------
+
+function hashPassword(password, salt) {
+  salt = salt || crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
+  return { salt, hash };
+}
+
+function verifyPassword(password, user) {
+  const { hash } = hashPassword(password, user.salt);
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(user.hash, 'hex'));
+}
+
+function validUsername(u) { return typeof u === 'string' && /^[a-zA-Z0-9._-]{2,40}$/.test(u); }
+function validPassword(p) { return typeof p === 'string' && p.length >= 8 && p.length <= 200; }
+
+async function getUsers() { return readJson('users.json', {}); }
+
+async function createUser(username, password) {
+  return withLock('users', async () => {
+    const users = await getUsers();
+    if (users[username]) throw httpError(409, 'Deze gebruikersnaam bestaat al');
+    users[username] = Object.assign(hashPassword(password), { created: new Date().toISOString() });
+    await writeJson('users.json', users);
+  });
+}
+
+async function setPassword(username, password) {
+  return withLock('users', async () => {
+    const users = await getUsers();
+    if (!users[username]) throw httpError(404, 'Onbekende gebruiker');
+    Object.assign(users[username], hashPassword(password));
+    await writeJson('users.json', users);
+  });
+}
+
+// Sessies: enkel de hash van het token wordt bewaard
+function tokenHash(token) { return crypto.createHash('sha256').update(token).digest('hex'); }
+
+async function createSession(username) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await withLock('sessions', async () => {
+    const sessions = await readJson('sessions.json', {});
+    const now = Date.now();
+    for (const [k, s] of Object.entries(sessions)) if (s.expires < now) delete sessions[k];
+    sessions[tokenHash(token)] = { username, expires: now + SESSION_DAYS * 86400000 };
+    await writeJson('sessions.json', sessions);
+  });
+  return token;
+}
+
+async function sessionUser(req) {
+  const token = parseCookies(req.headers.cookie || '').flux_session;
+  if (!token) return null;
+  const sessions = await readJson('sessions.json', {});
+  const s = sessions[tokenHash(token)];
+  if (!s || s.expires < Date.now()) return null;
+  return s.username;
+}
+
+async function destroySession(req, allForUser) {
+  const token = parseCookies(req.headers.cookie || '').flux_session;
+  if (!token) return;
+  await withLock('sessions', async () => {
+    const sessions = await readJson('sessions.json', {});
+    const own = sessions[tokenHash(token)];
+    if (allForUser && own) {
+      for (const [k, s] of Object.entries(sessions)) if (s.username === own.username) delete sessions[k];
+    } else delete sessions[tokenHash(token)];
+    await writeJson('sessions.json', sessions);
+  });
+}
+
+function parseCookies(header) {
+  const out = {};
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function isSecure(req) {
+  return process.env.FLUX_SECURE_COOKIES === '1' || req.headers['x-forwarded-proto'] === 'https' || !!req.socket.encrypted;
+}
+
+function sessionCookie(req, token, maxAge) {
+  return `flux_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isSecure(req) ? '; Secure' : ''}`;
+}
+
+// Eenvoudige bescherming tegen raden van wachtwoorden: max. 10 pogingen per 15 min per IP
+const attempts = new Map();
+function clientIp(req) {
+  return (process.env.FLUX_TRUST_PROXY === '1' && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
+}
+function rateLimited(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const list = (attempts.get(ip) || []).filter(t => now - t < 15 * 60000);
+  attempts.set(ip, list);
+  return list.length >= 10;
+}
+function recordAttempt(req) { const ip = clientIp(req); attempts.set(ip, (attempts.get(ip) || []).concat(Date.now())); }
+
+// Eerste gebruiker aanmaken via een eenmalige setupcode uit de serverlog
+let setupCode = null;
+async function initSetup() {
+  const users = await getUsers();
+  if (Object.keys(users).length) return;
+  if (process.env.FLUX_USERNAME && process.env.FLUX_PASSWORD) {
+    if (!validUsername(process.env.FLUX_USERNAME) || !validPassword(process.env.FLUX_PASSWORD)) {
+      console.error('FLUX_USERNAME/FLUX_PASSWORD ongeldig (wachtwoord min. 8 tekens).');
+    } else {
+      await createUser(process.env.FLUX_USERNAME, process.env.FLUX_PASSWORD);
+      console.log(`Gebruiker "${process.env.FLUX_USERNAME}" aangemaakt.`);
+      return;
+    }
+  }
+  setupCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+  console.log('\n  Nog geen account. Open Flux in je browser en gebruik deze setupcode: ' + setupCode + '\n');
+}
+
+// ---------- Gegevens ----------
+
+async function loadUserData(username) {
+  const d = await readJson(userFile(username), null);
+  if (d) return d;
+  return { rev: 0, state: null };
+}
+
+/** Voegt de wijzigingen van een toestel samen met wat op de server staat. */
+async function syncUser(username, changes, clientRev) {
+  return withLock('u:' + username, async () => {
+    const data = await loadUserData(username);
+    let state = data.state;
+    let rev = data.rev || 0;
+    const hasChanges = changes && Object.keys(changes).some(k => {
+      const v = changes[k];
+      return Array.isArray(v) ? v.length : v && typeof v === 'object' ? Object.keys(v).length : false;
+    });
+    if (hasChanges) {
+      state = C.mergeStates(state || Store.defaultState(), changes);
+      state = C.recompute(Store.migrate(state));
+      rev += 1;
+      await writeJson(userFile(username), { rev, state, updated: new Date().toISOString() });
+    }
+    // Volledige staat enkel terugsturen als het toestel achterloopt
+    return clientRev === rev && !hasChanges ? { rev } : { rev, state };
+  });
+}
+
+// ---------- Online opzoeken ----------
+
+const nominatimQueue = Lookup.createQueue(1100);
+let lookupCache = null;
+async function cacheGet(key) {
+  if (!lookupCache) lookupCache = await readJson('lookup-cache.json', {});
+  const hit = lookupCache[key];
+  return hit && Date.now() - hit.at < 90 * 86400000 ? hit.value : null;
+}
+async function cacheSet(key, value) {
+  lookupCache[key] = { at: Date.now(), value };
+  await withLock('lookup-cache', () => writeJson('lookup-cache.json', lookupCache));
+}
+
+async function lookupItems(body) {
+  const items = (Array.isArray(body.items) ? body.items : []).slice(0, 25);
+  const categories = (Array.isArray(body.categories) ? body.categories : []).slice(0, 200)
+    .map(c => ({ id: String(c.id), name: String(c.name || ''), kind: c.kind === 'income' ? 'income' : 'expense' }));
+  const countries = String(body.countries || 'be').replace(/[^a-z,]/gi, '').slice(0, 30) || 'be';
+  let provider = body.provider === 'free' || body.provider === 'ai' ? body.provider : 'auto';
+  if (provider === 'auto') provider = AI.available() ? 'ai' : 'free';
+  if (provider === 'ai' && !AI.available()) throw httpError(400, 'AI is niet ingesteld op deze server');
+
+  // Gratis bronnen: per tegenpartij (gecachet op de server)
+  const free = await Promise.all(items.map(async it => {
+    const key = 'free:' + countries + ':' + C.normalizeName(it.name || it.description);
+    const cached = await cacheGet(key);
+    if (cached) return cached;
+    const res = await Lookup.lookupFree({ name: it.name, description: it.description }, {
+      fetch, headers: { 'User-Agent': USER_AGENT }, countries, nominatimQueue
+    });
+    if (!res.errors.length || res.hits.length) await cacheSet(key, res);
+    return res;
+  }));
+
+  let ai = [];
+  if (provider === 'ai' && items.length) {
+    ai = await AI.classify(items.map(it => ({ name: it.name, description: it.description, direction: it.direction })), categories, countries);
+  }
+  return {
+    provider,
+    results: items.map((it, i) => {
+      const a = ai.find(r => r.index === i);
+      return Object.assign({ name: it.name }, free[i], a ? { ai: { categoryId: a.categoryId, businessType: a.businessType, confidence: a.confidence, explanation: a.explanation } } : {});
+    })
+  };
+}
+
+// ---------- HTTP ----------
+
+function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
+
+function send(res, status, body, headers) {
+  const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  res.writeHead(status, Object.assign({
+    'Content-Type': typeof body === 'string' || Buffer.isBuffer(body) ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store'
+  }, SECURITY_HEADERS, headers || {}));
+  res.end(data);
+}
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'same-origin',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+};
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', c => {
+      size += c.length;
+      if (size > MAX_BODY) { reject(httpError(413, 'Te groot')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (e) { reject(httpError(400, 'Ongeldige JSON')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+const STATIC = {
+  '/': 'index.html', '/index.html': 'index.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest'
+};
+const STATIC_DIRS = ['css/', 'js/', 'icons/'];
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+
+async function serveStatic(req, res, pathname) {
+  let rel = STATIC[pathname];
+  if (!rel) {
+    const p = pathname.replace(/^\/+/, '');
+    if (STATIC_DIRS.some(d => p.startsWith(d)) && !p.includes('..') && /^[a-zA-Z0-9/_.-]+$/.test(p)) rel = p;
+  }
+  if (!rel) return send(res, 404, 'Niet gevonden');
+  const file = path.join(ROOT, rel);
+  if (!file.startsWith(ROOT + path.sep)) return send(res, 404, 'Niet gevonden');
+  try {
+    const data = await fsp.readFile(file);
+    const etag = '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag }); return res.end(); }
+    res.writeHead(200, Object.assign({
+      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+      'Cache-Control': 'no-cache',
+      ETag: etag
+    }, SECURITY_HEADERS, rel === 'sw.js' ? { 'Service-Worker-Allowed': '/' } : {}));
+    res.end(req.method === 'HEAD' ? undefined : data);
+  } catch (e) {
+    send(res, 404, 'Niet gevonden');
+  }
+}
+
+async function handleApi(req, res, pathname) {
+  // CSRF-bescherming: wijzigende verzoeken moeten van de app zelf komen
+  if (req.method !== 'GET' && req.headers['x-flux'] !== '1') throw httpError(403, 'Verboden');
+  const user = await sessionUser(req);
+
+  if (pathname === '/api/session' && req.method === 'GET') {
+    return send(res, 200, { user, setupRequired: !!setupCode, features: { ai: AI.available(), aiModel: AI.available() ? AI.MODEL : null } });
+  }
+
+  if (pathname === '/api/setup' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!setupCode) throw httpError(400, 'Er bestaat al een account');
+    if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer later opnieuw');
+    recordAttempt(req);
+    if (String(b.code || '').trim().toUpperCase() !== setupCode) throw httpError(401, 'Verkeerde setupcode (zie de serverlog)');
+    if (!validUsername(b.username)) throw httpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
+    if (!validPassword(b.password)) throw httpError(400, 'Wachtwoord: minstens 8 tekens');
+    await createUser(b.username, b.password);
+    setupCode = null;
+    const token = await createSession(b.username);
+    return send(res, 200, { user: b.username }, { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+  }
+
+  if (pathname === '/api/login' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+    const users = await getUsers();
+    const u = validUsername(b.username) && users[b.username];
+    if (!u || !verifyPassword(b.password || '', u)) {
+      recordAttempt(req);
+      throw httpError(401, 'Gebruikersnaam of wachtwoord klopt niet');
+    }
+    const token = await createSession(b.username);
+    return send(res, 200, { user: b.username }, { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+  }
+
+  if (pathname === '/api/logout' && req.method === 'POST') {
+    const b = await readBody(req);
+    await destroySession(req, !!b.everywhere);
+    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+  }
+
+  if (!user) throw httpError(401, 'Niet aangemeld');
+
+  if (pathname === '/api/sync' && req.method === 'POST') {
+    const b = await readBody(req);
+    return send(res, 200, await syncUser(user, b.changes || null, b.rev));
+  }
+
+  if (pathname === '/api/data' && req.method === 'GET') {
+    const d = await loadUserData(user);
+    return send(res, 200, { rev: d.rev || 0, state: d.state });
+  }
+
+  if (pathname === '/api/password' && req.method === 'POST') {
+    const b = await readBody(req);
+    const users = await getUsers();
+    if (!verifyPassword(b.current || '', users[user])) throw httpError(401, 'Huidig wachtwoord klopt niet');
+    if (!validPassword(b.password)) throw httpError(400, 'Nieuw wachtwoord: minstens 8 tekens');
+    await setPassword(user, b.password);
+    return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/lookup' && req.method === 'POST') {
+    const b = await readBody(req);
+    return send(res, 200, await lookupItems(b));
+  }
+
+  throw httpError(404, 'Onbekend');
+}
+
+function createServer() {
+  return http.createServer(async (req, res) => {
+    const pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    try {
+      if (pathname.startsWith('/api/')) await handleApi(req, res, pathname);
+      else if (req.method === 'GET' || req.method === 'HEAD') await serveStatic(req, res, pathname);
+      else send(res, 405, 'Niet toegestaan');
+    } catch (e) {
+      if (!e.status) console.error(e);
+      if (!res.headersSent) send(res, e.status || 500, { error: e.status ? e.message : 'Interne fout' });
+    }
+  });
+}
+
+// ---------- CLI ----------
+
+async function prompt(question) {
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => rl.question(question, a => { rl.close(); resolve(a); }));
+}
+
+async function main() {
+  const [cmd, name] = process.argv.slice(2);
+  if (cmd === 'adduser' || cmd === 'passwd') {
+    if (!validUsername(name)) { console.error('Gebruik: node server/server.js ' + cmd + ' <naam>'); process.exit(1); }
+    const pw = process.env.FLUX_NEW_PASSWORD || await prompt('Wachtwoord (min. 8 tekens): ');
+    if (!validPassword(pw)) { console.error('Wachtwoord te kort.'); process.exit(1); }
+    if (cmd === 'adduser') await createUser(name, pw); else await setPassword(name, pw);
+    console.log('OK');
+    return;
+  }
+  await initSetup();
+  createServer().listen(PORT, () => {
+    console.log(`Flux draait op http://localhost:${PORT}  (gegevens: ${DATA_DIR})`);
+    console.log(AI.available() ? `AI-classificatie actief (${AI.MODEL}).` : 'AI-classificatie uit; online opzoeken via Wikidata en OpenStreetMap.');
+  });
+}
+
+if (require.main === module) main().catch(e => { console.error(e.message || e); process.exit(1); });
+
+module.exports = { createServer, initSetup, syncUser };

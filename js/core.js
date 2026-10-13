@@ -127,16 +127,20 @@
     return normalizeIban(iban).replace(/(.{4})/g, '$1 ').trim();
   }
 
-  /** Naam opschonen om verwante transacties te groeperen ("NETFLIX.COM 8812" -> "netflix com"). */
-  function normalizeName(str) {
+  /** Tekst opschonen: kleine letters, zonder accenten, cijfers, leestekens en ruiswoorden. */
+  function normalizeText(str) {
     return String(str || '')
       .toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z\s]/g, ' ')
       .split(/\s+/)
       .filter(t => t.length >= 2 && !STOP_WORDS.has(t))
-      .slice(0, 3)
       .join(' ');
+  }
+
+  /** Naam opschonen om verwante transacties te groeperen ("NETFLIX.COM 8812" -> "netflix"). */
+  function normalizeName(str) {
+    return normalizeText(str).split(' ').slice(0, 3).join(' ');
   }
   const STOP_WORDS = new Set(['nv', 'bv', 'bvba', 'sa', 'srl', 'sprl', 'vzw', 'the', 'betaling', 'via', 'met', 'kaart',
     'bancontact', 'maestro', 'visa', 'debit', 'europese', 'domiciliering', 'overschrijving', 'naar', 'van',
@@ -183,6 +187,7 @@
     contains: 'bevat',
     equals: 'is gelijk aan',
     startsWith: 'begint met',
+    name: 'naam bevat (ongevoelig voor leestekens)',
     regex: 'komt overeen met (regex)'
   };
 
@@ -193,6 +198,10 @@
     if (isIban) { h = normalizeIban(h); n = normalizeIban(n); }
     if (operator === 'regex') {
       try { return new RegExp(n, 'i').test(h); } catch (e) { return false; }
+    }
+    if (operator === 'name') {
+      const nn = normalizeText(n);
+      return !!nn && (' ' + normalizeText(h) + ' ').includes(' ' + nn + ' ');
     }
     h = h.toLowerCase(); n = n.toLowerCase();
     if (operator === 'equals') return h.trim() === n.trim();
@@ -301,14 +310,19 @@
     return [{ categoryId: tx.categoryId || null, amount: tx.amount, note: '' }];
   }
 
+  /**
+   * Splitsingen hebben normaal hetzelfde teken als de transactie. Een lijn met tegengesteld teken
+   * mag (bv. € 900 ontvangen = € 1.000 honorarium − € 100 commissie), zolang het totaal niet
+   * voorbij het transactiebedrag gaat.
+   */
   function validateSplits(tx, splits) {
     const errors = [];
     for (const s of splits) {
       if (!s.categoryId) errors.push('Elke splitsing heeft een categorie nodig.');
-      if (!s.amount || Math.sign(s.amount) !== Math.sign(tx.amount)) errors.push('Splitsbedragen moeten hetzelfde teken hebben als de transactie.');
+      if (!s.amount) errors.push('Elke splitsing heeft een bedrag nodig.');
     }
-    const total = sum(splits.map(s => s.amount));
-    if (Math.abs(total) > Math.abs(tx.amount)) errors.push('Het totaal van de splitsingen is groter dan het transactiebedrag.');
+    const rest = tx.amount - sum(splits.map(s => s.amount));
+    if (rest !== 0 && Math.sign(rest) !== Math.sign(tx.amount)) errors.push('Het totaal van de splitsingen is groter dan het transactiebedrag.');
     return Array.from(new Set(errors));
   }
 
@@ -390,25 +404,44 @@
 
   function inRange(date, range) { return date >= range.start && date <= range.end; }
 
-  /** Inkomsten, uitgaven en saldo voor een periode, met opsplitsing per categorie. */
+  /**
+   * Inkomsten, kosten op inkomsten, uitgaven en saldo voor een periode.
+   * - Categorie van soort 'income' = inkomstenbron (bruto).
+   * - Uitgavecategorie met `incomeId` = kost die van die inkomstenbron wordt afgetrokken.
+   * - Netto inkomen = bruto − kosten op inkomsten; saldo = netto inkomen − gewone uitgaven.
+   */
   function summarize(state, range, lines) {
     lines = lines || allocations(state);
-    const catKind = new Map(state.categories.map(c => [c.id, c.kind]));
+    const cats = new Map(state.categories.map(c => [c.id, c]));
     const byCategory = {};
-    let income = 0, expenses = 0;
+    const byIncome = {};
+    const src = id => (byIncome[id] = byIncome[id] || { gross: 0, costs: 0, net: 0, costsByCategory: {} });
+    let income = 0, incomeCosts = 0, expenses = 0;
     for (const l of lines) {
       if (!inRange(l.date, range)) continue;
       const key = l.categoryId || '__none__';
-      const kind = l.categoryId ? catKind.get(l.categoryId) : (l.amount > 0 ? 'income' : 'expense');
-      if (kind === 'income') income += l.amount;
-      else expenses -= l.amount;
       byCategory[key] = (byCategory[key] || 0) + l.amount;
+      const c = l.categoryId ? cats.get(l.categoryId) : null;
+      const kind = c ? c.kind : (l.amount > 0 ? 'income' : 'expense');
+      if (kind === 'income') {
+        income += l.amount;
+        src(c ? c.id : '__none__').gross += l.amount;
+      } else if (c && c.incomeId && cats.has(c.incomeId)) {
+        incomeCosts -= l.amount;
+        const s = src(c.incomeId);
+        s.costs -= l.amount;
+        s.costsByCategory[c.id] = (s.costsByCategory[c.id] || 0) - l.amount;
+      } else {
+        expenses -= l.amount;
+      }
     }
+    for (const k of Object.keys(byIncome)) byIncome[k].net = byIncome[k].gross - byIncome[k].costs;
     let transfers = 0;
     for (const tx of state.transactions) {
       if (tx.isTransfer && tx.amount < 0 && inRange(tx.date, range)) transfers -= tx.amount;
     }
-    return { income, expenses, net: income - expenses, byCategory, transfers };
+    const netIncome = income - incomeCosts;
+    return { income, incomeCosts, netIncome, expenses, net: netIncome - expenses, byCategory, byIncome, transfers };
   }
 
   // ---------- Budgetten ----------
@@ -468,14 +501,17 @@
    * Groepeert uitgaven per tegenpartij, zoekt een regelmatig interval en berekent
    * volgende vervaldatum, vaste/variabele bedragen en seizoenspatronen.
    */
-  function detectRecurring(state, today) {
+  function detectRecurring(state, today, options) {
     today = today || todayStr();
+    const incoming = !!(options && options.direction === 'in');
     const overrides = state.subscriptions || {};
     const groups = new Map();
     for (const tx of state.transactions) {
-      if (tx.amount >= 0 || tx.isTransfer || tx.excludeRecurring) continue;
-      const key = recurringKey(tx);
-      if (!key) continue;
+      if (tx.isTransfer || tx.excludeRecurring || tx.refundOf) continue;
+      if (incoming ? tx.amount <= 0 : tx.amount >= 0) continue;
+      const base = recurringKey(tx);
+      if (!base) continue;
+      const key = incoming ? 'in:' + base : base;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(tx);
     }
@@ -486,8 +522,9 @@
       const events = [];
       for (const t of txs) {
         const last = events[events.length - 1];
-        if (last && last.date === t.date) { last.amount += -t.amount; last.txs.push(t); }
-        else events.push({ date: t.date, amount: -t.amount, txs: [t] });
+        const amt = Math.abs(t.amount);
+        if (last && last.date === t.date) { last.amount += amt; last.txs.push(t); }
+        else events.push({ date: t.date, amount: amt, txs: [t] });
       }
       if (events.length < 2) continue;
       const intervals = [];
@@ -507,6 +544,7 @@
       // Te variabele bedragen bij hoge frequentie = gewoon vaak winkelen, geen vaste last
       if (freq.id === 'weekly' && cv > 0.25) continue;
       if (freq.id === 'monthly' && cv > 0.6 && events.length < 6) continue;
+      if (incoming && cv > 0.6) continue;
 
       const last = events[events.length - 1];
       const dayOfMonth = events.length >= 3
@@ -568,6 +606,7 @@
         monthProfile: monthAvg.map(v => v == null ? null : Math.round(v)),
         monthlyCost: Math.round(avg / freq.months),
         categoryId,
+        direction: incoming ? 'in' : 'out',
         userStatus: ov.status || 'detected', // detected | confirmed | ignored
         txIds: txs.map(t => t.id)
       });
@@ -708,15 +747,185 @@
     return state;
   }
 
+  // ---------- Synchronisatie tussen toestellen ----------
+  //
+  // Elk object (transactie, regel, budget, ...) krijgt `updatedAt` wanneer het wijzigt. Verwijderde
+  // objecten worden bijgehouden als "tombstones". Samenvoegen houdt per object de nieuwste versie,
+  // zodat wijzigingen op verschillende toestellen (ook offline) samengevoegd worden in plaats van
+  // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
+  // wijziging; die worden na het samenvoegen opnieuw berekend.
+
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions'];
+  const TOMBSTONE_TTL = 400 * 86400000;
+
+  function entityHash(item) {
+    const copy = Object.assign({}, item);
+    delete copy.updatedAt; delete copy.isTransfer; delete copy.transferPairId; delete copy.ruleId;
+    if (copy.categorySource === 'rule') { delete copy.categoryId; delete copy.categorySource; }
+    if (copy.categorySource == null) delete copy.categorySource;
+    if (copy.categoryId == null) delete copy.categoryId;
+    return JSON.stringify(copy, Object.keys(copy).sort());
+  }
+
+  /** Momentopname van alle objecten (id -> hash) om wijzigingen te herkennen. */
+  function snapshot(state) {
+    const snap = {};
+    for (const c of SYNC_COLLECTIONS) {
+      snap[c] = {};
+      for (const it of state[c] || []) snap[c][it.id] = entityHash(it);
+    }
+    snap.subscriptions = {};
+    for (const [k, v] of Object.entries(state.subscriptions || {})) snap.subscriptions[k] = entityHash(v);
+    snap.settings = entityHash(state.settings || {});
+    return snap;
+  }
+
+  /**
+   * Vergelijkt met de vorige momentopname, zet `updatedAt` op gewijzigde objecten en maakt
+   * tombstones voor verwijderde. Geeft de lijst van gewijzigde sleutels ("collectie:id") terug.
+   */
+  function stampChanges(prev, state, now) {
+    now = now || Date.now();
+    state.tombstones = state.tombstones || {};
+    const changed = [];
+    for (const c of SYNC_COLLECTIONS) {
+      const before = (prev && prev[c]) || {};
+      const ids = new Set();
+      for (const it of state[c] || []) {
+        ids.add(it.id);
+        if (before[it.id] !== entityHash(it)) { it.updatedAt = now; changed.push(c + ':' + it.id); }
+      }
+      for (const id of Object.keys(before)) {
+        if (!ids.has(id)) { state.tombstones[c + ':' + id] = now; changed.push(c + ':' + id); }
+      }
+    }
+    const subsBefore = (prev && prev.subscriptions) || {};
+    for (const [k, v] of Object.entries(state.subscriptions || {})) {
+      if (subsBefore[k] !== entityHash(v)) { v.updatedAt = now; changed.push('subscriptions:' + k); }
+    }
+    if (!prev || prev.settings !== entityHash(state.settings || {})) {
+      state.settings = Object.assign({}, state.settings, { updatedAt: now });
+      changed.push('settings:');
+    }
+    return changed;
+  }
+
+  /** Haalt de objecten op voor een lijst sleutels (voor een gedeeltelijke upload). */
+  function extractChanges(state, keys) {
+    const out = { tombstones: {} };
+    for (const c of SYNC_COLLECTIONS) out[c] = [];
+    out.subscriptions = {};
+    for (const key of new Set(keys)) {
+      const i = key.indexOf(':');
+      const c = key.slice(0, i), id = key.slice(i + 1);
+      if (c === 'settings') { out.settings = state.settings; continue; }
+      if (c === 'subscriptions') { if (state.subscriptions && state.subscriptions[id]) out.subscriptions[id] = state.subscriptions[id]; continue; }
+      const it = (state[c] || []).find(x => x.id === id);
+      if (it) out[c].push(it);
+      else if (state.tombstones && state.tombstones[key]) out.tombstones[key] = state.tombstones[key];
+    }
+    return out;
+  }
+
+  /** Voegt `incoming` (volledig of gedeeltelijk) samen met `base`. Afwezigheid betekent nooit verwijderen. */
+  function mergeStates(base, incoming, now) {
+    now = now || Date.now();
+    base = base || {};
+    incoming = incoming || {};
+    const out = Object.assign({}, base);
+    const tomb = Object.assign({}, base.tombstones || {});
+    for (const [k, t] of Object.entries(incoming.tombstones || {})) tomb[k] = Math.max(tomb[k] || 0, t);
+    for (const k of Object.keys(tomb)) if (now - tomb[k] > TOMBSTONE_TTL) delete tomb[k];
+    for (const c of SYNC_COLLECTIONS) {
+      const map = new Map((base[c] || []).map(it => [it.id, it]));
+      for (const it of incoming[c] || []) {
+        const cur = map.get(it.id);
+        if (!cur || (it.updatedAt || 0) >= (cur.updatedAt || 0)) map.set(it.id, it);
+      }
+      out[c] = Array.from(map.values()).filter(it => !(tomb[c + ':' + it.id] >= (it.updatedAt || 0)));
+    }
+    const subs = Object.assign({}, base.subscriptions || {});
+    for (const [k, v] of Object.entries(incoming.subscriptions || {})) {
+      if (!subs[k] || (v.updatedAt || 0) >= (subs[k].updatedAt || 0)) subs[k] = v;
+    }
+    out.subscriptions = subs;
+    const bs = base.settings || {}, is = incoming.settings;
+    out.settings = is && (is.updatedAt || 0) >= (bs.updatedAt || 0) ? is : bs;
+    out.tombstones = tomb;
+    if (incoming.version && !out.version) out.version = incoming.version;
+    return out;
+  }
+
+  // ---------- Categorie voorstellen op basis van online info ----------
+
+  /** Splitst de zoekwoorden van een categorie ("supermarkt, bakkerij, fast food"). */
+  function categoryTags(cat) {
+    return String(cat.lookupTags || '').split(/[,;\n]/).map(t => t.trim().toLowerCase()).filter(Boolean);
+  }
+
+  /**
+   * Kiest de categorie die het best past bij de tekst die online gevonden werd
+   * (beschrijving, type van zaak, OpenStreetMap-tags, ...). Zoekwoorden per categorie zijn instelbaar.
+   */
+  function matchCategory(text, categories, direction) {
+    const hay = ' ' + String(text || '').toLowerCase().replace(/[_/|()]/g, ' ').replace(/\s+/g, ' ') + ' ';
+    let best = null;
+    for (const c of categories) {
+      if (direction === 'out' && c.kind === 'income') continue;
+      if (direction === 'in' && c.kind !== 'income') continue;
+      let score = 0;
+      const hits = [];
+      for (const tag of categoryTags(c)) {
+        const t = tag.replace(/[_/|()]/g, ' ');
+        // korte woorden enkel als volledig woord, langere ook als deel van een samenstelling
+        const found = t.length <= 4 ? hay.includes(' ' + t + ' ') : hay.includes(t);
+        if (found) { score += t.length; hits.push(tag); }
+      }
+      if (score && (!best || score > best.score)) best = { categoryId: c.id, score, hits };
+    }
+    if (!best) return null;
+    best.confidence = best.score >= 12 ? 'hoog' : best.score >= 7 ? 'middel' : 'laag';
+    return best;
+  }
+
+  /** Groepeert transacties zonder categorie per tegenpartij, als kandidaten om online op te zoeken. */
+  function lookupCandidates(state) {
+    const groups = new Map();
+    for (const t of state.transactions) {
+      if (t.categoryId || t.isTransfer || t.refundOf || (t.splits && t.splits.length) || looksLikeRefund(t)) continue;
+      const key = normalizeName(t.counterparty) || normalizeName(t.description);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { key, txs: [], names: {} });
+      const g = groups.get(key);
+      g.txs.push(t);
+      const n = t.counterparty || t.description;
+      g.names[n] = (g.names[n] || 0) + 1;
+    }
+    return Array.from(groups.values()).map(g => {
+      const name = Object.keys(g.names).sort((a, b) => g.names[b] - g.names[a])[0];
+      const last = g.txs[g.txs.length - 1];
+      return {
+        key: g.key, name, count: g.txs.length,
+        total: sum(g.txs.map(t => t.amount)),
+        direction: sum(g.txs.map(t => t.amount)) >= 0 ? 'in' : 'out',
+        description: last.description || '',
+        field: g.txs.every(t => normalizeName(t.counterparty) === g.key) ? 'counterparty' : 'any',
+        txIds: g.txs.map(t => t.id)
+      };
+    }).sort((a, b) => b.count - a.count || Math.abs(b.total) - Math.abs(a.total));
+  }
+
   const api = {
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
-    normalizeIban, formatIban, normalizeName, median, distribute,
+    normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
     detectTransfers, splitLines, validateSplits, allocations, refundTotals, suggestRefundTargets, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
-    recompute
+    recompute,
+    SYNC_COLLECTIONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
+    categoryTags, matchCategory, lookupCandidates
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

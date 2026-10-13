@@ -2,9 +2,17 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Flux — persoonlijke boekhouding</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233b5bdb'/><path d='M8 22c4-10 8-10 16-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+  <meta name="description" content="Flux: je persoonlijke boekhouding">
+  <meta name="theme-color" content="#3b5bdb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Flux">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -13,11 +21,14 @@
     <nav id="nav">
       <button data-view="dashboard">Overzicht</button>
       <button data-view="transactions">Transacties</button>
-      <button data-view="rules">Regels</button>
+      <button data-view="income">Inkomsten</button>
       <button data-view="budgets">Budgetten</button>
       <button data-view="recurring">Vaste lasten</button>
+      <button data-view="rules">Regels</button>
       <button data-view="settings">Instellingen</button>
     </nav>
+    <span class="spacer"></span>
+    <span id="sync-badge" class="badge sync muted" role="status"></span>
   </header>
   <main id="main"></main>
   <div id="modal-root"></div>
@@ -25,6 +36,8 @@
 
   <script src="js/core.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/lookup.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

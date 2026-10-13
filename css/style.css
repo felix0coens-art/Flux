@@ -223,3 +223,31 @@ svg text { fill: var(--muted); font-size: 11px; }
   .split-row .note { display: none; }
   .hide-sm { display: none; }
 }
+
+/* ---- Versie 2: inkomsten, synchronisatie, opzoeken, iPhone ---- */
+.topbar { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+.topbar .spacer { flex: 1; }
+main { padding-bottom: max(80px, env(safe-area-inset-bottom)); }
+.badge.sync { flex-shrink: 0; }
+.badge.sync.muted { color: var(--muted); }
+.dot-lg { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.input-row { display: flex; gap: 6px; }
+.input-row select { flex: 1; min-width: 0; }
+.form-stack { display: flex; flex-direction: column; gap: 12px; }
+.auth { max-width: 400px; margin: 40px auto; padding: 24px; }
+.auth h1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+table.mini { width: 100%; }
+table.mini td { padding: 3px 0; border: 0; }
+table.mini tr.total td { border-top: 1px solid var(--border); font-weight: 700; padding-top: 6px; }
+.lookup-hits a { color: var(--primary); }
+.lookup-hits > div + div { margin-top: 2px; }
+.section .lookup-hits, .section.lookup-hits { background: var(--surface); }
+[hidden] { display: none !important; }
+input, select, textarea { font-size: 16px; } /* voorkomt inzoomen op iPhone */
+@media (max-width: 700px) {
+  .topbar { flex-wrap: wrap; row-gap: 6px; }
+  .topbar nav { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .page-head .month-nav { order: 5; width: 100%; justify-content: center; }
+  .modal-backdrop { padding: 0; }
+  .modal { border-radius: 0; min-height: 100vh; }
+}
