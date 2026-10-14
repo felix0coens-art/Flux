@@ -470,10 +470,11 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 0
 .donut-legend .amt { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; }
 
 /* ---------- Gestapelde vermogensgrafiek en "geen gegevens" ---------- */
-.chart-wrap .nw-layer { opacity: .85; stroke: var(--surface); stroke-width: 1; }
-.chart-wrap rect.nodata { fill: url(#nodata-hatch); }
-.chart-wrap rect.nodata.partial { opacity: .55; }
-.chart-wrap .hatch-line { stroke: var(--muted-mark); stroke-width: 2; }
+.chart-wrap .nw-layer { fill-opacity: .16; stroke: none; }
+.chart-wrap .nw-edge { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart-wrap rect.nodata { fill: url(#nodata-hatch); opacity: .45; }
+.chart-wrap rect.nodata.partial { opacity: .25; }
+.chart-wrap .hatch-line { stroke: var(--muted-mark); stroke-width: 1; }
 .chart-wrap text.nodata-label { fill: var(--muted); font-size: 12px; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
 .legend .nodata-sw { background: repeating-linear-gradient(45deg, var(--muted-mark) 0 2px, transparent 2px 5px); border: 1px solid var(--muted-mark); }
 .chart-wrap text.muted-fill { fill: var(--muted); }

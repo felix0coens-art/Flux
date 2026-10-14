@@ -427,7 +427,7 @@
     const missing = state.accounts.filter(a => a.type !== 'cash' && !(a.balance && a.balance.amount != null) && state.transactions.some(t => t.accountId === a.id));
     if (!ser.comps.length) return `<p class="muted">Om je vermogen door de tijd te tonen heeft Helder voor minstens één rekening een gekend saldo nodig. Bij KBC gebeurt dat automatisch bij het opladen; bij Argenta geef je het één keer in (Bank → rekening → Bewerk).</p>`;
     const narrow = window.innerWidth < 700;
-    const W = narrow ? 400 : 760, H = narrow ? 240 : 280, L = narrow ? 52 : 70, R = narrow ? 64 : 170, T = 14, B = 26;
+    const W = narrow ? 400 : 760, H = narrow ? 190 : 210, L = narrow ? 52 : 70, R = narrow ? 64 : 170, T = 14, B = 26;
     const n = ser.dates.length;
     // Gestapeld: positieve saldi naar boven, negatieve (bv. kredietkaart) naar onder
     const up = ser.comps.map(() => []), lo = ser.comps.map(() => []);
@@ -454,10 +454,10 @@
       const idx = []; for (let i = i0; i <= i1; i++) idx.push(i);
       if (idx.length === 1) { const [a, b] = band(i0, i1); return `<rect x="${a}" width="${Math.max(2, b - a)}" y="${y(up[ci][i0])}" height="${Math.max(1, y(lo[ci][i0]) - y(up[ci][i0]))}" fill="${slots[ci % slots.length]}" class="nw-layer"/>`; }
       const d = 'M' + idx.map(i => x(i).toFixed(1) + ' ' + y(up[ci][i]).toFixed(1)).join(' L') + ' L' + idx.slice().reverse().map(i => x(i).toFixed(1) + ' ' + y(lo[ci][i]).toFixed(1)).join(' L') + ' Z';
-      return `<path d="${d}" fill="${slots[ci % slots.length]}" class="nw-layer"/>`;
+      const edge = 'M' + idx.map(i => x(i).toFixed(1) + ' ' + y(c.values[i] >= 0 ? up[ci][i] : lo[ci][i]).toFixed(1)).join(' L');
+      return `<path d="${d}" fill="${slots[ci % slots.length]}" class="nw-layer"/><path d="${edge}" stroke="${slots[ci % slots.length]}" class="nw-edge"/>`;
     }).join('')).join('');
     const complete = i => ser.totals[i] != null && ser.known[i] === ser.comps.length;
-    const totalPath = runs(n, complete).map(([i0, i1]) => { let d = ''; for (let i = i0; i <= i1; i++) d += (i === i0 ? 'M' : 'L') + x(i).toFixed(1) + ' ' + y(ser.totals[i]).toFixed(1) + ' '; return d; }).join('');
     // Geen of onvolledige gegevens: gearceerd
     const none = runs(n, i => !ser.known[i]);
     const partial = runs(n, i => ser.known[i] && ser.known[i] < ser.comps.length);
@@ -475,7 +475,6 @@
       .filter(e => e.y != null);
     if (lastKnown >= 0) {
       ends.push({ total: true, y: y(ser.totals[lastKnown]) - 6 });
-      if (lastKnown < n - 1 && !narrow) ends.push({ when: true, y: y(ser.totals[lastKnown]) + 7 });
     }
     ends.sort((a, b) => a.y - b.y || (a.total ? -1 : a.when ? (b.total ? 1 : -1) : 1));
     if (ends.length) ends[0].y = Math.max(12, ends[0].y);
@@ -487,7 +486,6 @@
     return `
       <div class="legend">
         ${ser.comps.map((c, ci) => `<span><i class="sw" style="background:${slots[ci % slots.length]}"></i>${esc(c.name)}</span>`).join('')}
-        <span><i class="sw line" style="background:var(--text)"></i><strong>Totaal</strong></span>
         ${none.length || partial.length ? '<span><i class="sw nodata-sw"></i>geen gegevens</span>' : ''}
       </div>
       <div class="chart-wrap" id="nw-chart">
@@ -497,8 +495,7 @@
           ${ser.dates.map((d, i) => i % labelEvery === 0 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${xLabel(d)}</text>` : '').join('')}
           ${hatch(none, 'nodata', 'Geen gegevens')}${hatch(partial, 'nodata partial', '')}
           ${layers}
-          <path d="${totalPath}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" opacity=".85"/>
-          ${ends.map(e => { if (e.total) return `<text x="${W - R + 8}" y="${e.y + 4}" class="direct">${compact(ser.totals[lastKnown])}${narrow ? '' : ' totaal'}</text>`;
+          ${ends.map(e => { if (e.total) return `<text x="${W - R + 8}" y="${e.y + 4}" class="direct">${compact(ser.totals[lastKnown])}${narrow ? '' : ' totaal'}${lastKnown < n - 1 && !narrow ? `<tspan class="muted-fill small-label"> · ${fmtDate(ser.dates[lastKnown]).slice(0, 5)}</tspan>` : ''}</text>`;
             if (e.when) return `<text x="${W - R + 8}" y="${e.y + 4}" class="direct muted-fill small-label">op ${fmtDate(ser.dates[lastKnown])}</text>`;
             const nm = ser.comps[e.ci].name; return `<text x="${W - R + 8}" y="${e.y + 4}" class="direct muted-fill"><title>${esc(nm)}</title>${narrow ? '' : esc(nm.length > 11 ? nm.slice(0, 10) + '…' : nm) + ' '}${compact(e.v || 0)}</text>`; }).join('')}
           <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>
