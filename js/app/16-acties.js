@@ -2,35 +2,85 @@
 
   function actionById(id) { return (state.actions || []).find(a => a.id === id) || null; }
 
-  /** Eén actie: wat je uitgaf, wat er terugkwam, wat nog open staat, en alle transacties. */
+  /** Voorbeelden om snel een actie te maken. */
+  const ACTION_IDEAS = ['Geld terugvragen', 'Retour binnenbrengen', 'Bonnetje indienen', 'Garantie aanvragen', 'Factuur nakijken'];
+
+  /** Open acties (te laat en vroegste datum eerst) en gedane acties (laatst gedaan eerst). */
+  function actionLists() {
+    const all = state.actions || [];
+    const open = all.filter(a => !a.closed).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || (a.createdAt || '').localeCompare(b.createdAt || ''));
+    const done = all.filter(a => a.closed).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
+    return { open, done };
+  }
+
+  function dueLabel(a) {
+    if (!a.due || a.closed) return '';
+    const d = C.daysBetween(today, a.due);
+    const txt = d < 0 ? (-d === 1 ? '1 dag te laat' : -d + ' dagen te laat') : d === 0 ? 'vandaag' : d === 1 ? 'morgen' : 'tegen ' + fmtDate(a.due);
+    return `<span class="act-due ${d < 0 ? 'late' : d <= 2 ? 'soon' : ''}">📅 ${txt}</span>`;
+  }
+
+  /** Eén actie als lijn om af te vinken, met de transacties waar ze over gaat. */
+  function actionRow(a) {
+    const s = C.actionSummary(state, a);
+    const name = t => esc(t.title || t.counterparty || t.description || '—');
+    return `<div class="act-row ${a.closed ? 'is-done' : ''}">
+      <button class="act-check" data-action="action-done" data-id="${esc(a.id)}" aria-pressed="${a.closed ? 'true' : 'false'}" title="${a.closed ? 'Toch nog niet gedaan' : 'Afvinken: gedaan'}">${a.closed ? '✓' : ''}</button>
+      <div class="grow">
+        <div class="act-title"><button class="linklike act-name" data-action="action-view" data-id="${esc(a.id)}">${esc(a.name)}</button>${dueLabel(a)}${a.closed && a.doneAt ? `<span class="small muted">gedaan op ${fmtDate(a.doneAt)}</span>` : ''}</div>
+        ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}
+        <div class="act-txs">${s.txs.slice(0, 4).map(t => `<a href="#" class="act-tx" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)} <span class="${amountClass(t.amount)}">${money(t.amount)}</span></a>`).join('')}${s.txs.length > 4 ? `<button class="linklike small" data-action="action-view" data-id="${esc(a.id)}">+${s.txs.length - 4} meer</button>` : ''}
+          ${a.closed ? '' : `<button class="linklike small" data-action="action-add-tx" data-id="${esc(a.id)}">${s.txs.length ? '+ transactie' : '+ Kies de transactie(s)'}</button>`}</div>
+        ${a.expectBack && s.out ? `<div class="small ${s.open > 0 ? 'muted' : 'pos'}">${s.open > 0 ? `nog ${money(s.open)} terug te krijgen${a.person ? ' van ' + esc(a.person) : ''}` : '✓ terugbetaald'}</div>` : ''}
+      </div>
+      <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}" title="Bewerken" aria-label="Bewerken">✎</button>
+    </div>`;
+  }
+
+  /** Eén actie in detail: alle transacties, en wat er (eventueel) terugkwam. */
   function actionCard(a, inModal) {
     const s = C.actionSummary(state, a);
-    const pct = a.expectBack && s.out ? Math.min(1, s.back / s.out) : 0;
     const name = t => esc(t.title || t.counterparty || t.description || '—');
     return `<div class="${inModal ? '' : 'card '}action-card ${a.closed ? 'closed' : ''}" id="action-${esc(a.id)}">
       <div class="action-head">
-        <div class="grow"><strong class="action-name">🏷 ${esc(a.name)}</strong>${a.closed ? ' <span class="badge">afgerond</span>' : ''}
+        <button class="act-check" data-action="action-done" data-id="${esc(a.id)}" aria-pressed="${a.closed ? 'true' : 'false'}" title="${a.closed ? 'Toch nog niet gedaan' : 'Afvinken: gedaan'}">${a.closed ? '✓' : ''}</button>
+        <div class="grow"><strong class="action-name">${esc(a.name)}</strong> ${a.closed ? '<span class="badge ok">gedaan</span>' : dueLabel(a)}
           ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}</div>
         ${a.expectBack ? `<div class="action-open"><div class="small muted">${s.open > 0 ? 'nog terug te krijgen' + (a.person ? ' van ' + esc(a.person) : '') : 'terugbetaald'}</div><strong class="${s.open > 0 ? '' : 'pos'}">${s.open > 0 ? money(s.open) : '✓'}</strong></div>` : ''}
       </div>
-      <div class="action-totals small">
-        <span>Uitgegeven <strong>${money(s.out)}</strong></span>
-        ${s.back ? `<span>Teruggekregen <strong class="pos">${money(s.back)}</strong></span>` : ''}
-        <span>${s.txs.length} transactie${s.txs.length === 1 ? '' : 's'}</span>
-      </div>
-      ${a.expectBack && s.out ? `<div class="progress"><div class="bar ok" style="width:${(pct * 100).toFixed(1)}%"></div></div>` : ''}
       ${s.txs.length ? `<div class="action-txs">${s.txs.map(t => `<div class="action-tx">
           <div class="at-main"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)}</a>
             <div class="small muted">${fmtDate(t.date)}${t.title && t.counterparty ? ' · ' + esc(t.counterparty) : ''}${t.categoryId ? ' · ' + esc(catLabel(t.categoryId)) : ''}</div></div>
           <span class="amount ${amountClass(t.amount)}">${money(t.amount)}</span>
           <button class="btn small ghost" data-action="action-tx-remove" data-action-id="${esc(a.id)}" data-id="${esc(t.id)}" title="Uit deze actie halen">✕</button></div>`).join('')}</div>`
-        : '<p class="small muted">Nog geen transacties. Voeg ze toe met de knop hieronder, of kies de actie bij een transactie.</p>'}
+        : '<p class="small muted">Nog geen transacties gekoppeld.</p>'}
       <div class="card-tools">
-        <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}">+ Transacties toevoegen</button>
-        ${a.closed ? `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="0">Heropenen</button>` : `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>`}
+        <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}">+ Transacties</button>
         <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎ Bewerk</button>
       </div>
     </div>`;
+  }
+
+  /** Actie afvinken (of terug openzetten), met een knop om het meteen terug te draaien. */
+  function toggleActionDone(id) {
+    const a = actionById(id);
+    if (!a) return;
+    a.closed = !a.closed;
+    if (a.closed) a.doneAt = today; else delete a.doneAt;
+    commit();
+    if (modal && modal.type === 'actionView') renderModal();
+    if (a.closed) toast(`✓ “${a.name}” gedaan`, { label: 'Ongedaan maken', run: () => toggleActionDone(id) });
+  }
+
+  /** Nieuwe actie met enkel een naam, en meteen de transactie(s) kiezen. */
+  function quickAction(name, txIds) {
+    name = String(name || '').trim();
+    if (!name) return;
+    const a = { id: C.uid('act'), name, expectBack: false, person: '', note: '', createdAt: new Date().toISOString() };
+    state.actions = (state.actions || []).concat([a]);
+    if (txIds && txIds.length) { addToAction(txIds, a.id); commit(`Actie “${name}” toegevoegd`); return; }
+    commit();
+    openModal({ type: 'actionPick', id: a.id, chosen: new Set(), search: '' });
   }
 
   function actionModal() {
@@ -38,11 +88,14 @@
     const a = m.edit;
     return modalShell(m.isNew ? 'Nieuwe actie' : 'Actie bewerken', `
       <div class="form-stack">
-        <label class="field"><span>Naam</span><input type="text" id="act-name" maxlength="60" value="${esc(a.name || '')}" placeholder="bv. Kleren voor mama"></label>
-        <label class="check"><input type="checkbox" id="act-back" ${a.expectBack ? 'checked' : ''}> Ik moet dit (deels) terugkrijgen</label>
-        <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="act-person" maxlength="40" list="act-people" value="${esc(a.person || '')}" placeholder="bv. mama">
+        <label class="field"><span>Wat moet er gebeuren?</span><input type="text" id="act-name" maxlength="60" value="${esc(a.name || '')}" placeholder="bv. Retour binnenbrengen, Geld terugvragen aan mama" list="act-ideas">
+          <datalist id="act-ideas">${ACTION_IDEAS.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+        <label class="field"><span>Tegen wanneer? <span class="muted small">(optioneel)</span></span><input type="date" id="act-due" value="${esc(a.due || '')}"></label>
+        <label class="field"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="act-note" maxlength="120" value="${esc(a.note || '')}" placeholder="bv. retourlabel zit in de mail"></label>
+        <label class="check"><input type="checkbox" id="act-back" ${a.expectBack ? 'checked' : ''}> Hier komt geld van terug — toon hoeveel nog open staat</label>
+        <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="act-person" maxlength="40" list="act-people" value="${esc(a.person || '')}" placeholder="bv. mama, of de winkel">
           <datalist id="act-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
-        <label class="field"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="act-note" maxlength="120" value="${esc(a.note || '')}"></label>
+        ${m.isNew ? '' : `<label class="check"><input type="checkbox" id="act-closed" ${a.closed ? 'checked' : ''}> Gedaan</label>`}
         <div class="errors" id="act-errors"></div>
       </div>`,
       `${m.isNew ? '' : '<button class="btn danger" data-action="action-delete">Verwijderen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="action-save">Opslaan</button>`);
@@ -51,8 +104,14 @@
   function saveAction() {
     const m = modal;
     const name = $('#act-name').value.trim();
-    if (!name) { $('#act-errors').textContent = 'Geef de actie een naam.'; return; }
+    if (!name) { $('#act-errors').textContent = 'Schrijf wat er moet gebeuren.'; return; }
     const a = Object.assign({}, m.edit, { name, expectBack: $('#act-back').checked, person: $('#act-person').value.trim(), note: $('#act-note').value.trim() });
+    const due = $('#act-due').value;
+    if (C.parseDate(due)) a.due = due; else delete a.due;
+    const closed = $('#act-closed') ? $('#act-closed').checked : !!a.closed;
+    if (closed && !a.closed) a.doneAt = today;
+    if (!closed) delete a.doneAt;
+    a.closed = closed;
     state.actions = state.actions || [];
     const i = state.actions.findIndex(x => x.id === a.id);
     if (i >= 0) state.actions[i] = a; else state.actions.push(Object.assign(a, { createdAt: new Date().toISOString() }));
@@ -74,7 +133,7 @@
       .filter(t => !q || `${t.title || ''} ${t.counterparty} ${t.description} ${C.centsToInput(t.amount)}`.toLowerCase().includes(q))
       .sort((x, y) => y.date.localeCompare(x.date)).slice(0, 120);
     return modalShell(`Toevoegen aan “${a ? a.name : ''}”`, `
-      <p class="small muted">Vink de uitgaven aan die bij deze actie horen, en ook de terugbetalingen${a && a.person ? ' van ' + esc(a.person) : ''} als die al binnenkwamen.</p>
+      <p class="small muted">Vink de transactie(s) aan waar deze actie over gaat${a && a.expectBack ? ', en ook de terugbetalingen als die al binnenkwamen' : ''}.</p>
       <input type="search" id="act-search" placeholder="Zoeken…" value="${esc(m.search || '')}">
       <div class="table-wrap" style="margin-top:8px"><table class="tx-table"><tbody>${list.map(t => `<tr class="${m.chosen.has(t.id) ? 'is-selected' : ''}">
         <td class="sel-cell"><input type="checkbox" data-act-pick="${esc(t.id)}" ${m.chosen.has(t.id) ? 'checked' : ''}></td>
@@ -89,15 +148,15 @@
     let id = sel.value;
     if (!id) return;
     if (id === '__new__') {
-      const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+      const name = (prompt('Wat moet er gebeuren? (bv. “Retour binnenbrengen”)') || '').trim();
       if (!name) { sel.value = ''; return; }
-      const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
+      const a = { id: C.uid('act'), name, expectBack: false, person: '', note: '', createdAt: new Date().toISOString() };
       state.actions = (state.actions || []).concat([a]);
       id = a.id;
     }
     const a = actionById(id);
     t.actions = (t.actions || []).filter(x => x !== id).concat([id]);
-    sel.insertAdjacentHTML('beforebegin', `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`);
+    sel.insertAdjacentHTML('beforebegin', `<span class="badge action-badge">✅ ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`);
     const opt = Array.from(sel.options).find(o => o.value === id);
     if (opt) opt.remove();
     sel.value = '';

@@ -9,7 +9,7 @@
       <strong>${n} geselecteerd</strong>
       <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
       ${(() => { const r = bulkRefundTarget(); return r ? `<button class="btn small primary" data-action="bulk-refund" title="De inkomende bedragen tellen als terugbetaling van deze uitgave">↩ ${r.incomes.length === 1 ? 'Terugbetaling' : r.incomes.length + ' terugbetalingen'} van ${esc((r.expense.title || r.expense.counterparty || 'de uitgave').slice(0, 24))} koppelen</button>` : ''; })()}
-      ${(state.actions || []).some(a => !a.closed) || true ? `<select class="bulk-action" data-bulk-action aria-label="Aan een actie toevoegen"><option value="">🏷 Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select>` : ''}
+      <select class="bulk-action" data-bulk-action aria-label="Actie toevoegen"><option value="">✅ Actie toevoegen…</option>${ACTION_IDEAS.map(x => `<option value="idea:${esc(x)}">${esc(x)}</option>`).join('')}${(state.actions || []).some(a => !a.closed) ? `<optgroup label="Bij een open actie">${actionLists().open.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</optgroup>` : ''}<option value="__new__">+ Andere actie…</option></select>
       <button class="btn small danger" data-action="bulk-delete">🗑 Verwijderen</button>
       <button class="btn small ghost" data-action="bulk-clear">Selectie wissen</button></div>`;
   }
@@ -75,7 +75,7 @@
     if (t.categorySource === 'system') extra.push('<span class="badge small muted" title="Automatisch herkend">⚙ automatisch</span>');
     if (C.looksLikeRefund(t)) extra.push('<span class="badge maybe">Van een vriend?</span>');
     if ((t.attachments || []).length) extra.push(`<span class="badge small" title="${t.attachments.length} bonnetje(s)">📎 ${t.attachments.length}</span>`);
-    for (const id of t.actions || []) { const a = actionById(id); if (a) extra.push(`<span class="badge action-badge" data-action="action-view" data-id="${esc(a.id)}" title="Actie: alles wat hierbij hoort">🏷 ${esc(a.name)}</span>`); }
+    for (const id of t.actions || []) { const a = actionById(id); if (a) extra.push(`<span class="badge action-badge ${a.closed ? 'done' : ''}" data-action="action-view" data-id="${esc(a.id)}" title="${a.closed ? 'Actie gedaan' : 'Actie nog te doen'}">${a.closed ? '✓' : '☐'} ${esc(a.name)}</span>`); }
     const hint = ui.ruleHint && ui.ruleHint.txId === t.id && t.categoryId === ui.ruleHint.categoryId && (t.counterparty || t.description);
     const sel = ui.selected.has(t.id);
     return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''} ${sel ? 'is-selected' : ''}">

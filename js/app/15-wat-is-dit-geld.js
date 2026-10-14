@@ -12,7 +12,7 @@
       ['income', '💶', 'Inkomen', 'Loon, een cadeau, iets dat je verkocht, rente, …'],
       ['refund', '↩', 'Ik krijg geld terug van een uitgave', 'Iemand betaalt zijn deel van iets dat jij betaalde, of een bestelling werd geannuleerd of teruggestort. De uitgave wordt dan kleiner.'],
       ['advance', '🤝', 'Iemand betaalt een voorschot terug', 'Je had iets voorgeschoten voor iemand (dat telde niet als jouw uitgave).'],
-      ['action', '🏷', 'Het hoort bij een actie', 'Bv. mama betaalt de kleren terug die jij voor haar kocht.'],
+      ['action', '✅', 'Het hoort bij een actie', 'Bv. het geld van een retour, of mama die de kleren terugbetaalt.'],
       ['transfer', '↔', 'Van een eigen rekening', 'Je zette zelf geld over, bv. van je spaarrekening.']
     ];
     const c = m.choice;

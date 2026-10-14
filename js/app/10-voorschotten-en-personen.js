@@ -31,32 +31,19 @@
   }
 
   /**
-   * "Terug te krijgen": voorschotten (je betaalde voor iemand anders, telt niet als jouw uitgave) en
-   * acties (jouw eigen uitgaven gebundeld, telt wel als uitgave) op één plek. Een actie met een persoon
-   * staat mee op de kaart van die persoon, zodat je per persoon ziet wat er in totaal nog open staat.
+   * "Opvolgen": twee soorten dingen die nog niet af zijn.
+   *  - Acties: iets dat jij nog moet dóén bij een of meer transacties (geld terugvragen, retour binnenbrengen,
+   *    bonnetje indienen, …). Je vinkt ze af als het gedaan is. Ze veranderen niets aan de cijfers.
+   *  - Voorschotten: geld dat iemand anders jou nog moet (je betaalde voor hen; telt niet als jouw uitgave).
    */
   function renderAdvances() {
     const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
     const showAdv = f !== 'act', showAct = f !== 'adv';
-    const lc = s => String(s || '').trim().toLowerCase();
-    const actions = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const sumOf = new Map(actions.map(a => [a.id, C.actionSummary(state, a)]));
-    const actOpen = a => a.expectBack && !a.closed ? Math.max(0, sumOf.get(a.id).open) : 0;
-    const people = C.personList(state);
-    // Personen die enkel in een actie voorkomen, krijgen ook een kaart
-    for (const a of actions) if (a.person && !a.closed && !people.some(p => lc(p.name) === lc(a.person)))
-      people.push({ name: a.person.trim(), entity: null, stats: { person: a.person.trim(), advanced: 0, repaid: 0, forgiven: 0, open: 0, items: [], ledger: [] } });
-    const actsOf = p => f === 'all' ? actions.filter(a => !a.closed && lc(a.person) === lc(p.name)) : [];
-    const totalOf = p => (showAdv ? Math.max(0, p.stats.open) : 0) + actsOf(p).reduce((t, a) => t + actOpen(a), 0);
-    const isOpen = p => (showAdv && p.stats.open > 0) || actsOf(p).length > 0;
-    const shown = f === 'act' ? [] : people.filter(p => f === 'all' || p.stats.items.length || p.entity || p.stats.open);
-    const openPeople = shown.filter(isOpen).sort((a, b) => totalOf(b) - totalOf(a) || a.name.localeCompare(b.name));
-    const done = shown.filter(p => !isOpen(p)).sort((a, b) => a.name.localeCompare(b.name));
-    const looseActs = !showAct ? [] : actions.filter(a => !a.closed && (f === 'act' || !a.person || !shown.some(p => lc(p.name) === lc(a.person))));
-    const closedActs = showAct ? actions.filter(a => a.closed) : [];
-
-    const advTotal = people.reduce((t, p) => t + Math.max(0, p.stats.open), 0);
-    const actTotal = actions.reduce((t, a) => t + actOpen(a), 0);
+    const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
+    const openPeople = people.filter(p => p.stats.open > 0);
+    const done = people.filter(p => p.stats.open <= 0);
+    const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
+    const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
     const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
     const plural = (n, one, more) => n + ' ' + (n === 1 ? one : more);
@@ -74,62 +61,42 @@
         ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(fg.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
-    const advLine = (p, it) => {
-      const left = it.amount - it.repaid;
-      const key = esc(advKey(it));
-      return `<div class="adv-item kind-adv">
-        <div class="adv-item-top">
-          <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
-          <strong class="adv-amt">${money(left)}</strong>
-        </div>
-        <div class="small muted adv-sub"><span class="kind-tag adv">🤝 voorschot</span> ${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
-        <div class="adv-paid"><span class="small muted">Betaald?</span>
-          <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
-          <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
-          <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
-        </div>
-      </div>`;
-    };
-    const actLine = a => {
-      const s = sumOf.get(a.id);
-      const open = actOpen(a);
-      return `<div class="adv-item kind-act">
-        <div class="adv-item-top">
-          <button class="adv-title" data-action="action-view" data-id="${esc(a.id)}" title="Alle transacties van deze actie">${esc(a.name)}</button>
-          <strong class="adv-amt">${a.expectBack ? (open > 0 ? money(open) : '✓') : ''}</strong>
-        </div>
-        <div class="small muted adv-sub"><span class="kind-tag act">🏷 actie</span> eigen uitgave ${money(s.out)}${s.back ? ` · al ${money(s.back)} terug` : ''} · ${plural(s.txs.length, 'transactie', 'transacties')}</div>
-        <div class="adv-paid">
-          <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}" title="Uitgaven of terugbetalingen toevoegen">+ Transacties</button>
-          <button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>
-          <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎</button>
-        </div>
-      </div>`;
-    };
     const personTools = p => `<div class="card-tools">
         <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot</button>
-        ${p.stats.items.length ? `<button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>` : ''}
-        ${p.entity ? `<button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button>` : ''}</div>`;
+        <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>
+        <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>`;
     const openCard = p => {
       const st = p.stats;
-      const sugg = showAdv && st.open > 0 ? C.suggestRepayments(state, p.name, (p.entity || {}).ibans, today, 3) : [];
-      const items = showAdv ? st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date)) : [];
-      const acts = actsOf(p);
-      const count = [items.length ? plural(items.length, 'voorschot', 'voorschotten') : '', acts.length ? plural(acts.length, 'actie', 'acties') : ''].filter(Boolean).join(' · ');
+      const sugg = C.suggestRepayments(state, p.name, (p.entity || {}).ibans, today, 3);
+      const items = st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date));
       return `<div class="card person-card">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${count}</div></div>
-          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(totalOf(p))}</strong></div></div>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${plural(items.length, 'open voorschot', 'open voorschotten')}</div></div>
+          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(st.open)}</strong></div></div>
         ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.title || x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
-        <div class="adv-items">${items.map(it => advLine(p, it)).join('')}${acts.map(actLine).join('')}</div>
-        ${showAdv ? history(p) : ''}
+        <div class="adv-items">${items.map(it => {
+          const key = esc(advKey(it));
+          return `<div class="adv-item">
+            <div class="adv-item-top">
+              <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
+              <strong class="adv-amt">${money(it.amount - it.repaid)}</strong>
+            </div>
+            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
+            <div class="adv-paid"><span class="small muted">Betaald?</span>
+              <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
+              <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
+              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+            </div>
+          </div>`;
+        }).join('')}</div>
+        ${history(p)}
         ${personTools(p)}
       </div>`;
     };
     const doneCard = p => {
       const st = p.stats;
-      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets open</span>';
+      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
       return `<div class="card person-card done">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
           <div class="grow"><strong class="person-name">${esc(p.name)}</strong></div>${status}</div>
@@ -139,43 +106,40 @@
       </div>`;
     };
     const seg = (k, label) => `<button class="${f === k ? 'active' : ''}" data-action="owed-filter" data-f="${k}">${label}</button>`;
-    const total = (showAdv ? advTotal : 0) + (showAct ? actTotal : 0);
-    const nothing = !openPeople.length && !looseActs.length;
+    const late = openActs.filter(a => a.due && a.due < today).length;
+    const actSection = !showAct ? '' : `
+      <section class="follow-block">
+        <div class="follow-head"><h2 class="section-title">✅ Acties — nog te doen <span class="muted small">(${openActs.length})</span></h2></div>
+        <form class="act-quick" data-form="action-quick">
+          <input type="text" name="name" maxlength="60" placeholder="Nieuwe actie, bv. “Retour binnenbrengen”" aria-label="Nieuwe actie" autocomplete="off">
+          <button class="btn primary" type="submit">+ Actie</button>
+        </form>
+        <div class="act-ideas small">${ACTION_IDEAS.map(x => `<button class="chip" data-action="action-idea" data-name="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+        ${openActs.length ? `<div class="card act-list">${openActs.map(a => actionRow(a)).join('')}</div>`
+          : '<div class="card empty-state"><p>🎉 Niets meer te doen. Tip: selecteer transacties bij <strong>Bank</strong> en kies <strong>✅ Actie toevoegen</strong>.</p></div>'}
+        ${doneActs.length ? `<details class="act-done" data-keep="actDone" ${ui.keepOpen.actDone ? 'open' : ''}><summary class="small"><strong>Gedaan</strong> <span class="muted">(${doneActs.length})</span></summary>
+          <div class="card act-list">${doneActs.map(a => actionRow(a)).join('')}</div></details>` : ''}
+      </section>`;
+    const advSection = !showAdv ? '' : `
+      <section class="follow-block">
+        <div class="follow-head"><h2 class="section-title">🤝 Voorschotten — nog terug te krijgen <span class="muted small">${advTotal ? money(advTotal) : ''}</span></h2><span class="spacer"></span>
+          <button class="btn small" data-action="person-new">+ Persoon</button>
+          <button class="btn small primary" data-action="adv-pick" data-dir="out">+ Voorschot</button></div>
+        ${openPeople.length ? `<div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
+          : `<div class="card empty-state"><p>${people.length ? '🎉 Niemand is je nog iets schuldig.' : 'Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Typ bij die transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>`}
+        ${done.length ? `<details class="act-done" data-keep="advDone" ${ui.keepOpen.advDone ? 'open' : ''}><summary class="small"><strong>Alles in orde</strong> <span class="muted">(${plural(done.length, 'persoon', 'personen')})</span></summary>
+          <div class="grid cards people" style="margin-top:10px">${done.map(doneCard).join('')}</div></details>` : ''}
+      </section>`;
     return `
-      <div class="page-head"><h1>Terug te krijgen</h1><span class="spacer"></span>
-        <button class="btn primary" data-action="owed-new">+ Toevoegen</button></div>
-      <details class="owed-help" data-keep="owedHelp" ${(ui.keepOpen.owedHelp != null ? ui.keepOpen.owedHelp : !people.length && !actions.length) ? 'open' : ''}>
-        <summary><span class="kind-tag adv">🤝 voorschot</span> of <span class="kind-tag act">🏷 actie</span>? <span class="small muted">Wat is het verschil</span></summary>
-        <div class="owed-kinds">
-          <div class="owed-kind adv"><strong>🤝 Voorschot</strong><span>Je betaalde voor iemand anders. Het is <b>niet jouw uitgave</b> en telt nergens mee.</span></div>
-          <div class="owed-kind act"><strong>🏷 Actie</strong><span>Je eigen uitgaven, gebundeld (bv. <em>kleren voor mama</em>). Ze <b>tellen wel als uitgave</b>; wat terugkomt, maakt ze kleiner.</span></div>
-        </div>
-      </details>
-      <div class="adv-summary card">
-        <div><div class="label">Nog terug te krijgen</div><div class="value">${money(total)}</div></div>
-        <div class="small muted">${f === 'all' && advTotal && actTotal ? `${money(advTotal)} aan voorschotten · ${money(actTotal)} via acties` : f === 'act' ? 'via acties' : f === 'adv' ? 'aan voorschotten' : ''}</div>
-        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('adv', '🤝 Voorschotten')}${seg('act', '🏷 Acties')}</div>
+      <div class="page-head"><h1>Opvolgen</h1><span class="spacer"></span>
+        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}</div></div>
+      <div class="follow-sum">
+        <button class="follow-stat act" data-action="owed-filter" data-f="act"><span class="label">Acties te doen</span><strong>${openActs.length}</strong>${late ? `<span class="small warn-text">${late} te laat</span>` : ''}</button>
+        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}</span></button>
       </div>
-      ${openPeople.length ? `<h2 class="section-title">Per persoon</h2><div class="grid cards people">${openPeople.map(openCard).join('')}</div>` : ''}
-      ${looseActs.length ? `<h2 class="section-title">${f === 'act' ? 'Open acties' : 'Acties zonder persoon'}</h2><div class="grid cards actions-grid">${looseActs.map(a => actionCard(a)).join('')}</div>` : ''}
-      ${nothing ? `<div class="card empty-state"><p>${people.length || actions.length ? '🎉 Niets meer open.' : 'Nog niets. Klik op <strong>+ Toevoegen</strong>, of typ bij een transactie in <em>Gekoppeld aan</em> een naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>` : ''}
-      ${done.length || closedActs.length ? `<details class="card owed-done" ${ui.keepOpen.owedDone ? 'open' : ''} data-keep="owedDone"><summary><strong>Afgehandeld</strong> <span class="small muted">(${[done.length ? plural(done.length, 'persoon', 'personen') : '', closedActs.length ? plural(closedActs.length, 'afgeronde actie', 'afgeronde acties') : ''].filter(Boolean).join(' · ')})</span></summary>
-        ${done.length ? `<div class="grid cards people" style="margin-top:12px">${done.map(doneCard).join('')}</div>` : ''}
-        ${closedActs.length ? `<div class="grid cards actions-grid" style="margin-top:12px">${closedActs.map(a => actionCard(a)).join('')}</div>` : ''}
-      </details>` : ''}`;
-  }
-
-  /** Eén knop "+ Toevoegen": eerst kiezen wat het is, met het verschil erbij. */
-  function owedNewModal() {
-    return modalShell('Wat wil je toevoegen?', `
-      <div class="owed-choice">
-        <button class="owed-opt adv" data-action="adv-pick" data-dir="out"><strong>🤝 Voorschot</strong>
-          <span>Ik betaalde (een deel) <b>voor iemand anders</b>, bv. de hele restaurantrekening. Dat deel is niet mijn uitgave.</span></button>
-        <button class="owed-opt act" data-action="action-new"><strong>🏷 Actie</strong>
-          <span>Een <b>eigen uitgave</b> (of meerdere) die ik wil bundelen en eventueel (deels) terugkrijg, bv. <em>kleren — mama betaalt terug</em>.</span></button>
-      </div>
-      <p class="small muted">Twijfel? Moet de uitgave meetellen in je eigen uitgaven? Kies dan <strong>actie</strong>. Anders <strong>voorschot</strong>.</p>`,
-      `<button class="btn ghost" data-action="person-new">+ Enkel een persoon</button><span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>`);
+      <p class="small muted follow-help"><strong>Actie</strong> = iets wat jij nog moet doen bij een transactie (geld terugvragen, retour binnenbrengen, bonnetje indienen); vink het af als het gedaan is.
+        <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.</p>
+      ${actSection}${advSection}`;
   }
 
   /**

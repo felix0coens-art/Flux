@@ -291,7 +291,12 @@
     const todo = todoCount();
     const bankBtn = $('#nav [data-view=bank]');
     if (bankBtn) bankBtn.innerHTML = 'Bank' + (todo ? ` <span class="count">${todo}</span>` : '');
-    const tabCount = $('#tabbar .tab-count');
+    const acts = (state.actions || []).filter(a => !a.closed).length;
+    const folBtn = $('#nav [data-view=advances]');
+    if (folBtn) folBtn.innerHTML = 'Opvolgen' + (acts ? ` <span class="count soft">${acts}</span>` : '');
+    const actCount = $('#tabbar .act-count');
+    if (actCount) { actCount.hidden = !acts; actCount.textContent = acts > 99 ? '99+' : String(acts); }
+    const tabCount = $('#tabbar [data-view=bank] .tab-count');
     if (tabCount) { tabCount.hidden = !todo; tabCount.textContent = todo > 99 ? '99+' : String(todo); }
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
@@ -365,14 +370,15 @@
 
     const worth = bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen);
     const cancels = C.cancellationPairs(state).length;
-    const actionsOpen = (state.actions || []).filter(a => !a.closed && a.expectBack).map(a => ({ a, s: C.actionSummary(state, a) })).filter(x => x.s.open > 0);
+    const actionsOpen = actionLists().open;
+    const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
     // Te doen: alles wat je aandacht vraagt, op één plek
     const todoItems = [
       todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
       cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
       ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${money(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
       ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${money(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
-      ...actionsOpen.map(x => `<a href="#" class="todo-row" data-action="action-view" data-id="${esc(x.a.id)}"><span class="todo-icon">🏷</span><span class="grow"><strong>${esc(x.a.name)}: nog ${money(x.s.open)} terug te krijgen</strong><span class="small muted">${x.a.person ? 'van ' + esc(x.a.person) : 'actie'}</span></span><span class="todo-go">›</span></a>`),
+      actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
       ...budgets.map(b => `<div class="todo-row"><span class="todo-icon">${b.status === 'over' ? '⚠️' : '⏳'}</span><span class="grow"><strong>Budget ${esc(catLabel(b.budget.categoryId))} ${b.status === 'over' ? 'overschreden' : 'bijna op'}</strong><span class="small muted">${Math.round(b.pct * 100)}% · ${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</span></span></div>`),
       ...upcoming.slice(0, 4).map(r => `<div class="todo-row"><span class="todo-icon">🔁</span><span class="grow"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</span></span><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`)
     ].filter(Boolean);
@@ -909,7 +915,7 @@
       <strong>${n} geselecteerd</strong>
       <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
       ${(() => { const r = bulkRefundTarget(); return r ? `<button class="btn small primary" data-action="bulk-refund" title="De inkomende bedragen tellen als terugbetaling van deze uitgave">↩ ${r.incomes.length === 1 ? 'Terugbetaling' : r.incomes.length + ' terugbetalingen'} van ${esc((r.expense.title || r.expense.counterparty || 'de uitgave').slice(0, 24))} koppelen</button>` : ''; })()}
-      ${(state.actions || []).some(a => !a.closed) || true ? `<select class="bulk-action" data-bulk-action aria-label="Aan een actie toevoegen"><option value="">🏷 Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select>` : ''}
+      <select class="bulk-action" data-bulk-action aria-label="Actie toevoegen"><option value="">✅ Actie toevoegen…</option>${ACTION_IDEAS.map(x => `<option value="idea:${esc(x)}">${esc(x)}</option>`).join('')}${(state.actions || []).some(a => !a.closed) ? `<optgroup label="Bij een open actie">${actionLists().open.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</optgroup>` : ''}<option value="__new__">+ Andere actie…</option></select>
       <button class="btn small danger" data-action="bulk-delete">🗑 Verwijderen</button>
       <button class="btn small ghost" data-action="bulk-clear">Selectie wissen</button></div>`;
   }
@@ -975,7 +981,7 @@
     if (t.categorySource === 'system') extra.push('<span class="badge small muted" title="Automatisch herkend">⚙ automatisch</span>');
     if (C.looksLikeRefund(t)) extra.push('<span class="badge maybe">Van een vriend?</span>');
     if ((t.attachments || []).length) extra.push(`<span class="badge small" title="${t.attachments.length} bonnetje(s)">📎 ${t.attachments.length}</span>`);
-    for (const id of t.actions || []) { const a = actionById(id); if (a) extra.push(`<span class="badge action-badge" data-action="action-view" data-id="${esc(a.id)}" title="Actie: alles wat hierbij hoort">🏷 ${esc(a.name)}</span>`); }
+    for (const id of t.actions || []) { const a = actionById(id); if (a) extra.push(`<span class="badge action-badge ${a.closed ? 'done' : ''}" data-action="action-view" data-id="${esc(a.id)}" title="${a.closed ? 'Actie gedaan' : 'Actie nog te doen'}">${a.closed ? '✓' : '☐'} ${esc(a.name)}</span>`); }
     const hint = ui.ruleHint && ui.ruleHint.txId === t.id && t.categoryId === ui.ruleHint.categoryId && (t.counterparty || t.description);
     const sel = ui.selected.has(t.id);
     return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''} ${sel ? 'is-selected' : ''}">
@@ -1228,32 +1234,19 @@
   }
 
   /**
-   * "Terug te krijgen": voorschotten (je betaalde voor iemand anders, telt niet als jouw uitgave) en
-   * acties (jouw eigen uitgaven gebundeld, telt wel als uitgave) op één plek. Een actie met een persoon
-   * staat mee op de kaart van die persoon, zodat je per persoon ziet wat er in totaal nog open staat.
+   * "Opvolgen": twee soorten dingen die nog niet af zijn.
+   *  - Acties: iets dat jij nog moet dóén bij een of meer transacties (geld terugvragen, retour binnenbrengen,
+   *    bonnetje indienen, …). Je vinkt ze af als het gedaan is. Ze veranderen niets aan de cijfers.
+   *  - Voorschotten: geld dat iemand anders jou nog moet (je betaalde voor hen; telt niet als jouw uitgave).
    */
   function renderAdvances() {
     const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
     const showAdv = f !== 'act', showAct = f !== 'adv';
-    const lc = s => String(s || '').trim().toLowerCase();
-    const actions = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const sumOf = new Map(actions.map(a => [a.id, C.actionSummary(state, a)]));
-    const actOpen = a => a.expectBack && !a.closed ? Math.max(0, sumOf.get(a.id).open) : 0;
-    const people = C.personList(state);
-    // Personen die enkel in een actie voorkomen, krijgen ook een kaart
-    for (const a of actions) if (a.person && !a.closed && !people.some(p => lc(p.name) === lc(a.person)))
-      people.push({ name: a.person.trim(), entity: null, stats: { person: a.person.trim(), advanced: 0, repaid: 0, forgiven: 0, open: 0, items: [], ledger: [] } });
-    const actsOf = p => f === 'all' ? actions.filter(a => !a.closed && lc(a.person) === lc(p.name)) : [];
-    const totalOf = p => (showAdv ? Math.max(0, p.stats.open) : 0) + actsOf(p).reduce((t, a) => t + actOpen(a), 0);
-    const isOpen = p => (showAdv && p.stats.open > 0) || actsOf(p).length > 0;
-    const shown = f === 'act' ? [] : people.filter(p => f === 'all' || p.stats.items.length || p.entity || p.stats.open);
-    const openPeople = shown.filter(isOpen).sort((a, b) => totalOf(b) - totalOf(a) || a.name.localeCompare(b.name));
-    const done = shown.filter(p => !isOpen(p)).sort((a, b) => a.name.localeCompare(b.name));
-    const looseActs = !showAct ? [] : actions.filter(a => !a.closed && (f === 'act' || !a.person || !shown.some(p => lc(p.name) === lc(a.person))));
-    const closedActs = showAct ? actions.filter(a => a.closed) : [];
-
-    const advTotal = people.reduce((t, p) => t + Math.max(0, p.stats.open), 0);
-    const actTotal = actions.reduce((t, a) => t + actOpen(a), 0);
+    const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
+    const openPeople = people.filter(p => p.stats.open > 0);
+    const done = people.filter(p => p.stats.open <= 0);
+    const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
+    const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
     const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
     const plural = (n, one, more) => n + ' ' + (n === 1 ? one : more);
@@ -1271,62 +1264,42 @@
         ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(fg.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
-    const advLine = (p, it) => {
-      const left = it.amount - it.repaid;
-      const key = esc(advKey(it));
-      return `<div class="adv-item kind-adv">
-        <div class="adv-item-top">
-          <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
-          <strong class="adv-amt">${money(left)}</strong>
-        </div>
-        <div class="small muted adv-sub"><span class="kind-tag adv">🤝 voorschot</span> ${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
-        <div class="adv-paid"><span class="small muted">Betaald?</span>
-          <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
-          <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
-          <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
-        </div>
-      </div>`;
-    };
-    const actLine = a => {
-      const s = sumOf.get(a.id);
-      const open = actOpen(a);
-      return `<div class="adv-item kind-act">
-        <div class="adv-item-top">
-          <button class="adv-title" data-action="action-view" data-id="${esc(a.id)}" title="Alle transacties van deze actie">${esc(a.name)}</button>
-          <strong class="adv-amt">${a.expectBack ? (open > 0 ? money(open) : '✓') : ''}</strong>
-        </div>
-        <div class="small muted adv-sub"><span class="kind-tag act">🏷 actie</span> eigen uitgave ${money(s.out)}${s.back ? ` · al ${money(s.back)} terug` : ''} · ${plural(s.txs.length, 'transactie', 'transacties')}</div>
-        <div class="adv-paid">
-          <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}" title="Uitgaven of terugbetalingen toevoegen">+ Transacties</button>
-          <button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>
-          <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎</button>
-        </div>
-      </div>`;
-    };
     const personTools = p => `<div class="card-tools">
         <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot</button>
-        ${p.stats.items.length ? `<button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>` : ''}
-        ${p.entity ? `<button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button>` : ''}</div>`;
+        <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>
+        <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>`;
     const openCard = p => {
       const st = p.stats;
-      const sugg = showAdv && st.open > 0 ? C.suggestRepayments(state, p.name, (p.entity || {}).ibans, today, 3) : [];
-      const items = showAdv ? st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date)) : [];
-      const acts = actsOf(p);
-      const count = [items.length ? plural(items.length, 'voorschot', 'voorschotten') : '', acts.length ? plural(acts.length, 'actie', 'acties') : ''].filter(Boolean).join(' · ');
+      const sugg = C.suggestRepayments(state, p.name, (p.entity || {}).ibans, today, 3);
+      const items = st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date));
       return `<div class="card person-card">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${count}</div></div>
-          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(totalOf(p))}</strong></div></div>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${plural(items.length, 'open voorschot', 'open voorschotten')}</div></div>
+          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(st.open)}</strong></div></div>
         ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.title || x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
-        <div class="adv-items">${items.map(it => advLine(p, it)).join('')}${acts.map(actLine).join('')}</div>
-        ${showAdv ? history(p) : ''}
+        <div class="adv-items">${items.map(it => {
+          const key = esc(advKey(it));
+          return `<div class="adv-item">
+            <div class="adv-item-top">
+              <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
+              <strong class="adv-amt">${money(it.amount - it.repaid)}</strong>
+            </div>
+            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
+            <div class="adv-paid"><span class="small muted">Betaald?</span>
+              <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
+              <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
+              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+            </div>
+          </div>`;
+        }).join('')}</div>
+        ${history(p)}
         ${personTools(p)}
       </div>`;
     };
     const doneCard = p => {
       const st = p.stats;
-      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets open</span>';
+      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
       return `<div class="card person-card done">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
           <div class="grow"><strong class="person-name">${esc(p.name)}</strong></div>${status}</div>
@@ -1336,43 +1309,40 @@
       </div>`;
     };
     const seg = (k, label) => `<button class="${f === k ? 'active' : ''}" data-action="owed-filter" data-f="${k}">${label}</button>`;
-    const total = (showAdv ? advTotal : 0) + (showAct ? actTotal : 0);
-    const nothing = !openPeople.length && !looseActs.length;
+    const late = openActs.filter(a => a.due && a.due < today).length;
+    const actSection = !showAct ? '' : `
+      <section class="follow-block">
+        <div class="follow-head"><h2 class="section-title">✅ Acties — nog te doen <span class="muted small">(${openActs.length})</span></h2></div>
+        <form class="act-quick" data-form="action-quick">
+          <input type="text" name="name" maxlength="60" placeholder="Nieuwe actie, bv. “Retour binnenbrengen”" aria-label="Nieuwe actie" autocomplete="off">
+          <button class="btn primary" type="submit">+ Actie</button>
+        </form>
+        <div class="act-ideas small">${ACTION_IDEAS.map(x => `<button class="chip" data-action="action-idea" data-name="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+        ${openActs.length ? `<div class="card act-list">${openActs.map(a => actionRow(a)).join('')}</div>`
+          : '<div class="card empty-state"><p>🎉 Niets meer te doen. Tip: selecteer transacties bij <strong>Bank</strong> en kies <strong>✅ Actie toevoegen</strong>.</p></div>'}
+        ${doneActs.length ? `<details class="act-done" data-keep="actDone" ${ui.keepOpen.actDone ? 'open' : ''}><summary class="small"><strong>Gedaan</strong> <span class="muted">(${doneActs.length})</span></summary>
+          <div class="card act-list">${doneActs.map(a => actionRow(a)).join('')}</div></details>` : ''}
+      </section>`;
+    const advSection = !showAdv ? '' : `
+      <section class="follow-block">
+        <div class="follow-head"><h2 class="section-title">🤝 Voorschotten — nog terug te krijgen <span class="muted small">${advTotal ? money(advTotal) : ''}</span></h2><span class="spacer"></span>
+          <button class="btn small" data-action="person-new">+ Persoon</button>
+          <button class="btn small primary" data-action="adv-pick" data-dir="out">+ Voorschot</button></div>
+        ${openPeople.length ? `<div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
+          : `<div class="card empty-state"><p>${people.length ? '🎉 Niemand is je nog iets schuldig.' : 'Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Typ bij die transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>`}
+        ${done.length ? `<details class="act-done" data-keep="advDone" ${ui.keepOpen.advDone ? 'open' : ''}><summary class="small"><strong>Alles in orde</strong> <span class="muted">(${plural(done.length, 'persoon', 'personen')})</span></summary>
+          <div class="grid cards people" style="margin-top:10px">${done.map(doneCard).join('')}</div></details>` : ''}
+      </section>`;
     return `
-      <div class="page-head"><h1>Terug te krijgen</h1><span class="spacer"></span>
-        <button class="btn primary" data-action="owed-new">+ Toevoegen</button></div>
-      <details class="owed-help" data-keep="owedHelp" ${(ui.keepOpen.owedHelp != null ? ui.keepOpen.owedHelp : !people.length && !actions.length) ? 'open' : ''}>
-        <summary><span class="kind-tag adv">🤝 voorschot</span> of <span class="kind-tag act">🏷 actie</span>? <span class="small muted">Wat is het verschil</span></summary>
-        <div class="owed-kinds">
-          <div class="owed-kind adv"><strong>🤝 Voorschot</strong><span>Je betaalde voor iemand anders. Het is <b>niet jouw uitgave</b> en telt nergens mee.</span></div>
-          <div class="owed-kind act"><strong>🏷 Actie</strong><span>Je eigen uitgaven, gebundeld (bv. <em>kleren voor mama</em>). Ze <b>tellen wel als uitgave</b>; wat terugkomt, maakt ze kleiner.</span></div>
-        </div>
-      </details>
-      <div class="adv-summary card">
-        <div><div class="label">Nog terug te krijgen</div><div class="value">${money(total)}</div></div>
-        <div class="small muted">${f === 'all' && advTotal && actTotal ? `${money(advTotal)} aan voorschotten · ${money(actTotal)} via acties` : f === 'act' ? 'via acties' : f === 'adv' ? 'aan voorschotten' : ''}</div>
-        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('adv', '🤝 Voorschotten')}${seg('act', '🏷 Acties')}</div>
+      <div class="page-head"><h1>Opvolgen</h1><span class="spacer"></span>
+        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}</div></div>
+      <div class="follow-sum">
+        <button class="follow-stat act" data-action="owed-filter" data-f="act"><span class="label">Acties te doen</span><strong>${openActs.length}</strong>${late ? `<span class="small warn-text">${late} te laat</span>` : ''}</button>
+        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}</span></button>
       </div>
-      ${openPeople.length ? `<h2 class="section-title">Per persoon</h2><div class="grid cards people">${openPeople.map(openCard).join('')}</div>` : ''}
-      ${looseActs.length ? `<h2 class="section-title">${f === 'act' ? 'Open acties' : 'Acties zonder persoon'}</h2><div class="grid cards actions-grid">${looseActs.map(a => actionCard(a)).join('')}</div>` : ''}
-      ${nothing ? `<div class="card empty-state"><p>${people.length || actions.length ? '🎉 Niets meer open.' : 'Nog niets. Klik op <strong>+ Toevoegen</strong>, of typ bij een transactie in <em>Gekoppeld aan</em> een naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>` : ''}
-      ${done.length || closedActs.length ? `<details class="card owed-done" ${ui.keepOpen.owedDone ? 'open' : ''} data-keep="owedDone"><summary><strong>Afgehandeld</strong> <span class="small muted">(${[done.length ? plural(done.length, 'persoon', 'personen') : '', closedActs.length ? plural(closedActs.length, 'afgeronde actie', 'afgeronde acties') : ''].filter(Boolean).join(' · ')})</span></summary>
-        ${done.length ? `<div class="grid cards people" style="margin-top:12px">${done.map(doneCard).join('')}</div>` : ''}
-        ${closedActs.length ? `<div class="grid cards actions-grid" style="margin-top:12px">${closedActs.map(a => actionCard(a)).join('')}</div>` : ''}
-      </details>` : ''}`;
-  }
-
-  /** Eén knop "+ Toevoegen": eerst kiezen wat het is, met het verschil erbij. */
-  function owedNewModal() {
-    return modalShell('Wat wil je toevoegen?', `
-      <div class="owed-choice">
-        <button class="owed-opt adv" data-action="adv-pick" data-dir="out"><strong>🤝 Voorschot</strong>
-          <span>Ik betaalde (een deel) <b>voor iemand anders</b>, bv. de hele restaurantrekening. Dat deel is niet mijn uitgave.</span></button>
-        <button class="owed-opt act" data-action="action-new"><strong>🏷 Actie</strong>
-          <span>Een <b>eigen uitgave</b> (of meerdere) die ik wil bundelen en eventueel (deels) terugkrijg, bv. <em>kleren — mama betaalt terug</em>.</span></button>
-      </div>
-      <p class="small muted">Twijfel? Moet de uitgave meetellen in je eigen uitgaven? Kies dan <strong>actie</strong>. Anders <strong>voorschot</strong>.</p>`,
-      `<button class="btn ghost" data-action="person-new">+ Enkel een persoon</button><span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>`);
+      <p class="small muted follow-help"><strong>Actie</strong> = iets wat jij nog moet doen bij een transactie (geld terugvragen, retour binnenbrengen, bonnetje indienen); vink het af als het gedaan is.
+        <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.</p>
+      ${actSection}${advSection}`;
   }
 
   /**
@@ -1621,7 +1591,7 @@
       ['income', '💶', 'Inkomen', 'Loon, een cadeau, iets dat je verkocht, rente, …'],
       ['refund', '↩', 'Ik krijg geld terug van een uitgave', 'Iemand betaalt zijn deel van iets dat jij betaalde, of een bestelling werd geannuleerd of teruggestort. De uitgave wordt dan kleiner.'],
       ['advance', '🤝', 'Iemand betaalt een voorschot terug', 'Je had iets voorgeschoten voor iemand (dat telde niet als jouw uitgave).'],
-      ['action', '🏷', 'Het hoort bij een actie', 'Bv. mama betaalt de kleren terug die jij voor haar kocht.'],
+      ['action', '✅', 'Het hoort bij een actie', 'Bv. het geld van een retour, of mama die de kleren terugbetaalt.'],
       ['transfer', '↔', 'Van een eigen rekening', 'Je zette zelf geld over, bv. van je spaarrekening.']
     ];
     const c = m.choice;
@@ -1661,35 +1631,85 @@
 
   function actionById(id) { return (state.actions || []).find(a => a.id === id) || null; }
 
-  /** Eén actie: wat je uitgaf, wat er terugkwam, wat nog open staat, en alle transacties. */
+  /** Voorbeelden om snel een actie te maken. */
+  const ACTION_IDEAS = ['Geld terugvragen', 'Retour binnenbrengen', 'Bonnetje indienen', 'Garantie aanvragen', 'Factuur nakijken'];
+
+  /** Open acties (te laat en vroegste datum eerst) en gedane acties (laatst gedaan eerst). */
+  function actionLists() {
+    const all = state.actions || [];
+    const open = all.filter(a => !a.closed).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || (a.createdAt || '').localeCompare(b.createdAt || ''));
+    const done = all.filter(a => a.closed).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
+    return { open, done };
+  }
+
+  function dueLabel(a) {
+    if (!a.due || a.closed) return '';
+    const d = C.daysBetween(today, a.due);
+    const txt = d < 0 ? (-d === 1 ? '1 dag te laat' : -d + ' dagen te laat') : d === 0 ? 'vandaag' : d === 1 ? 'morgen' : 'tegen ' + fmtDate(a.due);
+    return `<span class="act-due ${d < 0 ? 'late' : d <= 2 ? 'soon' : ''}">📅 ${txt}</span>`;
+  }
+
+  /** Eén actie als lijn om af te vinken, met de transacties waar ze over gaat. */
+  function actionRow(a) {
+    const s = C.actionSummary(state, a);
+    const name = t => esc(t.title || t.counterparty || t.description || '—');
+    return `<div class="act-row ${a.closed ? 'is-done' : ''}">
+      <button class="act-check" data-action="action-done" data-id="${esc(a.id)}" aria-pressed="${a.closed ? 'true' : 'false'}" title="${a.closed ? 'Toch nog niet gedaan' : 'Afvinken: gedaan'}">${a.closed ? '✓' : ''}</button>
+      <div class="grow">
+        <div class="act-title"><button class="linklike act-name" data-action="action-view" data-id="${esc(a.id)}">${esc(a.name)}</button>${dueLabel(a)}${a.closed && a.doneAt ? `<span class="small muted">gedaan op ${fmtDate(a.doneAt)}</span>` : ''}</div>
+        ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}
+        <div class="act-txs">${s.txs.slice(0, 4).map(t => `<a href="#" class="act-tx" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)} <span class="${amountClass(t.amount)}">${money(t.amount)}</span></a>`).join('')}${s.txs.length > 4 ? `<button class="linklike small" data-action="action-view" data-id="${esc(a.id)}">+${s.txs.length - 4} meer</button>` : ''}
+          ${a.closed ? '' : `<button class="linklike small" data-action="action-add-tx" data-id="${esc(a.id)}">${s.txs.length ? '+ transactie' : '+ Kies de transactie(s)'}</button>`}</div>
+        ${a.expectBack && s.out ? `<div class="small ${s.open > 0 ? 'muted' : 'pos'}">${s.open > 0 ? `nog ${money(s.open)} terug te krijgen${a.person ? ' van ' + esc(a.person) : ''}` : '✓ terugbetaald'}</div>` : ''}
+      </div>
+      <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}" title="Bewerken" aria-label="Bewerken">✎</button>
+    </div>`;
+  }
+
+  /** Eén actie in detail: alle transacties, en wat er (eventueel) terugkwam. */
   function actionCard(a, inModal) {
     const s = C.actionSummary(state, a);
-    const pct = a.expectBack && s.out ? Math.min(1, s.back / s.out) : 0;
     const name = t => esc(t.title || t.counterparty || t.description || '—');
     return `<div class="${inModal ? '' : 'card '}action-card ${a.closed ? 'closed' : ''}" id="action-${esc(a.id)}">
       <div class="action-head">
-        <div class="grow"><strong class="action-name">🏷 ${esc(a.name)}</strong>${a.closed ? ' <span class="badge">afgerond</span>' : ''}
+        <button class="act-check" data-action="action-done" data-id="${esc(a.id)}" aria-pressed="${a.closed ? 'true' : 'false'}" title="${a.closed ? 'Toch nog niet gedaan' : 'Afvinken: gedaan'}">${a.closed ? '✓' : ''}</button>
+        <div class="grow"><strong class="action-name">${esc(a.name)}</strong> ${a.closed ? '<span class="badge ok">gedaan</span>' : dueLabel(a)}
           ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}</div>
         ${a.expectBack ? `<div class="action-open"><div class="small muted">${s.open > 0 ? 'nog terug te krijgen' + (a.person ? ' van ' + esc(a.person) : '') : 'terugbetaald'}</div><strong class="${s.open > 0 ? '' : 'pos'}">${s.open > 0 ? money(s.open) : '✓'}</strong></div>` : ''}
       </div>
-      <div class="action-totals small">
-        <span>Uitgegeven <strong>${money(s.out)}</strong></span>
-        ${s.back ? `<span>Teruggekregen <strong class="pos">${money(s.back)}</strong></span>` : ''}
-        <span>${s.txs.length} transactie${s.txs.length === 1 ? '' : 's'}</span>
-      </div>
-      ${a.expectBack && s.out ? `<div class="progress"><div class="bar ok" style="width:${(pct * 100).toFixed(1)}%"></div></div>` : ''}
       ${s.txs.length ? `<div class="action-txs">${s.txs.map(t => `<div class="action-tx">
           <div class="at-main"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)}</a>
             <div class="small muted">${fmtDate(t.date)}${t.title && t.counterparty ? ' · ' + esc(t.counterparty) : ''}${t.categoryId ? ' · ' + esc(catLabel(t.categoryId)) : ''}</div></div>
           <span class="amount ${amountClass(t.amount)}">${money(t.amount)}</span>
           <button class="btn small ghost" data-action="action-tx-remove" data-action-id="${esc(a.id)}" data-id="${esc(t.id)}" title="Uit deze actie halen">✕</button></div>`).join('')}</div>`
-        : '<p class="small muted">Nog geen transacties. Voeg ze toe met de knop hieronder, of kies de actie bij een transactie.</p>'}
+        : '<p class="small muted">Nog geen transacties gekoppeld.</p>'}
       <div class="card-tools">
-        <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}">+ Transacties toevoegen</button>
-        ${a.closed ? `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="0">Heropenen</button>` : `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>`}
+        <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}">+ Transacties</button>
         <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎ Bewerk</button>
       </div>
     </div>`;
+  }
+
+  /** Actie afvinken (of terug openzetten), met een knop om het meteen terug te draaien. */
+  function toggleActionDone(id) {
+    const a = actionById(id);
+    if (!a) return;
+    a.closed = !a.closed;
+    if (a.closed) a.doneAt = today; else delete a.doneAt;
+    commit();
+    if (modal && modal.type === 'actionView') renderModal();
+    if (a.closed) toast(`✓ “${a.name}” gedaan`, { label: 'Ongedaan maken', run: () => toggleActionDone(id) });
+  }
+
+  /** Nieuwe actie met enkel een naam, en meteen de transactie(s) kiezen. */
+  function quickAction(name, txIds) {
+    name = String(name || '').trim();
+    if (!name) return;
+    const a = { id: C.uid('act'), name, expectBack: false, person: '', note: '', createdAt: new Date().toISOString() };
+    state.actions = (state.actions || []).concat([a]);
+    if (txIds && txIds.length) { addToAction(txIds, a.id); commit(`Actie “${name}” toegevoegd`); return; }
+    commit();
+    openModal({ type: 'actionPick', id: a.id, chosen: new Set(), search: '' });
   }
 
   function actionModal() {
@@ -1697,11 +1717,14 @@
     const a = m.edit;
     return modalShell(m.isNew ? 'Nieuwe actie' : 'Actie bewerken', `
       <div class="form-stack">
-        <label class="field"><span>Naam</span><input type="text" id="act-name" maxlength="60" value="${esc(a.name || '')}" placeholder="bv. Kleren voor mama"></label>
-        <label class="check"><input type="checkbox" id="act-back" ${a.expectBack ? 'checked' : ''}> Ik moet dit (deels) terugkrijgen</label>
-        <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="act-person" maxlength="40" list="act-people" value="${esc(a.person || '')}" placeholder="bv. mama">
+        <label class="field"><span>Wat moet er gebeuren?</span><input type="text" id="act-name" maxlength="60" value="${esc(a.name || '')}" placeholder="bv. Retour binnenbrengen, Geld terugvragen aan mama" list="act-ideas">
+          <datalist id="act-ideas">${ACTION_IDEAS.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+        <label class="field"><span>Tegen wanneer? <span class="muted small">(optioneel)</span></span><input type="date" id="act-due" value="${esc(a.due || '')}"></label>
+        <label class="field"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="act-note" maxlength="120" value="${esc(a.note || '')}" placeholder="bv. retourlabel zit in de mail"></label>
+        <label class="check"><input type="checkbox" id="act-back" ${a.expectBack ? 'checked' : ''}> Hier komt geld van terug — toon hoeveel nog open staat</label>
+        <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="act-person" maxlength="40" list="act-people" value="${esc(a.person || '')}" placeholder="bv. mama, of de winkel">
           <datalist id="act-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
-        <label class="field"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="act-note" maxlength="120" value="${esc(a.note || '')}"></label>
+        ${m.isNew ? '' : `<label class="check"><input type="checkbox" id="act-closed" ${a.closed ? 'checked' : ''}> Gedaan</label>`}
         <div class="errors" id="act-errors"></div>
       </div>`,
       `${m.isNew ? '' : '<button class="btn danger" data-action="action-delete">Verwijderen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="action-save">Opslaan</button>`);
@@ -1710,8 +1733,14 @@
   function saveAction() {
     const m = modal;
     const name = $('#act-name').value.trim();
-    if (!name) { $('#act-errors').textContent = 'Geef de actie een naam.'; return; }
+    if (!name) { $('#act-errors').textContent = 'Schrijf wat er moet gebeuren.'; return; }
     const a = Object.assign({}, m.edit, { name, expectBack: $('#act-back').checked, person: $('#act-person').value.trim(), note: $('#act-note').value.trim() });
+    const due = $('#act-due').value;
+    if (C.parseDate(due)) a.due = due; else delete a.due;
+    const closed = $('#act-closed') ? $('#act-closed').checked : !!a.closed;
+    if (closed && !a.closed) a.doneAt = today;
+    if (!closed) delete a.doneAt;
+    a.closed = closed;
     state.actions = state.actions || [];
     const i = state.actions.findIndex(x => x.id === a.id);
     if (i >= 0) state.actions[i] = a; else state.actions.push(Object.assign(a, { createdAt: new Date().toISOString() }));
@@ -1733,7 +1762,7 @@
       .filter(t => !q || `${t.title || ''} ${t.counterparty} ${t.description} ${C.centsToInput(t.amount)}`.toLowerCase().includes(q))
       .sort((x, y) => y.date.localeCompare(x.date)).slice(0, 120);
     return modalShell(`Toevoegen aan “${a ? a.name : ''}”`, `
-      <p class="small muted">Vink de uitgaven aan die bij deze actie horen, en ook de terugbetalingen${a && a.person ? ' van ' + esc(a.person) : ''} als die al binnenkwamen.</p>
+      <p class="small muted">Vink de transactie(s) aan waar deze actie over gaat${a && a.expectBack ? ', en ook de terugbetalingen als die al binnenkwamen' : ''}.</p>
       <input type="search" id="act-search" placeholder="Zoeken…" value="${esc(m.search || '')}">
       <div class="table-wrap" style="margin-top:8px"><table class="tx-table"><tbody>${list.map(t => `<tr class="${m.chosen.has(t.id) ? 'is-selected' : ''}">
         <td class="sel-cell"><input type="checkbox" data-act-pick="${esc(t.id)}" ${m.chosen.has(t.id) ? 'checked' : ''}></td>
@@ -1748,15 +1777,15 @@
     let id = sel.value;
     if (!id) return;
     if (id === '__new__') {
-      const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+      const name = (prompt('Wat moet er gebeuren? (bv. “Retour binnenbrengen”)') || '').trim();
       if (!name) { sel.value = ''; return; }
-      const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
+      const a = { id: C.uid('act'), name, expectBack: false, person: '', note: '', createdAt: new Date().toISOString() };
       state.actions = (state.actions || []).concat([a]);
       id = a.id;
     }
     const a = actionById(id);
     t.actions = (t.actions || []).filter(x => x !== id).concat([id]);
-    sel.insertAdjacentHTML('beforebegin', `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`);
+    sel.insertAdjacentHTML('beforebegin', `<span class="badge action-badge">✅ ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`);
     const opt = Array.from(sel.options).find(o => o.value === id);
     if (opt) opt.remove();
     sel.value = '';
@@ -2943,7 +2972,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { owedNew: owedNewModal, taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3027,9 +3056,9 @@
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
         <div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div></div>` : ''}
 
-      <div class="field"><span>Acties <span class="muted small">(bv. “Kleren — terug te krijgen van mama”)</span></span>
-        <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
-          <select id="tx-action-add" aria-label="Aan een actie toevoegen"><option value="">+ Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed && !(t.actions || []).includes(a.id)).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></div></div>
+      <div class="field"><span>Acties <span class="muted small">(iets wat je nog moet doen, bv. “Retour binnenbrengen”)</span></span>
+        <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge ${a.closed ? 'done' : ''}">${a.closed ? '✓' : '☐'} ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
+          <select id="tx-action-add" aria-label="Aan een actie toevoegen"><option value="">+ Actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed && !(t.actions || []).includes(a.id)).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></div></div>
       <label class="field"><span>Notitie</span><textarea id="tx-note" rows="2">${esc(t.note || '')}</textarea></label>
       ${filesAvailable() ? `<div class="field"><span>📎 Bonnetjes <span class="muted small">(foto of pdf, bv. voor de garantie)</span></span>
         <div class="tx-files" id="tx-files">${(t.attachments || []).map(attachmentChip).join('')}</div>
@@ -4199,7 +4228,6 @@
     },
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
     'owed-filter': el => { ui.owed = el.dataset.f; render(); },
-    'owed-new': () => openModal({ type: 'owedNew' }),
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
     'person-save': savePerson,
     'person-delete': () => { state.people = (state.people || []).filter(p => p.name.toLowerCase() !== modal.original.toLowerCase()); closeModal(); commit('Persoon verwijderd'); },
@@ -4337,7 +4365,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       let id = $('#wi-action').value;
       const catId = $('#wi-action-cat').value;
       if (id === '__new__') {
-        const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+        const name = (prompt('Wat moet er gebeuren? (bv. “Geld terugvragen aan mama”)') || '').trim();
         if (!name) return;
         const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
         state.actions = (state.actions || []).concat([a]); id = a.id;
@@ -4347,7 +4375,9 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       whatIsDone('Toegevoegd aan “' + (actionById(id) || {}).name + '”');
     },
     'wi-transfer': () => { const t = txById(modal.txId); if (!t) return; t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; whatIsDone('Aangeduid als overschrijving van een eigen rekening'); },
-    'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }),
+    'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: false, person: '', note: '' } }),
+    'action-done': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); toggleActionDone(el.dataset.id); },
+    'action-idea': el => quickAction(el.dataset.name),
     'action-edit': el => { const a = actionById(el.dataset.id); if (a) openModal({ type: 'action', edit: Object.assign({}, a) }); },
     'action-save': saveAction,
     'action-delete': () => {
@@ -4357,7 +4387,6 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       closeModal();
       commit('Actie verwijderd');
     },
-    'action-close': el => { const a = actionById(el.dataset.id); if (!a) return; a.closed = el.dataset.closed === '1'; commit(a.closed ? `“${a.name}” afgerond` : `“${a.name}” heropend`); if (modal && modal.type === 'actionView') renderModal(); },
     'action-view': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); openModal({ type: 'actionView', id: el.dataset.id }); },
     'action-add-tx': el => openModal({ type: 'actionPick', id: el.dataset.id, chosen: new Set(), search: '' }),
     'action-pick-apply': () => { const m = modal; const n = addToAction(m.chosen, m.id); closeModal(); commit(`${n} transactie(s) toegevoegd aan “${(actionById(m.id) || {}).name}”`); },
@@ -4592,7 +4621,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }
     if (el.dataset.bulkAction != null) {
       const ids = Array.from(ui.selected);
-      if (el.value === '__new__') { openModal({ type: 'action', isNew: true, addTx: ids, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }); return; }
+      if (el.value === '__new__') { openModal({ type: 'action', isNew: true, addTx: ids, edit: { id: C.uid('act'), name: '', expectBack: false, person: '', note: '' } }); return; }
+      if (el.value.startsWith('idea:')) { ui.selected.clear(); quickAction(el.value.slice(5), ids); return; }
       if (!el.value) return;
       const a = actionById(el.value);
       const n = addToAction(ids, el.value);
@@ -4706,6 +4736,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
         .catch(e => { houseUi.error = e.message; }).finally(() => { houseUi.busy = false; render(); });
       return;
     }
+    if (form.dataset.form === 'action-quick') { quickAction(new FormData(form).get('name')); return; }
     if (form.dataset.form === 'savings-goal') {
       const v = C.parseAmount(String(new FormData(form).get('goal') || ''));
       ui.editGoal = false;

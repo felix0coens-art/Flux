@@ -68,9 +68,9 @@
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
         <div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div></div>` : ''}
 
-      <div class="field"><span>Acties <span class="muted small">(bv. “Kleren — terug te krijgen van mama”)</span></span>
-        <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
-          <select id="tx-action-add" aria-label="Aan een actie toevoegen"><option value="">+ Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed && !(t.actions || []).includes(a.id)).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></div></div>
+      <div class="field"><span>Acties <span class="muted small">(iets wat je nog moet doen, bv. “Retour binnenbrengen”)</span></span>
+        <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge ${a.closed ? 'done' : ''}">${a.closed ? '✓' : '☐'} ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
+          <select id="tx-action-add" aria-label="Aan een actie toevoegen"><option value="">+ Actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed && !(t.actions || []).includes(a.id)).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></div></div>
       <label class="field"><span>Notitie</span><textarea id="tx-note" rows="2">${esc(t.note || '')}</textarea></label>
       ${filesAvailable() ? `<div class="field"><span>📎 Bonnetjes <span class="muted small">(foto of pdf, bv. voor de garantie)</span></span>
         <div class="tx-files" id="tx-files">${(t.attachments || []).map(attachmentChip).join('')}</div>

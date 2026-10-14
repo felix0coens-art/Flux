@@ -12,7 +12,12 @@
     const todo = todoCount();
     const bankBtn = $('#nav [data-view=bank]');
     if (bankBtn) bankBtn.innerHTML = 'Bank' + (todo ? ` <span class="count">${todo}</span>` : '');
-    const tabCount = $('#tabbar .tab-count');
+    const acts = (state.actions || []).filter(a => !a.closed).length;
+    const folBtn = $('#nav [data-view=advances]');
+    if (folBtn) folBtn.innerHTML = 'Opvolgen' + (acts ? ` <span class="count soft">${acts}</span>` : '');
+    const actCount = $('#tabbar .act-count');
+    if (actCount) { actCount.hidden = !acts; actCount.textContent = acts > 99 ? '99+' : String(acts); }
+    const tabCount = $('#tabbar [data-view=bank] .tab-count');
     if (tabCount) { tabCount.hidden = !todo; tabCount.textContent = todo > 99 ? '99+' : String(todo); }
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }

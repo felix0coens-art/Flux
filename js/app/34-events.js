@@ -93,7 +93,6 @@
     },
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
     'owed-filter': el => { ui.owed = el.dataset.f; render(); },
-    'owed-new': () => openModal({ type: 'owedNew' }),
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
     'person-save': savePerson,
     'person-delete': () => { state.people = (state.people || []).filter(p => p.name.toLowerCase() !== modal.original.toLowerCase()); closeModal(); commit('Persoon verwijderd'); },
@@ -231,7 +230,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       let id = $('#wi-action').value;
       const catId = $('#wi-action-cat').value;
       if (id === '__new__') {
-        const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+        const name = (prompt('Wat moet er gebeuren? (bv. “Geld terugvragen aan mama”)') || '').trim();
         if (!name) return;
         const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
         state.actions = (state.actions || []).concat([a]); id = a.id;
@@ -241,7 +240,9 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       whatIsDone('Toegevoegd aan “' + (actionById(id) || {}).name + '”');
     },
     'wi-transfer': () => { const t = txById(modal.txId); if (!t) return; t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; whatIsDone('Aangeduid als overschrijving van een eigen rekening'); },
-    'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }),
+    'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: false, person: '', note: '' } }),
+    'action-done': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); toggleActionDone(el.dataset.id); },
+    'action-idea': el => quickAction(el.dataset.name),
     'action-edit': el => { const a = actionById(el.dataset.id); if (a) openModal({ type: 'action', edit: Object.assign({}, a) }); },
     'action-save': saveAction,
     'action-delete': () => {
@@ -251,7 +252,6 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       closeModal();
       commit('Actie verwijderd');
     },
-    'action-close': el => { const a = actionById(el.dataset.id); if (!a) return; a.closed = el.dataset.closed === '1'; commit(a.closed ? `“${a.name}” afgerond` : `“${a.name}” heropend`); if (modal && modal.type === 'actionView') renderModal(); },
     'action-view': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); openModal({ type: 'actionView', id: el.dataset.id }); },
     'action-add-tx': el => openModal({ type: 'actionPick', id: el.dataset.id, chosen: new Set(), search: '' }),
     'action-pick-apply': () => { const m = modal; const n = addToAction(m.chosen, m.id); closeModal(); commit(`${n} transactie(s) toegevoegd aan “${(actionById(m.id) || {}).name}”`); },
@@ -486,7 +486,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }
     if (el.dataset.bulkAction != null) {
       const ids = Array.from(ui.selected);
-      if (el.value === '__new__') { openModal({ type: 'action', isNew: true, addTx: ids, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }); return; }
+      if (el.value === '__new__') { openModal({ type: 'action', isNew: true, addTx: ids, edit: { id: C.uid('act'), name: '', expectBack: false, person: '', note: '' } }); return; }
+      if (el.value.startsWith('idea:')) { ui.selected.clear(); quickAction(el.value.slice(5), ids); return; }
       if (!el.value) return;
       const a = actionById(el.value);
       const n = addToAction(ids, el.value);
@@ -600,6 +601,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
         .catch(e => { houseUi.error = e.message; }).finally(() => { houseUi.busy = false; render(); });
       return;
     }
+    if (form.dataset.form === 'action-quick') { quickAction(new FormData(form).get('name')); return; }
     if (form.dataset.form === 'savings-goal') {
       const v = C.parseAmount(String(new FormData(form).get('goal') || ''));
       ui.editGoal = false;
