@@ -531,3 +531,7 @@ tr.is-disabled td { opacity: .55; }
 .reg-method .reg-badge { min-width: 56px; text-align: center; }
 .cancel-pair .btn { flex-shrink: 0; }
 .topbar #topbar-logout { flex-shrink: 0; }
+.eb-form { list-style: none; padding-left: 0; }
+.eb-form li { margin: 4px 0; }
+.eb-fields td { padding: 3px 6px 3px 0; vertical-align: middle; }
+.eb-fields code { word-break: break-all; }

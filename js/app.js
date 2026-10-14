@@ -1299,11 +1299,20 @@
       <p>Helder gebruikt <strong>Enable Banking</strong> om je rekeningen bij KBC, CBC, Argenta en andere banken te lezen. Je stelt dit één keer in:</p>
       <ol class="steps">
         <li>Maak een account op <a href="https://enablebanking.com" target="_blank" rel="noopener">enablebanking.com</a> en open het <strong>Control Panel</strong>.</li>
-        <li>Registreer een nieuwe <strong>application</strong>:
-          <ul><li>Environment: <strong>Production</strong></li>
-            <li>Naam: <em>Helder</em></li>
-            <li>Allowed redirect URLs: <code id="eb-redirect">${esc(st.redirectUrl || '')}</code> <button class="btn small" data-action="copy" data-copy="${esc(st.redirectUrl || '')}">Kopieer</button></li>
-            <li>Laat de sleutel <strong>in je browser genereren</strong>. Je krijgt een <code>.pem</code>-bestand: bewaar het goed.</li></ul></li>
+        <li>Ga naar <strong>API applications</strong> en vul het formulier zo in:
+          <ul class="eb-form">
+            <li><strong>1.</strong> Environment: <strong>Production</strong></li>
+            <li><strong>2.</strong> Kies <strong>Generate in the browser (using SubtleCrypto) and export private key</strong></li>
+            <li><strong>3.</strong> De vakjes, van boven naar onder:
+              <table class="mini eb-fields"><tbody>
+                ${[['Application name', 'Helder'],
+                   ['Allowed redirect URLs', st.redirectUrl || (location.origin + '/api/bank/callback')],
+                   ['Application description', 'Persoonlijke boekhouding: leest het saldo en de transacties van mijn eigen rekeningen.'],
+                   ['Email for data protection matters', (Sync && Sync.account && Sync.account.email) || 'je eigen e-mailadres'],
+                   ['Privacy URL of the application', location.origin + '/privacy'],
+                   ['Terms URL of the application', location.origin + '/voorwaarden']].map(([k, v]) => `<tr><td class="small muted">${esc(k)}</td><td><code>${esc(v)}</code></td><td>${v === 'je eigen e-mailadres' ? '' : `<button class="btn small" data-action="copy" data-copy="${esc(v)}">Kopieer</button>`}</td></tr>`).join('')}
+              </tbody></table></li>
+            <li>Klik op <strong>Register</strong>. Je browser downloadt een <code>.pem</code>-bestand (de sleutel): bewaar het goed.</li></ul></li>
         <li>Activeer de app door <strong>je eigen rekeningen te koppelen</strong> (in het Control Panel bij de app). Zo werkt ze enkel voor jouw rekeningen ("restricted" modus).</li>
         <li>Vul hieronder de <strong>Application ID</strong> in en kies het <code>.pem</code>-bestand.</li>
       </ol>
