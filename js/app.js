@@ -897,9 +897,13 @@
       </div>
       <div class="card" style="margin-bottom:16px">
         <h2>Nieuwe accounts</h2>
-        ${d.google ? `<label class="switch-row"><input type="checkbox" data-admin-reg ${open ? 'checked' : ''}> <span><strong>${open ? 'Open' : 'Gesloten'}</strong>: ${open ? 'iedereen kan een account aanmaken door zich aan te melden met Google.' : 'enkel bestaande gebruikers kunnen aanmelden.'}</span></label>`
-          : `<div class="notice small">Aanmelden met Google is nog niet ingesteld. Zet <code>HELDER_GOOGLE_CLIENT_ID</code> en <code>HELDER_GOOGLE_CLIENT_SECRET</code> als secrets in GitHub (zie README), met als <em>Authorized redirect URI</em> in Google Cloud:<br><code>${esc(d.googleRedirect)}</code></div>`}
-        ${d.google ? `<p class="small muted">Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></p>` : ''}
+        <div class="reg-state">
+          <span class="badge ${open ? 'ok' : 'over'} reg-badge">${open ? '● Open' : '● Gesloten'}</span>
+          <span class="grow">${open ? 'Iedereen kan een account aanmaken door zich aan te melden met Google.' : 'Enkel bestaande gebruikers kunnen aanmelden. Nieuwe mensen krijgen de melding dat registratie gesloten is.'}</span>
+          <button class="btn ${open ? '' : 'primary'}" data-action="admin-reg" data-open="${open ? '0' : '1'}">${open ? 'Nieuwe accounts sluiten' : 'Nieuwe accounts toelaten'}</button>
+        </div>
+        ${d.google ? `<p class="small muted">Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></p>`
+          : `<div class="notice small" style="margin-top:10px">Let op: aanmelden met Google is op de server nog niet ingesteld, dus nieuwe mensen kunnen nog geen account aanmaken. Zet <code>HELDER_GOOGLE_CLIENT_ID</code> en <code>HELDER_GOOGLE_CLIENT_SECRET</code> als secrets in GitHub en start de workflow opnieuw. Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></div>`}
       </div>
       <div class="card" style="margin-bottom:16px"><h2>Gebruikers</h2>
         <div class="table-wrap"><table><thead><tr><th>Gebruiker</th><th>Soort</th><th>Aangemaakt</th><th>Laatst aangemeld</th><th class="right">Aanmeldingen</th><th class="right">Transacties</th><th class="right">Opslag</th><th>AI</th><th></th></tr></thead>
@@ -2743,6 +2747,13 @@
       toast('Je account is verwijderd.');
     },
     'admin-refresh': () => loadAdmin(),
+    'admin-reg': async el => {
+      const open = el.dataset.open === '1';
+      el.disabled = true;
+      try { await Sync.admin.setRegistration(open); toast(open ? 'Nieuwe accounts zijn nu toegelaten' : 'Nieuwe accounts zijn nu gesloten'); }
+      catch (e) { toast('Lukte niet: ' + e.message); }
+      loadAdmin();
+    },
     'admin-user': async el => {
       const u = ui.admin.data.users.find(x => x.user === el.dataset.user);
       const op = el.dataset.op;

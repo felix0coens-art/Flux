@@ -517,3 +517,6 @@ tr.is-disabled td { opacity: .55; }
 .danger-zone { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .danger-zone summary { cursor: pointer; color: var(--red); }
 .legal-links { text-align: center; margin: 14px 0 0; }
+.reg-state { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.reg-state .grow { flex: 1; min-width: 220px; }
+.reg-badge { font-size: 13px; padding: 4px 10px; }
