@@ -26,6 +26,7 @@ const AI = require('./ai.js');
 const Degiro = require('./degiro.js');
 const Prices = require('./prices.js');
 const EnableBanking = require('./enablebanking.js');
+const SaxoLink = require('./saxo.js');
 const Accounts = require('./accounts.js');
 
 // Koerscache in het geheugen (12 uur)
@@ -71,6 +72,13 @@ function userFile(username) { return 'user-' + Buffer.from(username).toString('h
 
 // Bankkoppeling (Enable Banking)
 const Bank = EnableBanking.create({
+  readJson, writeJson, withLock,
+  remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
+  publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
+});
+
+// Saxo Bank (OpenAPI)
+const Saxo = SaxoLink.create({
   readJson, writeJson, withLock,
   remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
   publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
@@ -395,7 +403,7 @@ async function handleApi(req, res, pathname, query) {
     return send(res, 200, Object.assign(me ? Accounts.userPublic(user, me) : { user: null, role: 'none' }, {
       setupRequired: !!setupCode,
       auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration },
-      features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, bank: role === 'owner' }
+      features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, bank: role === 'owner', saxo: role === 'owner' }
     }));
   }
 
@@ -471,6 +479,15 @@ async function handleApi(req, res, pathname, query) {
     return res.end(EnableBanking.callbackPage(r));
   }
 
+  // Terugkeer van Saxo na het aanmelden
+  if (pathname === '/api/saxo/callback' && req.method === 'GET') {
+    let r;
+    try { r = await Saxo.callback(fetch, req, Object.fromEntries(query)); }
+    catch (e) { if (!(e instanceof SaxoLink.SaxoError)) console.error('Saxo:', e.message); r = { ok: false, message: e instanceof SaxoLink.SaxoError ? e.message : 'Saxo is niet bereikbaar.' }; }
+    res.writeHead(r.ok ? 200 : 400, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
+    return res.end(SaxoLink.callbackPage(r));
+  }
+
   if (!user || !me || me.disabled) throw httpError(401, 'Niet aangemeld');
 
   // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
@@ -505,6 +522,22 @@ async function handleApi(req, res, pathname, query) {
       if (e.status) throw e;
       console.error('Bank:', e.message);
       throw httpError(502, 'Enable Banking is niet bereikbaar: ' + e.message);
+    }
+  }
+
+  if (pathname.startsWith('/api/saxo/')) {
+    if (role !== 'owner') throw httpError(403, 'De Saxo-koppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
+    try {
+      if (pathname === '/api/saxo/status' && req.method === 'GET') return send(res, 200, await Saxo.status(req, user));
+      if (pathname === '/api/saxo/config' && req.method === 'POST') return send(res, 200, await Saxo.saveConfig(await readBody(req)));
+      if (pathname === '/api/saxo/connect' && req.method === 'POST') return send(res, 200, await Saxo.connect(req, user));
+      if (pathname === '/api/saxo/fetch' && req.method === 'POST') return send(res, 200, await Saxo.fetchAll(fetch, req, user, await readBody(req)));
+      if (pathname === '/api/saxo/disconnect' && req.method === 'POST') return send(res, 200, await Saxo.disconnect(user));
+    } catch (e) {
+      if (e instanceof SaxoLink.SaxoError) throw httpError(e.status, e.message, e.kind);
+      if (e.status) throw e;
+      console.error('Saxo:', e.message);
+      throw httpError(502, 'Saxo is niet bereikbaar: ' + e.message);
     }
   }
 

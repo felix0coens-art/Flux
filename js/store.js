@@ -72,7 +72,7 @@
       transactions: [],
       subscriptions: {},
       tombstones: {},
-      settings: { warnAt: 0.8, lookupProvider: 'auto', lookupCountries: 'be', autoLookup: true, investPattern: 'degiro|flatex' }
+      settings: { warnAt: 0.8, lookupProvider: 'auto', lookupCountries: 'be', autoLookup: true, investPattern: 'degiro|flatex|saxo' }
     };
   }
 
@@ -88,7 +88,9 @@
     for (const k of ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people']) if (!Array.isArray(s[k])) s[k] = [];
     if (!s.subscriptions || typeof s.subscriptions !== 'object') s.subscriptions = {};
     if (!s.tombstones || typeof s.tombstones !== 'object') s.tombstones = {};
-    s.settings = Object.assign({ warnAt: 0.8, lookupProvider: 'auto', lookupCountries: 'be', autoLookup: true, investPattern: 'degiro|flatex' }, s.settings || {});
+    s.settings = Object.assign({ warnAt: 0.8, lookupProvider: 'auto', lookupCountries: 'be', autoLookup: true, investPattern: 'degiro|flatex|saxo' }, s.settings || {});
+    // Overschrijvingen naar Saxo herkennen als belegging (enkel als je het standaardpatroon nog had)
+    if (s.settings.investPattern === 'degiro|flatex') s.settings.investPattern = 'degiro|flatex|saxo';
     // Systeemcategorieën zijn altijd aanwezig
     for (const id of ['sys_voorschot', 'sys_belegging']) {
       if (!s.categories.some(c => c.id === id)) s.categories.push(Object.assign({}, DEFAULT_CATEGORIES.find(c => c.id === id)));

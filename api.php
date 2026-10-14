@@ -12,6 +12,7 @@ require __DIR__ . '/php/lib/prices.php';
 require __DIR__ . '/php/lib/degiro.php';
 require __DIR__ . '/php/lib/ai.php';
 require __DIR__ . '/php/lib/enablebanking.php';
+require __DIR__ . '/php/lib/saxo.php';
 require __DIR__ . '/php/lib/accounts.php';
 
 @set_time_limit(300);
@@ -61,7 +62,7 @@ function handle(string $method, string $path): void {
             'setupRequired' => $code !== null,
             'setupHint' => $code !== null ? 'De setupcode staat in het bestand SETUPCODE.txt in de map helder-data op je hosting (DirectAdmin → File Manager).' : null,
             'auth' => ['google' => google_configured(), 'registration' => site_settings()['registration']],
-            'features' => ['ai' => $aiOk, 'aiModel' => $aiOk ? ai_model() : null, 'bank' => $role === 'owner'],
+            'features' => ['ai' => $aiOk, 'aiModel' => $aiOk ? ai_model() : null, 'bank' => $role === 'owner', 'saxo' => $role === 'owner'],
         ]));
         return;
     }
@@ -152,6 +153,19 @@ function handle(string $method, string $path): void {
         return;
     }
 
+    // Terugkeer van Saxo na het aanmelden
+    if ($path === '/api/saxo/callback' && $method === 'GET') {
+        try { $r = saxo_callback('http_fetch', $_GET); }
+        catch (SaxoError $e) { $r = ['ok' => false, 'message' => $e->getMessage()]; }
+        catch (RuntimeException $e) { $r = ['ok' => false, 'message' => 'Saxo is niet bereikbaar.']; }
+        http_response_code($r['ok'] ? 200 : 400);
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-store');
+        foreach (SECURITY_HEADERS as $k => $v) header("$k: $v");
+        echo saxo_callback_page($r);
+        return;
+    }
+
     if (!$user || !$me || !empty($me['disabled'])) throw new HttpError(401, 'Niet aangemeld');
 
     // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
@@ -186,6 +200,21 @@ function handle(string $method, string $path): void {
             throw new HttpError($e->status, $e->getMessage(), $e->kind);
         } catch (RuntimeException $e) {
             throw new HttpError(502, 'Enable Banking is niet bereikbaar: ' . $e->getMessage());
+        }
+    }
+
+    if (strpos($path, '/api/saxo/') === 0) {
+        if ($role !== 'owner') throw new HttpError(403, 'De Saxo-koppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
+        try {
+            if ($path === '/api/saxo/status' && $method === 'GET') { send(200, saxo_status($user)); return; }
+            if ($path === '/api/saxo/config' && $method === 'POST') { send(200, saxo_save_config(body())); return; }
+            if ($path === '/api/saxo/connect' && $method === 'POST') { send(200, saxo_connect($user)); return; }
+            if ($path === '/api/saxo/fetch' && $method === 'POST') { send(200, saxo_fetch_all('http_fetch', $user, body())); return; }
+            if ($path === '/api/saxo/disconnect' && $method === 'POST') { send(200, saxo_disconnect($user)); return; }
+        } catch (SaxoError $e) {
+            throw new HttpError($e->status, $e->getMessage(), $e->kind);
+        } catch (RuntimeException $e) {
+            throw new HttpError(502, 'Saxo is niet bereikbaar: ' . $e->getMessage());
         }
     }
 

@@ -67,7 +67,7 @@
   function incomeSources() { return state.categories.filter(c => c.kind === 'income'); }
   function kindOf(t) { return C.txKind(t, state.categories); }
   /** Beleggingsgegevens (null als er geen zijn of als ze gewist werden). */
-  function inv() { return state.investments && !state.investments.cleared ? state.investments : null; }
+  function inv() { return state.investments && !state.investments.cleared ? Invest.view(state.investments) : null; }
 
   function catBadge(id, suffix) {
     const extra = suffix ? ' ' + esc(suffix) : '';
@@ -1530,10 +1530,11 @@
             <details style="margin-top:8px"><summary class="small"><strong>Wat moet ik exact exporteren?</strong></summary>${DEGIRO_EXPORT_HELP}</details>
           </div>
         </div>
-      </div>`;
+      </div>
+      ${saxoCard()}`;
     if (!iv) {
       return `<div class="page-head"><h1>Beleggingen</h1></div>
-        <p class="muted">Koppel je Degiro-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar Degiro tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
+        <p class="muted">Koppel je Degiro- of Saxo-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar je broker tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
         ${connect}
         <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`;
     }
@@ -1542,7 +1543,7 @@
     const files = iv.files || [];
     return `
       <div class="page-head"><h1>Beleggingen</h1><span class="spacer"></span>
-        <span class="small muted">Bron: ${iv.source === 'degiro-api' ? 'Degiro (rechtstreeks)' : iv.source === 'demo' ? 'voorbeeld' : 'Degiro-exports'} · bijgewerkt ${esc(fmtDateTime(iv.syncedAt))}</span></div>
+        <span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span></div>
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">stand ${fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
         <div class="card kpi"><div class="label">Netto ingelegd</div><div class="value">${s.hasDeposits ? money(s.netDeposits) : '—'}</div><div class="hint">${s.hasDeposits ? 'stortingen ' + money(s.deposits) + (s.withdrawals ? ' − opnames ' + money(s.withdrawals) : '') : 'laad het rekeningoverzicht op'}</div></div>
@@ -1585,7 +1586,7 @@
         ${s.positions.length ? `<div class="table-wrap"><table>
           <thead><tr><th>Product</th><th class="right">Aantal</th><th class="right">Waarde</th><th class="right">Aankoop</th><th class="right">Winst</th><th>Aandeel</th></tr></thead>
           <tbody>${s.positions.map(p => `<tr>
-            <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin)}${p.currency !== 'EUR' ? ' · ' + esc(p.currency) : ''}</div></td>
+            <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin || p.symbol || '')}${p.currency !== 'EUR' ? ' · ' + esc(p.currency) : ''}${iv.brokers ? ' · ' + esc(p.broker === 'saxo' ? 'Saxo' : 'Degiro') : ''}</div></td>
             <td class="right">${String(p.quantity).replace('.', ',')}</td>
             <td class="amount">${money(p.valueEur)}</td>
             <td class="amount">${p.costEur != null ? money(p.costEur) : '—'}</td>
@@ -1596,7 +1597,7 @@
       ${soldCard(iv)}
       ${connect}
       ${files.length ? `<div class="card" style="margin-top:16px"><h2>Opgeladen Degiro-bestanden</h2><div class="list">${files.slice().reverse().map(f => `<div class="list-row"><div class="grow">📄 ${esc(f.name)}<div class="small muted">${esc({ portfolio: 'Portefeuille', transactions: 'Transacties', account: 'Rekeningoverzicht' }[f.type] || f.type)}${f.date ? ' — stand op ' + fmtDate(f.date) : ''} · opgeladen ${esc(fmtDateTime(f.importedAt))}</div></div></div>`).join('')}</div></div>` : ''}
-      <p style="margin-top:16px"><button class="btn small danger" data-action="degiro-clear">Alle beleggingsgegevens wissen</button></p>`;
+      <p style="margin-top:16px">${iv.brokers ? Invest.brokers(iv).map(b => `<button class="btn small danger" data-action="invest-remove-broker" data-id="${esc(b.id)}">Gegevens van ${esc(b.name)} wissen</button> `).join('') : ''}<button class="btn small danger" data-action="degiro-clear">Alle beleggingsgegevens wissen</button></p>`;
   }
 
   /** Grafiek: portefeuillewaarde (lijn) en totale inleg (trap), met elke bijstorting als punt. */
@@ -1765,7 +1766,7 @@
     try {
       const r = await Sync.prices(instruments);
       const okCount = Object.keys(r.series || {}).length;
-      state.investments = Object.assign({}, inv(), { market: okCount ? { series: r.series, errors: r.errors, fetchedAt: new Date().toISOString() } : Object.assign({}, data.market || {}, { failedAt: new Date().toISOString(), errors: r.errors }) });
+      state.investments = Object.assign({}, state.investments, { market: okCount ? { series: r.series, errors: r.errors, fetchedAt: new Date().toISOString() } : Object.assign({}, data.market || {}, { failedAt: new Date().toISOString(), errors: r.errors }) });
       commit(force ? (okCount ? `Koersen opgehaald voor ${okCount} product(en)` : 'Geen koersen gevonden') : undefined);
     } catch (e) {
       if (force) toast('Koersen ophalen lukte niet: ' + e.message);
@@ -1794,7 +1795,7 @@
           <div class="list">
             ${(state.imports || []).map(i => `<div class="list-row"><div class="grow">📄 ${esc(i.fileName)}<div class="small muted">${esc(accName(i.accountId))} · ${esc(fmtDateTime(i.importedAt))}</div></div><span>${state.transactions.filter(t => t.importId === i.id).length}</span></div>`).join('')}
             <div class="list-row"><div class="grow">✎ Manueel ingevoerd</div><span>${manual}</span></div>
-            ${inv() ? `<div class="list-row"><div class="grow">📈 Degiro</div><span class="small">${(inv().files || []).length} bestand(en)${inv().source === 'degiro-api' ? ' · rechtstreeks' : ''}</span></div>` : ''}
+            ${Invest.brokers(inv()).map(b => `<div class="list-row"><div class="grow">📈 ${esc(b.name)}</div><span class="small">${b.id === 'degiro' ? (inv().files || []).length + ' bestand(en)' : ''}${b.source === 'degiro-api' || b.source === 'saxo-api' ? ' · rechtstreeks' : ''}</span></div>`).join('')}
             <div class="list-row total"><div class="grow"><strong>Totaal transacties</strong></div><span>${state.transactions.length}</span></div>
           </div>
           <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
@@ -1846,7 +1847,7 @@
               <option value="free" ${st.lookupProvider === 'free' ? 'selected' : ''}>Wikidata + OpenStreetMap</option>
               <option value="ai" ${st.lookupProvider === 'ai' ? 'selected' : ''} ${aiOn ? '' : 'disabled'}>AI (Claude)${aiOn ? '' : ' — niet ingesteld'}</option></select></label>
             <label class="field"><span>Landen</span><input type="text" data-setting="lookupCountries" value="${esc(st.lookupCountries || 'be')}"></label>
-            <label class="field full"><span>Herkenning beleggingsrekening (naam of mededeling, regex)</span><input type="text" data-setting="investPattern" value="${esc(st.investPattern || 'degiro|flatex')}"></label>
+            <label class="field full"><span>Herkenning beleggingsrekening (naam of mededeling, regex)</span><input type="text" data-setting="investPattern" value="${esc(st.investPattern || 'degiro|flatex|saxo')}"></label>
           </div>
         </div>
         <div class="card">
@@ -1874,7 +1875,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -2440,6 +2441,117 @@
       `<button class="btn danger" data-action="undo-import" data-id="${esc(i.id)}">Deze import ongedaan maken</button><span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
   }
 
+  // ----- Saxo Bank -----
+
+  const saxoLink = { status: null, error: '', busy: false };
+  function saxoAvailable() { return !!(Sync && Sync.mode === 'server' && !demo && !(Sync.features && Sync.features.saxo === false)); }
+
+  async function loadSaxo(opts) {
+    if (!saxoAvailable()) return;
+    try { saxoLink.status = await Sync.saxo.status(); saxoLink.error = ''; }
+    catch (e) { saxoLink.error = e.message; }
+    if (ui.view === 'invest' && !modal) render();
+    if (opts && opts.auto) {
+      const st = saxoLink.status;
+      const sub = Invest.brokers(inv()).find(b => b.id === 'saxo');
+      const stale = !sub || !sub.syncedAt || Date.now() - Date.parse(sub.syncedAt) > 6 * 3600000;
+      if (st && st.connected && !st.expired && (opts.force || stale)) await saxoFetch({ quiet: !opts.force });
+    }
+  }
+
+  function saxoCard() {
+    if (!(Sync && Sync.mode === 'server') || demo) return '';
+    if (Sync.features && Sync.features.saxo === false) return '';
+    const st = saxoLink.status;
+    const sub = Invest.brokers(inv()).find(b => b.id === 'saxo');
+    let body;
+    if (!st) body = `<p class="small muted">${saxoLink.error ? esc(saxoLink.error) : 'Laden…'}</p>`;
+    else if (!st.configured) body = `<p class="small muted">Haal je posities, transacties, dividenden en stortingen rechtstreeks op uit Saxo. Je meldt je aan op de website van Saxo zelf; Helder ziet je wachtwoord nooit en kan geen orders plaatsen.</p>
+        <button class="btn primary" data-action="saxo-setup">Saxo-koppeling instellen…</button>`;
+    else body = `<p class="small muted">${st.connected && !st.expired ? '✓ Aangemeld bij Saxo' : st.connected ? 'Je Saxo-aanmelding is verlopen (Saxo laat dat maar kort toe). Klik op Vernieuwen en meld je opnieuw aan.' : 'Nog niet aangemeld bij Saxo.'}${st.env === 'sim' ? ' · <strong>simulatie-omgeving</strong>' : ''}${sub ? ' · laatst opgehaald ' + esc(fmtDateTime(sub.syncedAt)) : ''}</p>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn primary" data-action="saxo-fetch" ${saxoLink.busy ? 'disabled' : ''}>${saxoLink.busy ? 'Bezig met ophalen…' : sub ? 'Vernieuwen' : 'Ophalen uit Saxo'}</button>
+          ${st.connected ? '<button class="btn" data-action="saxo-disconnect">Loskoppelen</button>' : ''}
+          <button class="btn" data-action="saxo-setup">Instelling</button>
+        </div>`;
+    return `<div class="card" style="margin-top:16px"><h2>Saxo Bank</h2>${body}</div>`;
+  }
+
+  function saxoSetupModal() {
+    const m = modal;
+    const st = saxoLink.status || {};
+    const redirect = st.redirectUrl || (location.origin + '/api/saxo/callback');
+    return modalShell('Saxo-koppeling instellen', `
+      ${st.configured ? `<div class="notice info small">✓ Ingesteld (${st.env === 'sim' ? 'simulatie' : 'echte rekening'}). Vul opnieuw in om te wijzigen.</div>` : ''}
+      <p>Helder gebruikt de officiële <strong>Saxo OpenAPI</strong>. Je stelt dit één keer in:</p>
+      <ol class="steps">
+        <li>Ga naar <a href="https://www.developer.saxo" target="_blank" rel="noopener">developer.saxo</a> en meld je aan met je <strong>Saxo-account</strong>.</li>
+        <li>Vraag toegang voor je <strong>echte rekening</strong> (live, persoonlijk gebruik). Saxo vraagt dat je rekening actief is (er staat geld op). Wil je eerst proberen? Kies dan hieronder <em>Simulatie</em> en gebruik een gratis simulatie-account.</li>
+        <li>Maak bij <strong>Application management</strong> een nieuwe app:
+          <ul><li>Naam: <em>Helder</em></li>
+            <li>Redirect URL: <code>${esc(redirect)}</code> <button class="btn small" data-action="copy" data-copy="${esc(redirect)}">Kopieer</button></li>
+            <li>Grant type: <strong>Code</strong> (Authorization Code)</li>
+            <li>Trading toelaten: <strong>nee</strong> — Helder leest enkel.</li></ul></li>
+        <li>Open de app en kopieer de <strong>App Key</strong> en de <strong>App Secret</strong> hieronder.</li>
+      </ol>
+      <form data-form="saxo-setup" class="form-stack" autocomplete="off">
+        <label class="field"><span>Omgeving</span><select name="env">
+          <option value="live" ${m.env !== 'sim' ? 'selected' : ''}>Echte rekening (live)</option>
+          <option value="sim" ${m.env === 'sim' ? 'selected' : ''}>Simulatie (om te testen)</option></select></label>
+        <label class="field"><span>App Key</span><input type="text" name="appKey" autocapitalize="none" spellcheck="false" required></label>
+        <label class="field"><span>App Secret</span><input type="password" name="appSecret" autocomplete="off" required></label>
+        <div class="errors">${esc(m.error || '')}</div>
+        <button class="btn primary" type="submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Opslaan…' : 'Opslaan'}</button>
+      </form>
+      <p class="small muted">App Key en Secret worden enkel op je Helder-server bewaard (map helder-data, niet via het web bereikbaar) en nooit naar je toestellen gestuurd. Je Saxo-wachtwoord gaat nooit via Helder.</p>`,
+      `${st.configured ? '<button class="btn danger" data-action="saxo-remove-config">Instelling verwijderen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+  }
+
+  async function saxoSetupSubmit(form) {
+    const f = new FormData(form);
+    const m = modal;
+    m.env = String(f.get('env'));
+    m.busy = true; m.error = '';
+    renderModal();
+    try {
+      await Sync.saxo.saveConfig(String(f.get('appKey') || '').trim(), String(f.get('appSecret') || '').trim(), m.env);
+      await loadSaxo();
+      closeModal();
+      toast('Saxo-koppeling ingesteld. Klik op “Ophalen uit Saxo” en meld je aan bij Saxo.');
+      render();
+    } catch (e) {
+      if (modal !== m) return;
+      m.busy = false; m.error = e.message; renderModal();
+    }
+  }
+
+  /** Naar de aanmeldpagina van Saxo; daarna komt je terug in Helder en wordt alles opgehaald. */
+  async function saxoLogin() {
+    try { const r = await Sync.saxo.connect(); location.href = r.url; }
+    catch (e) { toast('Saxo: ' + e.message); }
+  }
+
+  async function saxoFetch(opts) {
+    if (saxoLink.busy) return;
+    const st = saxoLink.status;
+    if (st && (!st.connected || st.expired)) { if (!(opts && opts.quiet)) await saxoLogin(); return; }
+    saxoLink.busy = true;
+    if (ui.view === 'invest' && !modal) render();
+    try {
+      const data = await Sync.saxo.fetch();
+      state.investments = Invest.mergeInvestments(state.investments, data, 'saxo-api', today);
+      commit(`Saxo opgehaald: ${data.positions.length} posities, ${data.trades.length} transacties, ${data.movements.length} kasbewegingen`
+        + (data.currency && data.currency !== 'EUR' ? ` (bedragen in ${data.currency})` : '')
+        + (data.partial ? ' — kasbewegingen konden niet opgehaald worden' : ''));
+    } catch (e) {
+      if (e.code === 'expired') { await loadSaxo(); if (!(opts && opts.quiet)) await saxoLogin(); }
+      else if (!(opts && opts.quiet)) toast('Saxo: ' + e.message);
+    } finally {
+      saxoLink.busy = false;
+      if (ui.view === 'invest' && !modal) render();
+    }
+  }
+
   // ----- Degiro -----
 
   function degiroModal() {
@@ -2464,7 +2576,7 @@
     renderModal();
     try {
       const data = await Sync.degiro(m.username, String(f.get('password')), String(f.get('otp') || '').trim());
-      state.investments = Invest.mergeInvestments(inv(), data, 'degiro-api', today);
+      state.investments = Invest.mergeInvestments(state.investments, data, 'degiro-api', today);
       closeModal();
       commit(`Degiro opgehaald: ${data.positions.length} posities, ${data.trades.length} transacties, ${data.movements.length} kasbewegingen`);
     } catch (e) {
@@ -2511,17 +2623,16 @@
 
   function applyDegiroFiles() {
     const m = modal;
-    let data = inv();
+    let data = state.investments;
     const order = { account: 0, transactions: 1, portfolio: 2 };
     const list = m.files.filter(f => f.type && !f.duplicate).sort((a, b) => order[a.type] - order[b.type] || (a.date || '').localeCompare(b.date || ''));
-    const keepSource = data && data.source === 'degiro-api';
+    const dgDate = () => { const b = Invest.brokers(data).find(x => x.id === 'degiro'); return b ? b.positionsDate : null; };
     for (const f of list) {
       if (f.type === 'portfolio') data = Invest.mergeInvestments(data, Invest.parsePortfolioCsv(f.text), 'degiro-csv', f.date || today);
-      if (f.type === 'transactions') data = Invest.mergeInvestments(data, { trades: Invest.parseTransactionsCsv(f.text) }, 'degiro-csv', data && data.positionsDate);
-      if (f.type === 'account') data = Invest.mergeInvestments(data, { movements: Invest.parseAccountCsv(f.text) }, 'degiro-csv', data && data.positionsDate);
+      if (f.type === 'transactions') data = Invest.mergeInvestments(data, { trades: Invest.parseTransactionsCsv(f.text) }, 'degiro-csv', dgDate());
+      if (f.type === 'account') data = Invest.mergeInvestments(data, { movements: Invest.parseAccountCsv(f.text) }, 'degiro-csv', dgDate());
       data.files = (data.files || []).concat([{ name: f.name, hash: f.hash, type: f.type, date: f.type === 'portfolio' ? f.date : null, importedAt: new Date().toISOString() }]);
     }
-    if (keepSource) data.source = 'degiro-api';
     state.investments = data;
     closeModal();
     commit(`${list.length} Degiro-bestand(en) toegevoegd`);
@@ -2951,7 +3062,24 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'fetch-prices': () => maybeFetchPrices(true),
     'degiro-files': () => openModal({ type: 'degiroFiles', files: [] }),
     'degiro-apply': applyDegiroFiles,
-    'degiro-clear': () => { if (!confirm('Alle beleggingsgegevens (Degiro) wissen?')) return; state.investments = { cleared: true }; commit('Beleggingsgegevens gewist'); },
+    'degiro-clear': () => { if (!confirm('Alle beleggingsgegevens wissen?')) return; state.investments = { cleared: true }; commit('Beleggingsgegevens gewist'); },
+    'invest-remove-broker': el => {
+      const b = Invest.brokers(inv()).find(x => x.id === el.dataset.id);
+      if (!b || !confirm(`Alle beleggingsgegevens van ${b.name} wissen? De andere broker(s) blijven.`)) return;
+      state.investments = Invest.removeBroker(state.investments, b.id);
+      commit(`Gegevens van ${b.name} gewist`);
+    },
+    'saxo-setup': () => openModal({ type: 'saxoSetup', env: (saxoLink.status && saxoLink.status.env) || 'live' }),
+    'saxo-remove-config': async () => {
+      if (!confirm('De Saxo-instelling (App Key en Secret) verwijderen? Je beleggingsgegevens blijven.')) return;
+      try { await Sync.saxo.removeConfig(); await loadSaxo(); closeModal(); render(); } catch (e) { toast(e.message); }
+    },
+    'saxo-login': () => saxoLogin(),
+    'saxo-fetch': () => saxoFetch(),
+    'saxo-disconnect': async () => {
+      if (!confirm('Saxo loskoppelen? Je opgehaalde gegevens blijven in Helder.')) return;
+      try { await Sync.saxo.disconnect(); await loadSaxo(); render(); toast('Saxo losgekoppeld'); } catch (e) { toast(e.message); }
+    },
     'lookup': () => { const c = C.lookupCandidates(state); if (!c.length) toast('Alles is al gekoppeld.'); else openLookup(c); },
     'lookup-one': lookupOne,
     'apply-sugg': el => { $('#tx-category').value = el.dataset.id; updateSplitRemaining(); updateTxSections(); updateTitleSuggestion(); },
@@ -2982,6 +3110,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
     if (ui.view === 'bank' && !bankLink.status && bankLinkAvailable()) loadBankLink();
+    if (ui.view === 'invest' && !saxoLink.status && saxoAvailable()) loadSaxo();
     if (!silent) { render(); window.scrollTo(0, 0); }
   }
 
@@ -3117,6 +3246,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     ev.preventDefault();
     if (form.dataset.form === 'degiro') { degiroSubmit(form); return; }
     if (form.dataset.form === 'bank-setup') { bankSetupSubmit(form); return; }
+    if (form.dataset.form === 'saxo-setup') { saxoSetupSubmit(form); return; }
     if (form.dataset.form === 'new-income') {
       const name = String(new FormData(form).get('name') || '').trim();
       if (!name) return;
@@ -3180,7 +3310,10 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       if (/[?&]welkom=1/.test(location.search)) { history.replaceState(null, '', location.pathname + location.hash); toast('Welkom bij Helder! Je account is aangemaakt.'); }
       const back = /[?&]koppeling=/.test(location.search);
       if (back) { history.replaceState(null, '', location.pathname + '#bank'); ui.view = 'bank'; render(); }
-      if (!ui.admin) await loadBankLink({ auto: true });
+      // Terug van de aanmeldpagina van Saxo: meteen ophalen
+      const saxoBack = /[?&]saxo=1/.test(location.search);
+      if (saxoBack) { history.replaceState(null, '', location.pathname + '#invest'); ui.view = 'invest'; render(); }
+      if (!ui.admin) { await loadBankLink({ auto: true }); await loadSaxo({ auto: true, force: saxoBack }); }
     }).catch(e => console.error('Helder sync:', e));
     // Terug in Helder na het aanmelden bij de bank (bv. vanuit Safari naar de iPhone-app)
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && bankLink.awaiting) { bankLink.awaiting = false; loadBankLink({ auto: true }); } });

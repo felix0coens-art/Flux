@@ -1,12 +1,12 @@
 /*
- * Helder — beleggingen (Degiro).
+ * Helder — beleggingen (Degiro en Saxo Bank).
  *
- * Gegevens komen van de rechtstreekse Degiro-koppeling (via de Helder-server) of van de
+ * Gegevens komen van de rechtstreekse Degiro- of Saxo-koppeling (via de Helder-server) of van de
  * exportbestanden die Degiro zelf aanbiedt (Portefeuille.csv, Transacties.csv, Rekeningoverzicht.csv).
- * Beide worden omgezet naar hetzelfde formaat:
+ * Alles wordt omgezet naar hetzelfde formaat (per broker; zie view() voor het geheel):
  *
  *   state.investments = {
- *     source: 'degiro-api' | 'degiro-csv', syncedAt,
+ *     source: 'degiro-api' | 'degiro-csv' | 'saxo-api', syncedAt,
  *     positions: [{ key, name, isin, symbol, currency, quantity, price, valueEur }],
  *     cashEur,
  *     trades:    [{ id, date, isin, name, quantity (+ koop / − verkoop), price, currency, totalEur, feesEur }],
@@ -137,9 +137,107 @@
   }
 
   /** Voegt nieuwe gegevens toe aan de bestaande beleggingen (zonder dubbels). */
+  // ---------- Meerdere brokers (Degiro en Saxo) ----------
+  //
+  // Met één broker is state.investments het object hierboven. Met meer dan één wordt het
+  //   { brokers: { degiro: {...}, saxo: {...} }, market, files }
+  // en maakt view() daar één geheel van (posities, transacties en waarde door de tijd samen).
+
+  const EXTRAS = ['market', 'files'];
+  function brokerOf(source) { return /^saxo/.test(source || '') ? 'saxo' : 'degiro'; }
+  const BROKER_NAMES = { degiro: 'Degiro', saxo: 'Saxo Bank' };
+  function hasData(x) { return !!x && !x.cleared && ((x.positions || []).length || (x.trades || []).length || (x.movements || []).length || (x.history || []).length || x.positionsDate); }
+
+  function split(current) {
+    const cur = current && !current.cleared ? JSON.parse(JSON.stringify(current)) : null;
+    const extras = {};
+    if (cur) for (const k of EXTRAS) if (cur[k]) extras[k] = cur[k];
+    let subs = {};
+    if (cur && cur.brokers) subs = cur.brokers;
+    else if (hasData(cur)) { for (const k of EXTRAS) delete cur[k]; subs[brokerOf(cur.source)] = cur; }
+    return { subs, extras };
+  }
+
+  function join(subs, extras) {
+    const names = Object.keys(subs).filter(n => hasData(subs[n]));
+    if (!names.length) return Object.assign({ cleared: true }, extras);
+    if (names.length === 1) return Object.assign(subs[names[0]], extras);
+    const brokers = {};
+    for (const n of names) brokers[n] = subs[n];
+    return Object.assign({ brokers }, extras);
+  }
+
   function mergeInvestments(current, incoming, source, today) {
+    const { subs, extras } = split(current);
+    const b = brokerOf(source);
+    subs[b] = mergeSingle(subs[b] || null, incoming, source, today);
+    return join(subs, extras);
+  }
+
+  /** Verwijdert de gegevens van één broker (de andere blijven). */
+  function removeBroker(current, broker) {
+    const { subs, extras } = split(current);
+    delete subs[broker];
+    return join(subs, extras);
+  }
+
+  /** Welke brokers zitten erin, met hun bron en laatste update. */
+  function brokers(inv) {
+    if (!inv || inv.cleared) return [];
+    const subs = inv.brokers || (hasData(inv) ? { [brokerOf(inv.source)]: inv } : {});
+    return Object.keys(subs).map(n => ({ id: n, name: BROKER_NAMES[n] || n, source: subs[n].source, syncedAt: subs[n].syncedAt, positionsDate: subs[n].positionsDate || null }));
+  }
+
+  function subsOf(inv) {
+    return inv && inv.brokers ? Object.keys(inv.brokers).map(n => Object.assign({}, inv.brokers[n], { market: inv.market })) : null;
+  }
+
+  function startOf(sub) {
+    const dates = (sub.trades || []).map(t => t.date).concat((sub.movements || []).map(m => m.date), (sub.history || []).map(h => h.date));
+    return dates.length ? dates.reduce((a, d) => d < a ? d : a) : (sub.positionsDate || null);
+  }
+
+  const viewCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  /** Eén samengevoegd overzicht van alle brokers (alleen-lezen; bewaar altijd het origineel). */
+  function view(raw) {
+    if (!raw || !raw.brokers) return raw;
+    if (viewCache && viewCache.has(raw)) return viewCache.get(raw);
+    const names = Object.keys(raw.brokers);
+    const subs = subsOf(raw);
+    const tag = (list, n) => (list || []).map(x => Object.assign({}, x, { broker: n }));
+    const all = key => names.flatMap((n, i) => tag(subs[i][key], n)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    const newest = subs.reduce((a, s) => !a || (s.syncedAt || '') > (a.syncedAt || '') ? s : a, null);
+    // Waarde door de tijd: op elke gekende datum de som van alle brokers (gekend of gereconstrueerd)
+    const dates = Array.from(new Set(subs.flatMap(s => (s.history || []).map(h => h.date)))).sort();
+    const caches = subs.map(() => ({}));
+    const history = dates.map(d => {
+      let value = 0;
+      subs.forEach((s, i) => {
+        const own = (s.history || []).find(h => h.date === d);
+        const start = startOf(s);
+        if (own && own.valueEur != null) value += own.valueEur;
+        else if (!start || d < start) value += 0;
+        else if (canEstimate(s)) value += estimateAt(s, d, caches[i]).valueEur;
+        else { const prev = (s.history || []).filter(h => h.date <= d).pop(); value += prev ? prev.valueEur || 0 : 0; }
+      });
+      return { date: d, valueEur: value, source: 'samen' };
+    });
+    const out = Object.assign({}, raw, {
+      source: newest && newest.source, syncedAt: newest && newest.syncedAt,
+      positions: names.flatMap((n, i) => tag(subs[i].positions, n)),
+      cashEur: subs.reduce((t, s) => t + (s.cashEur || 0), 0),
+      positionsDate: subs.map(s => s.positionsDate).filter(Boolean).sort().pop() || null,
+      trades: all('trades'), movements: all('movements'), history
+    });
+    if (viewCache) viewCache.set(raw, out);
+    return out;
+  }
+
+  function mergeSingle(current, incoming, source, today) {
     const cur = current ? JSON.parse(JSON.stringify(current)) : { positions: [], trades: [], movements: [], history: [], cashEur: 0 };
-    const out = Object.assign(cur, { source, syncedAt: new Date().toISOString() });
+    // Exportbestanden toevoegen aan een rechtstreekse koppeling: de bron blijft de koppeling
+    const keep = cur.source === 'degiro-api' && source === 'degiro-csv';
+    const out = Object.assign(cur, { source: keep ? cur.source : source, syncedAt: new Date().toISOString() });
     const day = today || C.todayStr();
     // Een export van een vroegere datum voegt enkel een waarderingspunt toe; de huidige posities blijven
     const newest = !out.positionsDate || day >= out.positionsDate;
@@ -221,6 +319,12 @@
 
   /** Aantal stuks per product op een datum. */
   function holdingsAt(inv, date) {
+    const subs = subsOf(inv);
+    if (subs) {
+      const q = {};
+      for (const s of subs) for (const [k, n] of Object.entries(holdingsAt(s, date))) q[k] = (q[k] || 0) + n;
+      return q;
+    }
     const snaps = snapshotsOf(inv);
     const anchor = snaps[snaps.length - 1] || null;
     const q = {};
@@ -248,6 +352,8 @@
   }
 
   function cashAt(inv, date, changes) {
+    const subs = subsOf(inv);
+    if (subs) return subs.reduce((t, s) => t + cashAt(s, date), 0);
     changes = changes || cashChanges(inv);
     const snaps = snapshotsOf(inv);
     const anchor = snaps[snaps.length - 1] || null;
@@ -263,6 +369,14 @@
   /** Geschatte waarde van de beleggingsrekening op een datum. */
   function estimateAt(inv, date, cache) {
     cache = cache || {};
+    const subs = subsOf(inv);
+    if (subs) {
+      cache.subs = cache.subs || subs.map(() => ({}));
+      const parts = subs.map((s, i) => estimateAt(s, date, cache.subs[i]));
+      const held = parts.filter(p => p.held);
+      const sum = k => parts.reduce((t, p) => t + p[k], 0);
+      return { date, positionsEur: sum('positionsEur'), cashEur: sum('cashEur'), valueEur: sum('valueEur'), held: held.length, quality: held.length && held.every(p => p.quality === 'market') ? 'market' : 'trades' };
+    }
     const pts = cache.pts || (cache.pts = pricePoints(inv));
     const changes = cache.changes || (cache.changes = cashChanges(inv));
     const q = holdingsAt(inv, date);
@@ -275,11 +389,15 @@
       if (price != null) positionsEur += qty * price;
     }
     const cashEur = cashAt(inv, date, changes);
-    return { date, positionsEur: Math.round(positionsEur), cashEur: Math.round(cashEur), valueEur: Math.round(positionsEur + cashEur), quality: total && market === total ? 'market' : 'trades' };
+    return { date, positionsEur: Math.round(positionsEur), cashEur: Math.round(cashEur), valueEur: Math.round(positionsEur + cashEur), held: total, quality: total && market === total ? 'market' : 'trades' };
   }
 
   /** Kan Helder de waarde reconstrueren? (transacties en/of een gekende stand nodig) */
-  function canEstimate(inv) { return !!inv && ((inv.trades || []).length > 0 || snapshotsOf(inv).length > 0); }
+  function canEstimate(inv) {
+    const subs = subsOf(inv);
+    if (subs) return subs.some(canEstimate);
+    return !!inv && ((inv.trades || []).length > 0 || snapshotsOf(inv).length > 0);
+  }
 
   /** Reeks waarden op de gegeven datums; echte waarderingen hebben voorrang. */
   function valueSeries(inv, dates) {
@@ -524,7 +642,7 @@
     };
   }
 
-  const api = { realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

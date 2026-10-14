@@ -81,7 +81,7 @@ Elke inkomstencategorie is een **bron**. Helder maakt er geen vooraf aan: je maa
 
 Vaste lasten zijn geen apart tabblad. Ze worden **automatisch herkend** in je transacties: minstens drie betalingen aan dezelfde tegenpartij met een vast ritme. Je ziet ze als 🔁-label bij die transacties, en bij *Uitgaven* staat een overzicht met de volgende vervaldatum, het verwachte bedrag en eventuele seizoenspatronen. Verwachte inkomsten, zoals je loon, staan bij *Inkomsten*.
 
-## Beleggingen (Degiro)
+## Beleggingen (Degiro en Saxo Bank)
 
 ### Rechtstreeks ophalen
 
@@ -90,6 +90,22 @@ Dit kan wanneer Helder op je eigen server draait. Ga naar *Beleggingen → Ophal
 - Je wachtwoord en 2FA-code worden **niet bewaard**. Je logt elke keer opnieuw in, en de Degiro-sessie wordt meteen weer afgesloten.
 - Degiro heeft **geen officiële API**. Deze koppeling gebruikt dezelfde webdiensten als de Degiro-website. Ze kan stoppen met werken als Degiro iets wijzigt, en ze is niet door Degiro goedgekeurd. De exportbestanden hieronder werken altijd.
 - Elke keer ophalen voegt een waarderingspunt toe aan de grafiek. Historische standen levert deze weg niet: daarvoor gebruik je de portefeuille-export per 31 december.
+
+### Saxo Bank koppelen
+
+Helder gebruikt de officiële **Saxo OpenAPI**. Je meldt je aan op de website van Saxo zelf; Helder ziet je
+wachtwoord nooit en kan geen orders plaatsen (enkel lezen: posities, saldo, transacties, dividenden, stortingen).
+
+1. Ga naar [developer.saxo](https://www.developer.saxo) en meld je aan met je Saxo-account. Vraag toegang voor je
+   echte rekening (live, persoonlijk gebruik); je rekening moet actief zijn. Eerst testen kan met een gratis simulatie-account.
+2. Maak bij **Application management** een app: naam *Helder*, redirect URL `https://jouwdomein/api/saxo/callback`,
+   grant type **Code**, trading **niet** toelaten.
+3. In Helder: **Beleggingen → Saxo Bank → Saxo-koppeling instellen**, plak App Key en App Secret.
+4. Klik op **Ophalen uit Saxo**, meld je aan bij Saxo en je komt vanzelf terug in Helder.
+
+App Key, Secret en tokens staan enkel op de server (`helder-data/saxo.json` en `saxo-….json`). Saxo laat een
+aanmelding maar kort geldig; is ze verlopen, dan stuurt **Vernieuwen** je gewoon opnieuw langs de aanmeldpagina.
+Heb je zowel Degiro als Saxo, dan toont Helder één portefeuille met beide samen (per positie zie je de broker).
 
 ### Wat moet je exact exporteren uit Degiro?
 

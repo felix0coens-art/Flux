@@ -796,7 +796,7 @@
    * uitgave of inkomen maar een belegging. Manuele keuzes worden gerespecteerd.
    */
   function detectInvestments(state) {
-    const pattern = (state.settings && state.settings.investPattern) || 'degiro|flatex';
+    const pattern = (state.settings && state.settings.investPattern) || 'degiro|flatex|saxo';
     let re = null;
     try { re = new RegExp(pattern, 'i'); } catch (e) { re = null; }
     const hasCat = state.categories.some(c => c.id === SYS_INVEST);

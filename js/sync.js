@@ -266,6 +266,16 @@
     disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
   };
 
+  /** Saxo Bank (OpenAPI): de server bewaart App Key, Secret en de (kortlevende) toegangssleutels. */
+  const saxo = {
+    status: () => api('GET', '/api/saxo/status'),
+    saveConfig: (appKey, appSecret, env) => api('POST', '/api/saxo/config', { appKey, appSecret, env }),
+    removeConfig: () => api('POST', '/api/saxo/config', { remove: true }),
+    connect: () => api('POST', '/api/saxo/connect', {}),
+    fetch: fromDate => api('POST', '/api/saxo/fetch', { fromDate }),
+    disconnect: () => api('POST', '/api/saxo/disconnect', {})
+  };
+
   /** Beheer (enkel voor het beheerdersaccount). */
   const admin = {
     overview: () => api('GET', '/api/admin/overview'),
@@ -274,7 +284,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },
