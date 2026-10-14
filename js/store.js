@@ -8,8 +8,9 @@
   const STORAGE_KEY = 'flux-data-v1';
   const DEMO_KEY = 'flux-demo-v1';
   /*
-   * Schemaversie 3 = de "proper starten"-versie: oudere gegevens (inclusief vroegere demodata en
-   * dubbel opgeladen bestanden) worden bij de update volledig gewist, lokaal én op de server.
+   * Schemaversie 3 = de eenmalige "proper starten"-versie: gegevens van vóór versie 3 werden bij die
+   * update gewist (op vraag van de gebruiker). BELANGRIJK: dit getal NIET meer verhogen om gegevens te
+   * wissen. Nieuwe velden worden voortaan in migrate() toegevoegd, zodat je gegevens elke update overleven.
    */
   const VERSION = 3;
 
@@ -35,16 +36,25 @@
     ['cat_cadeaus', 'Cadeaus & goede doelen', 'expense', '#f76707', 'gift, cadeau, geschenk, florist, bloemen, bloemist, charity, liefdadigheid, goede doel, non-profit, ngo, foundation, stichting'],
     ['cat_onderwijs', 'Kinderen & onderwijs', 'expense', '#1098ad', 'school, onderwijs, education, university, universiteit, hogeschool, childcare, kinderopvang, crèche, daycare, kindergarten, jeugdbeweging, youth organization'],
     ['cat_overig', 'Overige uitgaven', 'expense', '#adb5bd', ''],
-    // Inkomstenbronnen — hernoem ze naar je eigen drie bronnen
-    ['cat_loon', 'Loon', 'income', '#37b24d', 'employer, werkgever, salary, loon, wedde, payroll, sociaal secretariaat, payroll company'],
-    ['cat_bijberoep', 'Bijberoep / zelfstandige', 'income', '#74b816', 'invoice, factuur, honorarium, client, klant, freelance'],
-    ['cat_inkomsten', 'Andere inkomsten', 'income', '#a9e34b', 'child benefit, groeipakket, kinderbijslag, uitkering, benefit, rva, social security, sociale zekerheid, pension, pensioen, tax refund, rent income, huurinkomsten'],
-    // Kosten die van een inkomstenbron worden afgetrokken (incomeId)
-    ['cat_kost_bijberoep', 'Kosten bijberoep', 'expense', '#94d82d', '', 'cat_bijberoep'],
     // Systeemcategorieën: tellen niet als inkomen of uitgave
     ['sys_voorschot', 'Voorschot voor iemand anders', 'advance', '#15aabf', ''],
     ['sys_belegging', 'Beleggingen (storting / opname)', 'investment', '#4c6ef5', '']
-  ].map(([id, name, kind, color, lookupTags, incomeId]) => Object.assign({ id, name, kind, color, lookupTags }, incomeId ? { incomeId } : {}));
+  ].map(toCategory);
+
+  function toCategory([id, name, kind, color, lookupTags, incomeId]) {
+    return Object.assign({ id, name, kind, color, lookupTags }, incomeId ? { incomeId } : {});
+  }
+
+  /*
+   * Inkomstenbronnen kies je volledig zelf (tabblad Inkomsten). Deze voorbeeldbronnen worden
+   * enkel in de voorbeeldmodus gebruikt.
+   */
+  const DEMO_INCOME_CATEGORIES = [
+    ['cat_loon', 'Loon', 'income', '#37b24d', 'employer, werkgever, salary, loon, wedde, payroll, sociaal secretariaat'],
+    ['cat_bijberoep', 'Bijberoep / zelfstandige', 'income', '#74b816', 'invoice, factuur, honorarium, freelance'],
+    ['cat_inkomsten', 'Andere inkomsten', 'income', '#a9e34b', 'child benefit, groeipakket, kinderbijslag, uitkering'],
+    ['cat_kost_bijberoep', 'Kosten bijberoep', 'expense', '#94d82d', '', 'cat_bijberoep']
+  ].map(toCategory);
 
   function defaultState() {
     return {
@@ -138,6 +148,7 @@
 
     const s = defaultState();
     s.demo = true;
+    s.categories = s.categories.concat(DEMO_INCOME_CATEGORIES.map(c => Object.assign({}, c)));
     s.accounts = [
       { id: 'acc_kbc', name: 'KBC zichtrekening', iban: 'BE68539007547034', type: 'zicht', bank: 'kbc' },
       { id: 'acc_argenta', name: 'Argenta spaarrekening', iban: 'BE12973000000092', type: 'spaar', bank: 'argenta' },
@@ -248,7 +259,7 @@
     return C.recompute(s);
   }
 
-  const api = { STORAGE_KEY, DEMO_KEY, VERSION, DEFAULT_CATEGORIES, defaultState, migrate, load, save, clear, demoState };
+  const api = { STORAGE_KEY, DEMO_KEY, VERSION, DEFAULT_CATEGORIES, DEMO_INCOME_CATEGORIES, defaultState, migrate, load, save, clear, demoState };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxStore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

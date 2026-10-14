@@ -26,9 +26,7 @@
   const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'invest', 'settings'];
   const ui = {
     view: VIEWS.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'dashboard',
-    month: today.slice(0, 7),
-    year: today.slice(0, 4),
-    period: 'month',
+    range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
     bank: { account: '', status: 'todo', search: '', limit: 150 },
     list: { status: '', limit: 150 },
     ruleHint: null, // { txId, categoryId } na een inline koppeling: "altijd zo?"
@@ -171,13 +169,79 @@
     toast('Terug naar je eigen gegevens');
   }
 
-  function monthNav() {
-    return `<div class="month-nav">
-      <button class="btn small" data-action="month" data-delta="-1" aria-label="Vorige maand">‹</button>
-      <span class="label">${esc(monthLabel(ui.month))}</span>
-      <button class="btn small" data-action="month" data-delta="1" aria-label="Volgende maand">›</button>
-      ${ui.month !== today.slice(0, 7) ? '<button class="btn small ghost" data-action="month" data-delta="0">Deze maand</button>' : ''}
+  // ---------- Tijdslijn: periode kiezen ----------
+
+  const MONTHS_SHORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  function shortMonth(ym) { return MONTHS_SHORT[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4); }
+
+  /** Alle maanden van de tijdslijn: van de eerste transactie (minstens 12 maanden terug) tot nu. */
+  function timelineMonths() {
+    let first = shiftMonth(today.slice(0, 7), -11), last = today.slice(0, 7);
+    for (const t of state.transactions) { const m = t.date.slice(0, 7); if (m < first) first = m; if (m > last) last = m; }
+    const out = [];
+    for (let m = first; m <= last; m = shiftMonth(m, 1)) out.push(m);
+    return out;
+  }
+  function currentRange() {
+    const r = ui.range;
+    return { start: r.from + '-01', end: C.periodRange('monthly', r.to + '-01').end };
+  }
+  function rangeLabel(r) {
+    r = r || ui.range;
+    if (r.from === r.to) return esc(monthLabel(r.from));
+    if (r.from.slice(5) === '01' && r.to.slice(5) === '12' && r.from.slice(0, 4) === r.to.slice(0, 4)) return 'Heel ' + r.from.slice(0, 4);
+    const n = (Number(r.to.slice(0, 4)) - Number(r.from.slice(0, 4))) * 12 + Number(r.to.slice(5)) - Number(r.from.slice(5)) + 1;
+    return `${shortMonth(r.from)} – ${shortMonth(r.to)} <span class="muted">(${n} maanden)</span>`;
+  }
+  function presetRange(key, months) {
+    const cur = today.slice(0, 7), y = Number(today.slice(0, 4));
+    const map = {
+      month: [cur, cur], prev: [shiftMonth(cur, -1), shiftMonth(cur, -1)], q: [shiftMonth(cur, -2), cur],
+      ytd: [y + '-01', cur], lastyear: [(y - 1) + '-01', (y - 1) + '-12'], m12: [shiftMonth(cur, -11), cur], all: [months[0], months[months.length - 1]]
+    };
+    const [from, to] = map[key];
+    return { from: from < months[0] ? months[0] : from, to };
+  }
+
+  /** Schuifbalk op een tijdslijn: sleep de twee handvatten om de periode te kiezen. */
+  function timeline() {
+    const months = timelineMonths();
+    let i0 = months.indexOf(ui.range.from), i1 = months.indexOf(ui.range.to);
+    if (i0 < 0) i0 = 0;
+    if (i1 < i0) i1 = months.length - 1;
+    const lines = C.allocations(state);
+    const act = months.map(m => C.summarize(state, C.periodRange('monthly', m + '-01'), lines).expenses);
+    const max = Math.max(1, ...act);
+    const n = months.length;
+    const presets = [['month', 'Deze maand'], ['prev', 'Vorige maand'], ['q', '3 maanden'], ['ytd', 'Dit jaar'], ['lastyear', 'Vorig jaar'], ['m12', '12 maanden'], ['all', 'Alles']];
+    const activePreset = (presets.find(([k]) => { const r = presetRange(k, months); return r.from === ui.range.from && r.to === ui.range.to; }) || [])[0];
+    return `<div class="card timeline" data-months="${esc(months.join(','))}">
+      <div class="tl-head"><strong id="tl-label">${rangeLabel()}</strong><span class="spacer"></span>
+        <div class="seg tl-presets">${presets.map(([k, l]) => `<button class="${activePreset === k ? 'active' : ''}" data-action="range-preset" data-preset="${k}">${l}</button>`).join('')}</div></div>
+      <div class="tl-track"><div class="tl-inner">
+        <div class="tl-bars">${months.map((m, i) => `<span class="${i >= i0 && i <= i1 ? 'in' : ''}" style="height:${Math.max(4, act[i] / max * 100).toFixed(0)}%" title="${esc(shortMonth(m))}: uitgaven ${esc(money(act[i]))}"></span>`).join('')}</div>
+        <div class="tl-sel" style="left:${(i0 / n * 100).toFixed(2)}%;width:${((i1 - i0 + 1) / n * 100).toFixed(2)}%"></div></div>
+        <input type="range" class="tl-range" data-tl="from" min="0" max="${n - 1}" step="1" value="${i0}" aria-label="Begin van de periode">
+        <input type="range" class="tl-range" data-tl="to" min="0" max="${n - 1}" step="1" value="${i1}" aria-label="Einde van de periode">
+      </div>
+      <div class="tl-axis">${months.map((m, i) => m.slice(5) === '01' || i === 0 ? `<span style="left:${((i + 0.5) / n * 100).toFixed(2)}%">${m.slice(5) === '01' ? m.slice(0, 4) : shortMonth(m)}</span>` : '').join('')}</div>
+      <p class="small muted tl-hint">Sleep de twee bolletjes om het begin en het einde van de periode te kiezen. De balkjes tonen je uitgaven per maand.</p>
     </div>`;
+  }
+
+  /** Tijdens het slepen: label en selectie meteen bijwerken (zonder alles opnieuw te tekenen). */
+  function onTimelineInput(el) {
+    const tl = el.closest('.timeline');
+    const months = tl.dataset.months.split(',');
+    const from = $('[data-tl=from]', tl), to = $('[data-tl=to]', tl);
+    let a = Number(from.value), b = Number(to.value);
+    if (a > b) { if (el === from) { b = a; to.value = b; } else { a = b; from.value = a; } }
+    ui.range = { from: months[a], to: months[b] };
+    $('#tl-label', tl).innerHTML = rangeLabel();
+    const sel = $('.tl-sel', tl);
+    sel.style.left = (a / months.length * 100).toFixed(2) + '%';
+    sel.style.width = ((b - a + 1) / months.length * 100).toFixed(2) + '%';
+    $$('.tl-bars span', tl).forEach((sp, i) => sp.classList.toggle('in', i >= a && i <= b));
   }
 
   // ---------- Rendering ----------
@@ -214,10 +278,11 @@
         </div>`;
     }
     const lines = C.allocations(state);
-    const range = C.periodRange('monthly', ui.month + '-01');
+    const range = currentRange();
     const sum = C.summarize(state, range, lines);
-    const refDate = ui.month === today.slice(0, 7) ? today : range.end;
+    const refDate = range.end > today ? today : range.end;
     const todo = todoCount();
+    const multi = ui.range.from !== ui.range.to;
     const adv = C.advancesOverview(state);
     const budgets = state.budgets.map(b => C.budgetStatus(state, b, refDate, lines)).filter(b => b.status !== 'ok');
     const upcoming = C.detectRecurring(state, today).filter(r => r.userStatus !== 'ignored' && r.status !== 'gestopt' && r.daysUntil >= -7 && r.daysUntil <= 30);
@@ -227,16 +292,18 @@
     const open = adv.people.filter(p => p.open !== 0);
 
     return `
-      <div class="page-head"><h1>Overzicht</h1><span class="spacer"></span>${monthNav()}</div>
+      <div class="page-head"><h1>Overzicht</h1></div>
+      ${timeline()}
       ${todo ? `<div class="notice info"><a href="#" data-action="goto" data-view="bank">📥 ${todo} transactie(s) wachten om gekoppeld te worden</a> aan een inkomst, uitgave, voorschot, belegging of eigen rekening.</div>` : ''}
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Netto inkomsten</div><div class="value pos">${money(sum.netIncome)}</div>
           <div class="hint">bruto ${money(sum.income)}${sum.incomeCosts ? ' − kosten ' + money(sum.incomeCosts) : ''}</div></div>
         <div class="card kpi"><div class="label">Uitgaven</div><div class="value">${money(sum.expenses)}</div><div class="hint">na terugbetalingen</div></div>
-        <div class="card kpi"><div class="label">Over deze maand</div><div class="value ${sum.net >= 0 ? 'pos' : ''}">${money(sum.net)}</div>
+        <div class="card kpi"><div class="label">Over in deze periode</div><div class="value ${sum.net >= 0 ? 'pos' : ''}">${money(sum.net)}</div>
           <div class="hint">${sum.net < 0 ? 'meer uitgegeven dan verdiend' : sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : ''}</div></div>
-        <div class="card kpi"><div class="label">Belegd deze maand</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
+        <div class="card kpi"><div class="label">Belegd</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
       </div>
+      ${multi ? `<div class="card" style="margin-bottom:16px"><h2>Per maand</h2>${monthBars(lines)}</div>` : ''}
       <div class="grid two">
         <div class="card">
           <h2>Vermogen</h2>
@@ -253,7 +320,7 @@
           ${Object.keys(sum.byIncome).length ? '<div class="list">' + Object.entries(sum.byIncome).sort((a, b) => b[1].gross - a[1].gross).map(([id, v]) => `<div class="list-row">
               <span class="dot-lg" style="background:${esc(catColor(id === '__none__' ? null : id))}"></span>
               <div class="grow">${esc(id === '__none__' ? 'Nog niet gekoppeld' : catName(id))}<div class="small muted">bruto ${money(v.gross)}${v.costs ? ' − kosten ' + money(v.costs) : ''}</div></div>
-              <span class="amount">${money(v.net)}</span></div>`).join('') + '</div>' : '<p class="muted">Geen inkomsten deze maand.</p>'}
+              <span class="amount">${money(v.net)}</span></div>`).join('') + '</div>' : '<p class="muted">Geen inkomsten in deze periode.</p>'}
         </div>
         <div class="card">
           <h2>Voorschotten</h2>
@@ -263,12 +330,36 @@
         <div class="card">
           <h2>Aandacht</h2>
           <div class="list">
-            ${budgets.map(b => `<div class="list-row"><div class="grow">Budget ${esc(catName(b.budget.categoryId))}</div><span class="badge ${b.status}">${b.status === 'over' ? 'overschreden' : 'bijna op'} · ${Math.round(b.pct * 100)}%</span></div>`).join('')}
+            ${budgets.map(b => `<div class="list-row"><div class="grow">Budget ${esc(catName(b.budget.categoryId))}<div class="small muted">${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</div></div><span class="badge ${b.status}">${b.status === 'over' ? 'overschreden' : 'bijna op'} · ${Math.round(b.pct * 100)}%</span></div>`).join('')}
             ${upcoming.map(r => `<div class="list-row"><div class="grow">🔁 ${esc(r.name)}<div class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</div></div><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`).join('')}
             ${!budgets.length && !upcoming.length ? '<p class="muted">Niets bijzonders.</p>' : ''}
           </div>
         </div>
       </div>`;
+  }
+
+  /** Netto inkomsten en uitgaven per maand in de gekozen periode. */
+  function monthBars(lines) {
+    const months = [];
+    for (let m = ui.range.from; m <= ui.range.to; m = shiftMonth(m, 1)) months.push(m);
+    const data = months.map(m => { const x = C.summarize(state, C.periodRange('monthly', m + '-01'), lines); return { m, inc: x.netIncome, exp: x.expenses }; });
+    const max = Math.max(1, ...data.map(d => Math.max(d.inc, d.exp)));
+    const narrow = window.innerWidth < 700;
+    const W = narrow ? 400 : 760, H = 200, L = 8, T = 10, B = 24, bw = (W - L * 2) / data.length;
+    const h = v => Math.max(0, v) / max * (H - T - B);
+    const gap = 2, w = Math.max(2, Math.min(28, bw / 2 - gap - 2));
+    const labelEvery = Math.ceil(data.length / (narrow ? 6 : 12));
+    return `<div class="legend"><span><i class="sw line s1"></i>Netto inkomsten</span><span><i class="sw line s2"></i>Uitgaven</span></div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Netto inkomsten en uitgaven per maand" class="bars">
+        <line x1="${L}" x2="${W - L}" y1="${H - B}" y2="${H - B}" class="grid-line"/>
+        ${data.map((d, i) => { const cx = L + i * bw + bw / 2; return `<g class="bar-group"><title>${monthLabel(d.m)} — netto inkomsten ${money(d.inc)}, uitgaven ${money(d.exp)}, over ${money(d.inc - d.exp)}</title>
+          <rect x="${cx - bw / 2}" y="${T}" width="${bw}" height="${H - T - B}" class="hit"/>
+          <rect x="${cx - w - gap / 2}" y="${H - B - h(d.inc)}" width="${w}" height="${h(d.inc)}" rx="3" class="b1"/>
+          <rect x="${cx + gap / 2}" y="${H - B - h(d.exp)}" width="${w}" height="${h(d.exp)}" rx="3" class="b2"/>
+          ${i % labelEvery === 0 ? `<text x="${cx}" y="${H - 6}" text-anchor="middle">${MONTHS_SHORT[Number(d.m.slice(5)) - 1]}${d.m.slice(5) === '01' || i === 0 ? ' ' + d.m.slice(2, 4) : ''}</text>` : ''}</g>`; }).join('')}
+      </svg>
+      <details><summary class="small">Toon als tabel</summary><div class="table-wrap"><table><thead><tr><th>Maand</th><th class="right">Netto inkomsten</th><th class="right">Uitgaven</th><th class="right">Over</th></tr></thead>
+        <tbody>${data.map(d => `<tr><td>${esc(monthLabel(d.m))}</td><td class="amount">${money(d.inc)}</td><td class="amount">${money(d.exp)}</td><td class="amount ${d.inc - d.exp >= 0 ? 'pos' : 'negv'}">${money(d.inc - d.exp)}</td></tr>`).join('')}</tbody></table></div></details>`;
   }
 
   // ----- Bank -----
@@ -297,7 +388,7 @@
     const incoming = t.amount > 0;
     return `<select class="assign" data-assign="${esc(t.id)}" aria-label="Koppelen">
       ${opt('', '— Te verwerken —')}
-      <optgroup label="${incoming ? 'Inkomst' : 'Uitgave'}">${cats(incoming ? 'income' : 'expense')}</optgroup>
+      <optgroup label="${incoming ? 'Inkomst' : 'Uitgave'}">${cats(incoming ? 'income' : 'expense')}${opt('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…')}</optgroup>
       <optgroup label="Speciaal">
         ${opt('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van een voorschot…' : '↗ Voorgeschoten voor iemand…')}
         ${incoming ? opt('refund', '↩ Terugbetaling van een uitgave…') : ''}
@@ -401,18 +492,6 @@
     for (const r of C.detectRecurring(state, today, { direction }).filter(r => r.userStatus !== 'ignored')) for (const id of r.txIds) out[id] = r;
     return out;
   }
-  function periodToggle() {
-    return `<div class="seg">${[['month', 'Maand'], ['year', 'Jaar']].map(([v, l]) => `<button class="${ui.period === v ? 'active' : ''}" data-action="period" data-period="${v}">${l}</button>`).join('')}</div>`;
-  }
-  function currentRange() {
-    return ui.period === 'year' ? C.periodRange('yearly', ui.year + '-01-01') : C.periodRange('monthly', ui.month + '-01');
-  }
-  function yearSelect() {
-    const years = Array.from(new Set(state.transactions.map(t => t.date.slice(0, 4)).concat([today.slice(0, 4)]))).sort().reverse();
-    return `<select data-ui="year">${years.map(y => `<option ${y === ui.year ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
-  }
-  function periodNav() { return (ui.period === 'year' ? yearSelect() : monthNav()) + periodToggle(); }
-
   function renderIncome() {
     const lines = C.allocations(state);
     const range = currentRange();
@@ -433,6 +512,7 @@
       return `<div class="card">
         <div class="budget-card"><div class="top"><span class="name"><span class="dot-lg" style="background:${esc(catColor(id === '__none__' ? null : id))}"></span> ${esc(id === '__none__' ? 'Nog niet gekoppeld' : catName(id))}</span>
           <span class="amount pos">${money(v.net)}</span></div></div>
+        ${id !== '__none__' ? `<div class="card-tools"><button class="btn small ghost" data-action="edit-category" data-id="${esc(id)}">✎ Naam / bewerken</button><button class="btn small ghost danger" data-action="delete-category" data-id="${esc(id)}">Verwijderen</button></div>` : ''}
         <table class="mini">
           <tr><td>Bruto</td><td class="amount">${money(v.gross)}</td></tr>
           ${Object.entries(v.costsByCategory).map(([cid, a]) => `<tr><td>− ${esc(catName(cid))}</td><td class="amount">${money(-a)}</td></tr>`).join('')}
@@ -444,14 +524,21 @@
     }).join('');
 
     return `
-      <div class="page-head"><h1>Inkomsten</h1><span class="spacer"></span>${periodNav()}
+      <div class="page-head"><h1>Inkomsten</h1><span class="spacer"></span>
         <button class="btn" data-action="new-category" data-kind="income">+ Inkomstenbron</button></div>
+      ${timeline()}
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Bruto</div><div class="value">${money(sum.income)}</div></div>
         <div class="card kpi"><div class="label">Kosten op inkomsten</div><div class="value">${money(sum.incomeCosts)}</div><div class="hint">afgetrokken van de bron waar ze bij horen</div></div>
         <div class="card kpi"><div class="label">Netto</div><div class="value pos">${money(sum.netIncome)}</div></div>
         <div class="card kpi"><div class="label">Terug van vrienden</div><div class="value">${money(sum.repaid)}</div><div class="hint">telt niet als inkomen${adv.totalOpen > 0 ? ' · nog ' + money(adv.totalOpen) + ' open' : ''}</div></div>
       </div>
+      ${!incomeSources().length ? `<div class="card onboarding" style="margin-bottom:16px">
+        <h2>Welke inkomsten heb jij?</h2>
+        <p class="muted">Maak je eigen inkomstenbronnen aan, met de naam die jij wil (bv. “Loon bij Werkgever NV”, “Freelance webdesign”, “Huur appartement Gent”).
+          Kosten die bij een bron horen kan je er daarna aan koppelen, zodat je ook het netto-inkomen per bron ziet.</p>
+        <form data-form="new-income" class="input-row" style="max-width:520px"><input type="text" name="name" placeholder="Naam van je inkomstenbron" required><button class="btn primary" type="submit">Toevoegen</button></form>
+      </div>` : ''}
       <div class="grid cards" style="margin-bottom:16px">${cards}
         ${inv() ? `<div class="card"><div class="budget-card"><div class="top"><span class="name">📈 Dividenden (Degiro)</span><span class="amount pos">${money(divs)}</span></div></div>
           <p class="small muted">Netto dividend (na bronheffing). Blijft op je beleggingsrekening en telt daarom niet mee in je netto inkomsten hierboven.</p></div>` : ''}
@@ -483,8 +570,9 @@
     const cands = C.lookupCandidates(state).filter(c => c.direction === 'out').length;
 
     return `
-      <div class="page-head"><h1>Uitgaven</h1><span class="spacer"></span>${periodNav()}
+      <div class="page-head"><h1>Uitgaven</h1><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Cash-uitgave</button></div>
+      ${timeline()}
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Uitgaven</div><div class="value">${money(sum.expenses)}</div><div class="hint">na terugbetalingen</div></div>
         <div class="card kpi"><div class="label">Vaste lasten per maand</div><div class="value">${money(monthlyFixed)}</div><div class="hint">${recurring.length} automatisch herkend</div></div>
@@ -1020,6 +1108,11 @@
   function assignTx(id, value) {
     const t = txById(id);
     if (!t) return;
+    if (value === 'new-cat') {
+      render();
+      openModal({ type: 'category', assignTo: t.id, category: { id: C.uid('cat'), name: '', kind: t.amount > 0 ? 'income' : 'expense', color: t.amount > 0 ? '#37b24d' : '#3b5bdb', lookupTags: '' } });
+      return;
+    }
     if (value === 'split' || value === 'refund' || value === 'cat:' + C.SYS_ADVANCE) {
       const copy = JSON.parse(JSON.stringify(t));
       if (value === 'cat:' + C.SYS_ADVANCE) { copy.categoryId = C.SYS_ADVANCE; if (copy.isTransfer) copy.transferMode = 'no'; }
@@ -1208,8 +1301,11 @@
     if (kind === 'incomeCost') updated.incomeId = $('#cat-income').value; else delete updated.incomeId;
     const idx = state.categories.findIndex(x => x.id === c.id);
     if (idx >= 0) state.categories[idx] = updated; else state.categories.push(updated);
+    // Aangemaakt vanuit een transactie: die meteen koppelen
+    const t = modal.assignTo ? txById(modal.assignTo) : null;
+    if (t) { t.categoryId = updated.id; t.categorySource = 'manual'; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no'; ui.ruleHint = { txId: t.id, categoryId: updated.id }; }
     closeModal();
-    commit('Categorie opgeslagen');
+    commit(idx < 0 ? (updated.kind === 'income' ? 'Inkomstenbron' : 'Categorie') + ' “' + updated.name + '” aangemaakt' : 'Opgeslagen');
   }
 
   function passwordModal() {
@@ -1641,8 +1737,7 @@
 
   const actions = {
     'goto': el => go(el.dataset.view),
-    'month': el => { const d = Number(el.dataset.delta); ui.month = d === 0 ? today.slice(0, 7) : shiftMonth(ui.month, d); ui.year = ui.month.slice(0, 4); render(); },
-    'period': el => { ui.period = el.dataset.period; render(); },
+    'range-preset': el => { ui.range = presetRange(el.dataset.preset, timelineMonths()); render(); },
     'import': el => openModal({ type: 'import', accountHint: (el && el.dataset.account) || '' }),
     'import-restart': () => openModal({ type: 'import', accountHint: modal.accountHint }),
     'do-import': doImport,
@@ -1718,7 +1813,9 @@
     'save-category': saveCategory,
     'delete-category': el => {
       const id = el.dataset.id;
-      if (!confirm('Categorie “' + catName(id) + '” verwijderen? Gekoppelde transacties worden weer “te verwerken”; bijhorende regels en budgetten verdwijnen.')) return;
+      const n = state.transactions.filter(t => C.splitLines(t).some(l => l.categoryId === id)).length;
+      const what = cat(id) && cat(id).kind === 'income' ? 'Inkomstenbron' : 'Categorie';
+      if (!confirm(`${what} “${catName(id)}” verwijderen?\n\n${n ? n + ' gekoppelde transactie(s) worden weer “te verwerken”. ' : ''}Bijhorende regels en budgetten verdwijnen; gekoppelde kostcategorieën blijven bestaan als gewone uitgave.`)) return;
       state.categories = state.categories.filter(c => c.id !== id).map(c => { if (c.incomeId === id) { const x = Object.assign({}, c); delete x.incomeId; return x; } return c; });
       state.rules = state.rules.filter(r => r.categoryId !== id);
       state.budgets = state.budgets.filter(b => b.categoryId !== id);
@@ -1770,6 +1867,7 @@
   let searchTimer;
   document.addEventListener('input', ev => {
     const el = ev.target;
+    if (el.dataset.tl) { onTimelineInput(el); return; }
     if (el.dataset.filter === 'bank.search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
@@ -1787,7 +1885,7 @@
     const el = ev.target;
     if (el.dataset.assign) { assignTx(el.dataset.assign, el.value); return; }
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
-    if (el.dataset.ui === 'year') { ui.year = el.value; render(); return; }
+    if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); return; }
@@ -1830,6 +1928,15 @@
     if (!form) return;
     ev.preventDefault();
     if (form.dataset.form === 'degiro') { degiroSubmit(form); return; }
+    if (form.dataset.form === 'new-income') {
+      const name = String(new FormData(form).get('name') || '').trim();
+      if (!name) return;
+      if (state.categories.some(c => c.name.toLowerCase() === name.toLowerCase())) { toast('Die naam bestaat al.'); return; }
+      const colors = ['#37b24d', '#74b816', '#0ca678', '#1098ad', '#f59f00', '#ae3ec9'];
+      state.categories.push({ id: C.uid('cat'), name, kind: 'income', color: colors[incomeSources().length % colors.length], lookupTags: '' });
+      commit('Inkomstenbron “' + name + '” aangemaakt');
+      return;
+    }
     const f = new FormData(form);
     const btn = $('button[type=submit]', form);
     btn.disabled = true;

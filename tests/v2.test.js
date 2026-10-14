@@ -7,15 +7,17 @@ const Lookup = require('../js/lookup.js');
 
 function state(transactions) {
   const s = Store.defaultState();
+  s.categories = s.categories.concat(Store.DEMO_INCOME_CATEGORIES.map(c => Object.assign({}, c)));
   s.transactions = transactions.map((t, i) => Object.assign({ id: 't' + i, accountId: 'acc_zicht', counterparty: '', counterpartyIban: '', description: '', splits: [], transferMode: 'auto' }, t));
   return C.recompute(s);
 }
 
-test('standaardgegevens bevatten geen merkenregels', () => {
+test('standaardgegevens: geen merkenregels en geen vooraf gekozen inkomstenbronnen', () => {
   const s = Store.defaultState();
   assert.equal(s.rules.length, 0);
-  assert.equal(s.categories.filter(c => c.kind === 'income').length, 3);
-  assert.ok(s.categories.find(c => c.id === 'cat_kost_bijberoep').incomeId === 'cat_bijberoep');
+  assert.equal(s.categories.filter(c => c.kind === 'income').length, 0, 'inkomstenbronnen kies je zelf');
+  const d = Store.demoState('2026-10-13');
+  assert.ok(d.categories.find(c => c.id === 'cat_kost_bijberoep').incomeId === 'cat_bijberoep', 'voorbeeldmodus heeft wel bronnen');
 });
 
 test('kosten op inkomsten worden van de inkomstenbron afgetrokken, niet bij de uitgaven geteld', () => {

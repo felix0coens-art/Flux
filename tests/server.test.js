@@ -100,6 +100,11 @@ test('server: gegevens van een oudere versie worden bij de update gewist, met ba
   assert.ok(fs.existsSync(file + '.v2.bak'), 'oude gegevens bewaard als back-up op de server');
 });
 
+test('server: dagelijkse automatische back-up bij wijzigingen', async () => {
+  const files = fs.readdirSync(path.join(dir, 'backups'));
+  assert.ok(files.some(f => f.endsWith(new Date().toISOString().slice(0, 10) + '.json')), 'back-up van vandaag aanwezig');
+});
+
 test('server: te veel foute aanmeldpogingen worden geblokkeerd', async () => {
   let last;
   for (let i = 0; i < 12; i++) last = await call('POST', '/api/login', { username: 'niemand', password: 'fout' + i });

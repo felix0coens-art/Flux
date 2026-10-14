@@ -12,9 +12,9 @@ Flux heeft zes tabbladen:
 
 | Tabblad | Waarvoor |
 |---|---|
-| **Overzicht** | De maand in één oogopslag: netto inkomsten, uitgaven, wat er overblijft, wat je belegde, je vermogen (banksaldi + beleggingen + wat vrienden je nog schuldig zijn) en wat aandacht vraagt. |
+| **Overzicht** | Een **tijdslijn met schuifbalk** om eender welke periode te kiezen (of snel: deze maand, dit jaar, 12 maanden, …). Voor die periode: netto inkomsten, uitgaven, wat er overblijft, wat je belegde, je vermogen (banksaldi + beleggingen + wat vrienden je nog schuldig zijn) en wat aandacht vraagt. |
 | **Bank** | Je rekeningen, de **opgeladen bestanden** en alle transacties. Hier laad je de CSV van je bank op en koppel je elke transactie aan wat ze is. |
-| **Inkomsten** | Per inkomstenbron: bruto, kosten en netto. Daaronder de ontvangen bedragen, om te koppelen. |
+| **Inkomsten** | Je **eigen inkomstenbronnen** (je kiest zelf naam en aantal; hernoemen en verwijderen kan op elke kaart). Per bron: bruto, kosten en netto. Daaronder de ontvangen bedragen, om te koppelen. |
 | **Uitgaven** | Per categorie, budgetten, vaste lasten (automatisch herkend) en alle betalingen, om te koppelen. |
 | **Beleggingen** | Je Degiro-portefeuille: waarde, inleg, winst, dividend, **TWR** en **MWR**, een grafiek door de jaren met elke bijstorting, en het rendement per jaar. |
 | **Instellingen** | Account, rekeningen, categorieën, automatische regels, online opzoeken, back-up. |
@@ -54,7 +54,7 @@ Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: éé
 
 ### Inkomsten met kosten
 
-Elke inkomstencategorie is een **bron**; standaard zijn dat *Loon*, *Bijberoep / zelfstandige* en *Andere inkomsten*, die je kan hernoemen. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
+Elke inkomstencategorie is een **bron**. Flux maakt er geen vooraf aan: je maakt ze zelf aan in het tabblad *Inkomsten*, of rechtstreeks vanuit een transactie via *+ Nieuwe inkomstenbron…*. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
 
 ### Vaste lasten
 
@@ -156,14 +156,48 @@ Op Android gaat het via Chrome → menu → **App installeren**.
 | `FLUX_TRUST_PROXY=1` | het IP-adres van de bezoeker uit de proxy halen (voor de beperking op foute aanmeldpogingen) |
 | `ANTHROPIC_API_KEY` | optioneel: tegenpartijen laten classificeren door Claude |
 | `FLUX_AI_MODEL` | optioneel: ander Claude-model (standaard `claude-opus-5-5`) |
+| `FLUX_BACKUP_DAYS` | aantal dagelijkse back-ups dat bewaard blijft (standaard `30`) |
 
 ### AI-classificatie (optioneel)
 
 Zonder API-sleutel zoekt Flux gratis in Wikidata en OpenStreetMap. Met een API-sleutel van [console.anthropic.com](https://console.anthropic.com) (`ANTHROPIC_API_KEY`) laat Flux daarnaast Claude elke tegenpartij classificeren. Claude zoekt op het web als het een naam niet kent. Dit kost per opzoeking een paar cent aan API-gebruik. Daarom zoekt Flux enkel op wanneer jij dat vraagt, en per tegenpartij één keer, niet per transactie. De sleutel blijft op je server, en het verzoek gebruikt de automatische terugval naar een ander model als het eerste weigert.
 
+### Flux bijwerken zonder je gegevens te verliezen
+
+Je gegevens en de code staan **los van elkaar**:
+
+- de **code** zit in deze Git-repository (en in de Docker-image);
+- je **gegevens** zitten in de datamap van de server. Bij Docker is dat het volume `flux-data`, en `docker compose down`, een rebuild of een nieuwe image laten dat ongemoeid. Op elk toestel staat daarnaast een kopie in de browser.
+
+Een nieuwe versie installeren:
+
+```bash
+cd Flux
+git pull                         # nieuwe code ophalen
+docker compose up -d --build     # opnieuw bouwen en herstarten; het volume flux-data blijft staan
+# zonder Docker:  npm ci --omit=dev  en de server herstarten
+```
+
+Open daarna Flux op je toestellen. Een oude versie in de cache wordt automatisch vervangen.
+
+Garanties in de code:
+
+- **Een update wist nooit nog gegevens.** De eenmalige opkuis van versie 3 is gebeurd. Nieuwe velden worden voortaan bij het laden toegevoegd (`migrate()` in `js/store.js`), niet door gegevens te wissen.
+- **Automatische dagelijkse back-up op de server**: bij de eerste wijziging van elke dag wordt de vorige stand bewaard in `data/backups/`. De laatste 30 dagen blijven staan (instelbaar met `FLUX_BACKUP_DAYS`).
+- Download voor een grote update gerust ook zelf een back-up via *Instellingen → Back-up downloaden*.
+
+Wil je **zelf aan de code werken of iets uitproberen**? Draai dan een tweede server met een kopie van je gegevens, zodat je echte gegevens nooit geraakt worden:
+
+```bash
+cp -r data data-test
+FLUX_DATA_DIR=./data-test PORT=8081 npm start     # proefversie op http://localhost:8081
+```
+
+Of gebruik de voorbeeldmodus in de app.
+
 ### Back-ups
 
-Alle gegevens staan in de datamap: één JSON-bestand per gebruiker, plus `users.json` met de wachtwoord-hashes en `sessions.json`. Maak een back-up van die map, of van het Docker-volume `flux-data`. In de app kan je ook een back-up downloaden via *Instellingen → Back-up downloaden*.
+Alle gegevens staan in de datamap: één JSON-bestand per gebruiker, `users.json` met de wachtwoord-hashes, `sessions.json`, en `backups/` met de dagelijkse back-ups. Maak een back-up van die map, of van het Docker-volume `flux-data`. In de app kan je ook een back-up downloaden via *Instellingen → Back-up downloaden*.
 
 ### Beveiliging
 

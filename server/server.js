@@ -197,6 +197,25 @@ async function loadUserData(username) {
   return d;
 }
 
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_KEEP = Number(process.env.FLUX_BACKUP_DAYS || 30);
+
+/**
+ * Automatische back-up: bij de eerste wijziging van elke dag wordt de vorige stand bewaard
+ * (backups/<gebruiker>-JJJJ-MM-DD.json). De laatste FLUX_BACKUP_DAYS (standaard 30) blijven staan.
+ */
+async function dailyBackup(username, data) {
+  if (!data || !data.state) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const base = userFile(username).replace(/\.json$/, '');
+  const file = path.join(BACKUP_DIR, `${base}-${day}.json`);
+  try { await fsp.access(file); return; } catch (e) { /* nog geen back-up vandaag */ }
+  await fsp.mkdir(BACKUP_DIR, { recursive: true, mode: 0o700 });
+  await fsp.writeFile(file, JSON.stringify(data), { mode: 0o600 });
+  const old = (await fsp.readdir(BACKUP_DIR)).filter(f => f.startsWith(base + '-')).sort();
+  for (const f of old.slice(0, Math.max(0, old.length - BACKUP_KEEP))) await fsp.unlink(path.join(BACKUP_DIR, f)).catch(() => {});
+}
+
 /** Voegt de wijzigingen van een toestel samen met wat op de server staat. */
 async function syncUser(username, changes, clientRev) {
   return withLock('u:' + username, async () => {
@@ -208,6 +227,7 @@ async function syncUser(username, changes, clientRev) {
       return Array.isArray(v) ? v.length : v && typeof v === 'object' ? Object.keys(v).length : false;
     });
     if (hasChanges) {
+      await dailyBackup(username, data);
       state = C.mergeStates(state || Store.defaultState(), changes);
       state = C.recompute(Store.migrate(state));
       rev += 1;
