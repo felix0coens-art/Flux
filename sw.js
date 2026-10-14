@@ -1,11 +1,12 @@
 /*
- * Flux service worker: maakt de app installeerbaar en bruikbaar zonder verbinding.
+ * Helder service worker: maakt de app installeerbaar en bruikbaar zonder verbinding.
  * De app-bestanden worden uit de cache geladen en op de achtergrond ververst
  * ("stale-while-revalidate"); /api-verzoeken gaan altijd naar het netwerk.
  */
-const CACHE = 'flux-app-v3';
+const CACHE = 'helder-app-v4';
 const ASSETS = ['./', 'index.html', 'css/style.css', 'js/core.js', 'js/store.js', 'js/lookup.js', 'js/banks.js', 'js/invest.js', 'js/sync.js', 'js/app.js',
-  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
+  'fonts/rethink-sans-latin-400-normal.woff2', 'fonts/rethink-sans-latin-500-normal.woff2', 'fonts/rethink-sans-latin-600-normal.woff2', 'fonts/rethink-sans-latin-700-normal.woff2', 'fonts/rethink-sans-latin-800-normal.woff2'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

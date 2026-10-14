@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * Flux-server: serveert de app, beheert login en synchroniseert je gegevens tussen toestellen.
+ * Helder-server: serveert de app, beheert login en synchroniseert je gegevens tussen toestellen.
  * Geen database nodig: elke gebruiker heeft één JSON-bestand in de datamap.
  *
  * Omgevingsvariabelen:
@@ -38,7 +38,7 @@ const DATA_DIR = path.resolve(process.env.FLUX_DATA_DIR || path.join(ROOT, 'data
 const PORT = Number(process.env.PORT || 8080);
 const SESSION_DAYS = 120;
 const MAX_BODY = 30 * 1024 * 1024;
-const USER_AGENT = 'Flux-persoonlijke-boekhouding/2.0 (self-hosted)';
+const USER_AGENT = 'Helder-persoonlijke-boekhouding/2.0 (self-hosted)';
 
 // ---------- Opslag ----------
 
@@ -186,7 +186,7 @@ async function initSetup() {
     }
   }
   setupCode = crypto.randomBytes(4).toString('hex').toUpperCase();
-  console.log('\n  Nog geen account. Open Flux in je browser en gebruik deze setupcode: ' + setupCode + '\n');
+  console.log('\n  Nog geen account. Open Helder in je browser en gebruik deze setupcode: ' + setupCode + '\n');
 }
 
 // ---------- Gegevens ----------
@@ -336,8 +336,8 @@ function readBody(req) {
 const STATIC = {
   '/': 'index.html', '/index.html': 'index.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest'
 };
-const STATIC_DIRS = ['css/', 'js/', 'icons/'];
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+const STATIC_DIRS = ['css/', 'js/', 'icons/', 'fonts/'];
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 
 async function serveStatic(req, res, pathname) {
   let rel = STATIC[pathname];
@@ -410,7 +410,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === '/api/sync' && req.method === 'POST') {
     const b = await readBody(req);
     // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
-    if (b.schema !== Store.VERSION) throw httpError(409, 'Er is een nieuwe versie van Flux. Herlaad de pagina.');
+    if (b.schema !== Store.VERSION) throw httpError(409, 'Er is een nieuwe versie van Helder. Herlaad de pagina.');
     return send(res, 200, await syncUser(user, b.changes || null, b.rev));
   }
 
@@ -494,7 +494,7 @@ async function main() {
   }
   await initSetup();
   createServer().listen(PORT, () => {
-    console.log(`Flux draait op http://localhost:${PORT}  (gegevens: ${DATA_DIR})`);
+    console.log(`Helder draait op http://localhost:${PORT}  (gegevens: ${DATA_DIR})`);
     console.log(AI.available() ? `AI-classificatie actief (${AI.MODEL}).` : 'AI-classificatie uit; online opzoeken via Wikidata en OpenStreetMap.');
   });
 }

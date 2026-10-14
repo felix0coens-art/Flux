@@ -1,5 +1,5 @@
 /*
- * Flux — kernlogica (zonder DOM).
+ * Helder — kernlogica (zonder DOM).
  * Alle bedragen worden intern als gehele centen opgeslagen: negatief = uitgave, positief = inkomst.
  * Werkt in de browser (window.FluxCore) en in Node (module.exports) voor de tests.
  */

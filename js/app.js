@@ -1,8 +1,8 @@
 /*
- * Flux — gebruikersinterface.
+ * Helder — gebruikersinterface.
  *
  * Tabbladen: Overzicht · Bank · Inkomsten · Uitgaven · Beleggingen · Instellingen.
- * Principe: het moet altijd duidelijk zijn wat je aan Flux gaf. Elke transactie heeft een herkomst
+ * Principe: het moet altijd duidelijk zijn wat je aan Helder gaf. Elke transactie heeft een herkomst
  * (een import met bestandsnaam, of "manueel"), elk bestand kan maar één keer opgeladen worden en een
  * import kan volledig ongedaan gemaakt worden. Voorbeeldgegevens leven in een aparte zandbak.
  */
@@ -23,6 +23,7 @@
   let state = demo || realState;
   let snap = C.snapshot(realState);
 
+  const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
   const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'invest', 'settings'];
   const ui = {
     view: VIEWS.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'dashboard',
@@ -255,7 +256,7 @@
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     $('#nav').hidden = false;
     const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, invest: renderInvest, settings: renderSettings };
-    const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Flux te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
+    const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     $('#main').innerHTML = banner + (views[ui.view] || renderDashboard)();
     afterRender();
@@ -267,9 +268,9 @@
 
   function renderDashboard() {
     if (!state.transactions.length && !inv()) {
-      return `<div class="page-head"><h1>Welkom bij Flux</h1></div>
+      return `<div class="page-head"><h1>Welkom bij Helder</h1></div>
         <div class="card empty-state">
-          <p><strong>Flux is leeg.</strong> Je begint door de rekeninguittreksels van je bank op te laden in het tabblad <strong>Bank</strong>.<br>
+          <p><strong>Helder is leeg.</strong> Je begint door de rekeninguittreksels van je bank op te laden in het tabblad <strong>Bank</strong>.<br>
             Elk bestand wordt één keer opgeladen; je ziet altijd welk bestand welke transacties aanbracht.</p>
           <button class="btn primary" data-action="import">Bankbestand opladen</button>
           <button class="btn" data-action="new-tx">Manuele transactie (bv. cash)</button>
@@ -378,7 +379,7 @@
   function netWorthChart(range) {
     const ser = netWorthSeries(range);
     const missing = state.accounts.filter(a => a.type !== 'cash' && !(a.balance && a.balance.amount != null) && state.transactions.some(t => t.accountId === a.id));
-    if (!ser.comps.length) return `<p class="muted">Om je vermogen door de tijd te tonen heeft Flux voor minstens één rekening een gekend saldo nodig. Bij KBC gebeurt dat automatisch bij het opladen; bij Argenta geef je het één keer in (Bank → rekening → Bewerk).</p>`;
+    if (!ser.comps.length) return `<p class="muted">Om je vermogen door de tijd te tonen heeft Helder voor minstens één rekening een gekend saldo nodig. Bij KBC gebeurt dat automatisch bij het opladen; bij Argenta geef je het één keer in (Bank → rekening → Bewerk).</p>`;
     const narrow = window.innerWidth < 700;
     const W = narrow ? 400 : 760, H = narrow ? 240 : 280, L = narrow ? 52 : 70, R = narrow ? 64 : 170, T = 14, B = 26;
     const n = ser.dates.length;
@@ -421,8 +422,8 @@
         </svg>
         <div class="chart-tip" hidden></div>
       </div>
-      ${missing.length ? `<p class="small muted">Niet meegeteld omdat het saldo niet gekend is: ${missing.map(a => `<a href="#" data-action="edit-account" data-id="${esc(a.id)}">${esc(a.name)}</a>`).join(', ')}. Geef het saldo één keer in, dan rekent Flux de rest uit je transacties.</p>` : ''}
-      ${invComp ? `<p class="small muted">Beleggingen: ${invComp.quality === 'market' ? 'gereconstrueerd uit je transacties met historische marktkoersen.' : 'gereconstrueerd uit je transacties; tussen je aankopen geschat met je aankoopkoersen' + (Sync && Sync.mode === 'server' ? ' (historische koersen worden opgehaald zodra mogelijk).' : '. Met Flux op je server worden historische marktkoersen gebruikt.')}</p>` : ''}
+      ${missing.length ? `<p class="small muted">Niet meegeteld omdat het saldo niet gekend is: ${missing.map(a => `<a href="#" data-action="edit-account" data-id="${esc(a.id)}">${esc(a.name)}</a>`).join(', ')}. Geef het saldo één keer in, dan rekent Helder de rest uit je transacties.</p>` : ''}
+      ${invComp ? `<p class="small muted">Beleggingen: ${invComp.quality === 'market' ? 'gereconstrueerd uit je transacties met historische marktkoersen.' : 'gereconstrueerd uit je transacties; tussen je aankopen geschat met je aankoopkoersen' + (Sync && Sync.mode === 'server' ? ' (historische koersen worden opgehaald zodra mogelijk).' : '. Met Helder op je server worden historische marktkoersen gebruikt.')}</p>` : ''}
       <details><summary class="small">Toon als tabel</summary><div class="table-wrap"><table><thead><tr><th>Datum</th>${ser.comps.map(c => `<th class="right">${esc(c.name)}</th>`).join('')}<th class="right">Totaal</th></tr></thead>
         <tbody>${ser.dates.map((d, i) => `<tr><td>${fmtDate(d)}</td>${ser.comps.map(c => `<td class="amount">${c.values[i] == null ? '—' : money(c.values[i])}</td>`).join('')}<td class="amount"><strong>${money(ser.totals[i])}</strong></td></tr>`).reverse().join('')}</tbody></table></div></details>`;
   }
@@ -563,7 +564,7 @@
         <button class="btn" data-action="new-tx">+ Manuele transactie</button>
         <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
       <p class="muted">Laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend). Elk bestand kan maar één keer opgeladen worden,
-        en transacties die al in Flux zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
+        en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
 
       <div class="card" style="margin-bottom:16px">
@@ -575,7 +576,7 @@
             <td>${esc(accName(i.accountId))}</td>
             <td class="nowrap">${i.period ? fmtDate(i.period.from) + ' – ' + fmtDate(i.period.to) : '—'}</td>
             <td class="right">${state.transactions.filter(t => t.importId === i.id).length}</td>
-            <td class="right small muted" title="Rijen die al in Flux zaten">${i.duplicates || 0} dubbel${i.errors ? ` · ${i.errors} ongeldig` : ''}</td>
+            <td class="right small muted" title="Rijen die al in Helder zaten">${i.duplicates || 0} dubbel${i.errors ? ` · ${i.errors} ongeldig` : ''}</td>
             <td class="nowrap small">${esc(fmtDateTime(i.importedAt))}</td>
             <td class="nowrap right"><button class="btn small" data-action="show-import" data-id="${esc(i.id)}">Bekijk</button>
               <button class="btn small danger" data-action="undo-import" data-id="${esc(i.id)}">Ongedaan maken</button></td>
@@ -740,7 +741,7 @@
         Bij het exporteren van je <em>Portefeuille</em> kan je een <strong>datum</strong> kiezen: exporteer de stand op <strong>31/12</strong> van elk jaar sinds je begon, en geef bij het opladen telkens die datum op.
         Wil je een fijnere grafiek, exporteer dan ook per kwartaal of per maand.</li>
     </ol>
-    <p class="small muted">Menunamen kunnen licht verschillen per taal of app-versie. Flux herkent zelf welk soort bestand je oplaadt; hetzelfde bestand twee keer opladen voegt niets dubbel toe.</p>`;
+    <p class="small muted">Menunamen kunnen licht verschillen per taal of app-versie. Helder herkent zelf welk soort bestand je oplaadt; hetzelfde bestand twee keer opladen voegt niets dubbel toe.</p>`;
 
   function renderInvest() {
     const iv = inv();
@@ -750,14 +751,14 @@
         <div class="grid two" style="gap:12px">
           <div class="section">
             <h3>Rechtstreeks uit Degiro</h3>
-            ${server ? `<p class="small muted">Log in met je Degiro-gegevens; Flux haalt portefeuille, transacties en rekeningoverzicht op. <strong>Wachtwoord en 2FA-code worden niet bewaard</strong> — je logt telkens opnieuw in.</p>
+            ${server ? `<p class="small muted">Log in met je Degiro-gegevens; Helder haalt portefeuille, transacties en rekeningoverzicht op. <strong>Wachtwoord en 2FA-code worden niet bewaard</strong> — je logt telkens opnieuw in.</p>
               <button class="btn primary" data-action="degiro-connect">Ophalen uit Degiro…</button>
               <p class="small muted">Elke keer ophalen voegt een waarderingspunt toe aan de grafiek. Historische standen levert Degiro niet via deze weg: gebruik voor vroegere jaren de portefeuille-export per 31/12.</p>`
-              : `<p class="small muted">Kan enkel als Flux op je eigen server draait (zie README → Hosten)${demo ? ', en niet in de voorbeeldmodus' : ''}. Gebruik intussen de exportbestanden.</p>`}
+              : `<p class="small muted">Kan enkel als Helder op je eigen server draait (zie README → Hosten)${demo ? ', en niet in de voorbeeldmodus' : ''}. Gebruik intussen de exportbestanden.</p>`}
           </div>
           <div class="section">
             <h3>Met exportbestanden</h3>
-            <p class="small muted">Laad één of meer Degiro-exports op (CSV). Flux herkent zelf welk bestand het is.</p>
+            <p class="small muted">Laad één of meer Degiro-exports op (CSV). Helder herkent zelf welk bestand het is.</p>
             <button class="btn" data-action="degiro-files">Exportbestanden opladen…</button>
             ${iv && server ? `<p class="small muted" style="margin-top:8px">Historische koersen: ${iv.market && iv.market.fetchedAt ? 'opgehaald ' + esc(fmtDateTime(iv.market.fetchedAt)) + ' (' + Object.keys(iv.market.series || {}).length + ' product(en))' : 'nog niet opgehaald'} · <a href="#" data-action="fetch-prices">nu ophalen</a></p>` : ''}
             <details style="margin-top:8px"><summary class="small"><strong>Wat moet ik exact exporteren?</strong></summary>${DEGIRO_EXPORT_HELP}</details>
@@ -766,7 +767,7 @@
       </div>`;
     if (!iv) {
       return `<div class="page-head"><h1>Beleggingen</h1></div>
-        <p class="muted">Koppel je Degiro-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar Degiro tellen in Flux als <em>belegging</em>, niet als uitgave.</p>
+        <p class="muted">Koppel je Degiro-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar Degiro tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
         ${connect}
         <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`;
     }
@@ -791,7 +792,7 @@
           <div class="hint">Jouw persoonlijke rendement (XIRR): houdt rekening met het moment en de grootte van elke storting.</div></div>
       </div>
       ${perf.missingYearEnds.length ? `<div class="notice">Voor een rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>, en er zijn geen transacties om ze uit te reconstrueren.</div>` : ''}
-      ${perf.estimatedYears.length ? `<div class="notice info">Begin- en eindwaarden van ${perf.estimatedYears.join(', ')} zijn <strong>gereconstrueerd uit je transacties</strong>${iv.market && iv.market.series ? ' met historische marktkoersen' : ' met je aankoopkoersen (historische marktkoersen worden gebruikt zodra Flux ze kan ophalen)'}. Je hoeft daarvoor geen maandelijkse export op te laden.</div>` : ''}
+      ${perf.estimatedYears.length ? `<div class="notice info">Begin- en eindwaarden van ${perf.estimatedYears.join(', ')} zijn <strong>gereconstrueerd uit je transacties</strong>${iv.market && iv.market.series ? ' met historische marktkoersen' : ' met je aankoopkoersen (historische marktkoersen worden gebruikt zodra Helder ze kan ophalen)'}. Je hoeft daarvoor geen maandelijkse export op te laden.</div>` : ''}
       ${perf.ignoredFlows.length ? `<div class="notice info">${perf.ignoredFlows.length} storting(en) na ${fmtDate(perf.end)} tellen nog niet mee, omdat er nog geen recentere waardering is.</div>` : ''}
       <div class="card" style="margin-bottom:16px">
         <h2>Portefeuille door de jaren</h2>
@@ -812,7 +813,7 @@
             <td class="amount">${money(y.dividends)}</td></tr>`).join('')}</tbody></table></div>
         <p class="small muted"><strong>Resultaat</strong> = eindwaarde − beginwaarde − netto stortingen. <strong>TWR</strong> meet hoe goed je beleggingen het deden (vergelijk met een index).
           <strong>MWR</strong> is jouw eigen rendement: stortte je vlak voor een daling, dan is je MWR lager dan je TWR. Voor het lopende jaar: rendement tot nu, niet op jaarbasis.</p>
-      </div>` : `<div class="notice info">Voor TWR en MWR heeft Flux je stortingen (Rekeningoverzicht) en minstens één portefeuillewaarde nodig.</div>`}
+      </div>` : `<div class="notice info">Voor TWR en MWR heeft Helder je stortingen (Rekeningoverzicht) en minstens één portefeuillewaarde nodig.</div>`}
       <div class="card" style="margin-bottom:16px">
         <h2>Posities</h2>
         ${s.positions.length ? `<div class="table-wrap"><table>
@@ -992,7 +993,7 @@
       <div class="page-head"><h1>Instellingen</h1></div>
       <div class="grid two">
         <div class="card">
-          <h2>Wat zit er in Flux?</h2>
+          <h2>Wat zit er in Helder?</h2>
           <div class="list">
             ${(state.imports || []).map(i => `<div class="list-row"><div class="grow">📄 ${esc(i.fileName)}<div class="small muted">${esc(accName(i.accountId))} · ${esc(fmtDateTime(i.importedAt))}</div></div><span>${state.transactions.filter(t => t.importId === i.id).length}</span></div>`).join('')}
             <div class="list-row"><div class="grow">✎ Manueel ingevoerd</div><span>${manual}</span></div>
@@ -1003,12 +1004,12 @@
         </div>
         <div class="card">
           <h2>Account & synchronisatie</h2>
-          ${sy.mode === 'local' ? `<p class="small muted">Flux draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Flux op al je toestellen (ook je iPhone) te gebruiken, host je de Flux-server — zie README → <em>Hosten</em>.</p>`
+          ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
           : `<p>Aangemeld als <strong>${esc(sy.user || '')}</strong></p>
             <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
             <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button><button class="btn" data-action="change-password">Wachtwoord wijzigen</button>
               <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
-            <p class="small muted">iPhone: open Flux in Safari → deelknop → <em>Zet op beginscherm</em>.</p>`}
+            <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>`}
         </div>
         <div class="card">
           <h2>Rekeningen</h2>
@@ -1407,7 +1408,7 @@
       <label class="field full"><span>IBAN</span><input type="text" id="acc-iban" value="${esc(C.formatIban(a.iban))}" placeholder="BE00 0000 0000 0000"></label>
       <label class="field"><span>Gekend saldo (€)</span><input type="text" inputmode="decimal" id="acc-bal" value="${a.balance ? esc((a.balance.amount < 0 ? '-' : '') + C.centsToInput(a.balance.amount)) : ''}" placeholder="bv. 1.250,00"></label>
       <label class="field"><span>op datum (na alle transacties van die dag)</span><input type="date" id="acc-bal-date" value="${esc(a.balance ? a.balance.date : today)}"></label>
-      <p class="small muted full">${bal ? 'Huidig saldo volgens Flux: <strong>' + money(bal.amount) + '</strong>. ' : ''}Bij KBC-bestanden wordt het saldo automatisch uit de saldokolom gehaald; bij Argenta geef je het hier één keer in.</p>
+      <p class="small muted full">${bal ? 'Huidig saldo volgens Helder: <strong>' + money(bal.amount) + '</strong>. ' : ''}Bij KBC-bestanden wordt het saldo automatisch uit de saldokolom gehaald; bij Argenta geef je het hier één keer in.</p>
       </div><div class="errors" id="acc-errors"></div>`;
     return modalShell(acc(a.id) ? 'Rekening' : 'Nieuwe rekening', body, `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="save-account">Opslaan</button>`);
   }
@@ -1504,7 +1505,7 @@
         <details class="small"><summary>Hoe exporteer ik dit?</summary>
           <p><strong>KBC/CBC</strong>: KBC Touch op de computer → <em>Rekeningen</em> → kies je rekening → <em>Verrichtingen</em> → kies de periode → <em>Exporteren</em> → <strong>CSV</strong>.</p>
           <p><strong>Argenta</strong>: internetbankieren → <em>Rekeningen</em> → je rekening → <em>Verrichtingen</em> → <em>Downloaden</em> → <strong>CSV</strong>.</p>
-          <p class="muted">Overlappende periodes zijn geen probleem: transacties die al in Flux zitten worden overgeslagen.</p></details>
+          <p class="muted">Overlappende periodes zijn geen probleem: transacties die al in Helder zitten worden overgeslagen.</p></details>
         <label class="field"><span>Bestand</span><input type="file" id="imp-file" accept=".csv,.txt,text/csv"></label>
         <div class="errors" id="imp-errors"></div>`, '<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>');
     }
@@ -1522,7 +1523,7 @@
           <div class="form-grid">
             ${isNewAcc ? `<label class="field"><span>Nieuwe rekening — naam</span><input type="text" data-part-name="${i}" value="${esc(p.newName)}"></label>
               <label class="field"><span>Soort</span><select data-part-type="${i}">${[['zicht', 'Zichtrekening'], ['spaar', 'Spaarrekening'], ['andere', 'Andere']].map(([v, l]) => `<option value="${v}" ${p.newType === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
-              : `<label class="field full"><span>Rekening in Flux${a && p.accountIban ? ' (herkend op IBAN)' : ''}</span><select data-part-account="${i}" ${a && p.accountIban ? 'disabled' : ''}><option value="">— Kies —</option>${accountOptions(p.accountId, x => x.type !== 'cash')}<option value="__new__">+ Nieuwe rekening…</option></select></label>`}
+              : `<label class="field full"><span>Rekening in Helder${a && p.accountIban ? ' (herkend op IBAN)' : ''}</span><select data-part-account="${i}" ${a && p.accountIban ? 'disabled' : ''}><option value="">— Kies —</option>${accountOptions(p.accountId, x => x.type !== 'cash')}<option value="__new__">+ Nieuwe rekening…</option></select></label>`}
           </div>
           <div class="import-summary">
             <div><strong>${p.plan.fresh.length}</strong><span>nieuw</span></div>
@@ -1626,7 +1627,7 @@
   function degiroModal() {
     const m = modal;
     return modalShell('Ophalen uit Degiro', `
-      <p class="small muted">Je gegevens gaan via je eigen Flux-server rechtstreeks naar Degiro. <strong>Wachtwoord en code worden niet bewaard.</strong></p>
+      <p class="small muted">Je gegevens gaan via je eigen Helder-server rechtstreeks naar Degiro. <strong>Wachtwoord en code worden niet bewaard.</strong></p>
       <form data-form="degiro" class="form-stack" autocomplete="off">
         <label class="field"><span>Degiro-gebruikersnaam</span><input type="text" name="username" autocapitalize="none" value="${esc(m.username || '')}" required></label>
         <label class="field"><span>Wachtwoord</span><input type="password" name="password" autocomplete="off" required></label>
@@ -1717,7 +1718,7 @@
       const r = await Sync.lookup({ items: items.map(i => ({ name: i.name, description: i.description, direction: i.direction })), categories: state.categories.filter(c => c.kind === 'income' || c.kind === 'expense').map(c => ({ id: c.id, name: c.name, kind: c.kind })), provider: st.lookupProvider || 'auto', countries: st.lookupCountries || 'be' });
       return r.results;
     }
-    if (Sync && Sync.mode === 'offline') throw new Error('Geen verbinding met je Flux-server');
+    if (Sync && Sync.mode === 'offline') throw new Error('Geen verbinding met je Helder-server');
     return Promise.all(items.map(i => Lookup.lookupFree({ name: i.name, description: i.description }, { countries: st.lookupCountries || 'be', nominatimQueue: localNominatimQueue })));
   }
   function suggestionFor(result, direction) {
@@ -1856,7 +1857,7 @@
   function renderAuth() {
     const a = ui.auth;
     if (a.setupRequired) {
-      return `<div class="auth card"><h1>Flux instellen</h1>
+      return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div><h1>Account aanmaken</h1>
         <p class="muted">Maak je account aan. De setupcode staat in de log van de server.</p>
         <form data-form="setup" class="form-stack">
           <label class="field"><span>Setupcode</span><input type="text" name="code" autocomplete="one-time-code" required autocapitalize="characters"></label>
@@ -1864,7 +1865,7 @@
           <label class="field"><span>Wachtwoord (min. 8 tekens)</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
           <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Account aanmaken</button></form></div>`;
     }
-    return `<div class="auth card"><h1><span class="logo">≈</span> Flux</h1>
+    return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div>
       <p class="muted">${a.expired ? 'Je sessie is verlopen. Meld je opnieuw aan.' : 'Meld je aan.'}</p>
       <form data-form="login" class="form-stack">
         <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" value="${esc(a.previousUser || '')}" required></label>
@@ -1890,7 +1891,7 @@
       lines.push([fmtDate(t.date), accName(t.accountId), t.title || '', t.counterparty, C.formatIban(t.counterpartyIban), t.description, (t.amount < 0 ? '-' : '') + C.centsToInput(t.amount),
         (KIND_LABEL[kindOf(t)] || [])[1], cats, persons, t.source === 'import' ? (imp(t.importId) || {}).fileName : 'manueel', t.note || ''].map(q).join(';'));
     }
-    download('flux-transacties-' + today + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+    download('helder-transacties-' + today + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   }
   function importJSON() {
     const input = document.createElement('input');
@@ -1900,9 +1901,9 @@
       if (!file) return;
       try {
         const data = JSON.parse(await readFile(file));
-        if (!data || !Array.isArray(data.transactions)) throw new Error('geen Flux-back-up');
+        if (!data || !Array.isArray(data.transactions)) throw new Error('geen Helder-back-up');
         if (data.demo) throw new Error('dit is een back-up van de voorbeeldmodus');
-        if ((data.version || 1) < Store.VERSION) throw new Error('back-up van een oudere Flux-versie; die wordt bewust niet teruggezet');
+        if ((data.version || 1) < Store.VERSION) throw new Error('back-up van een oudere Helder-versie; die wordt bewust niet teruggezet');
         if (!confirm('Al je huidige gegevens vervangen door deze back-up?')) return;
         replaceAll(data, 'Back-up teruggezet');
       } catch (e) { toast('Ongeldige back-up: ' + e.message); }
@@ -2022,7 +2023,7 @@
     'save-password': savePassword,
     'logout': () => doLogout(false),
     'logout-all': () => doLogout(true),
-    'export-json': () => download('flux-backup-' + today + (demo ? '-voorbeeld' : '') + '.json', JSON.stringify(state, null, 2), 'application/json'),
+    'export-json': () => download('helder-backup-' + today + (demo ? '-voorbeeld' : '') + '.json', JSON.stringify(state, null, 2), 'application/json'),
     'import-json': importJSON,
     'export-csv': exportCSV,
     'enter-demo': enterDemo,
@@ -2045,8 +2046,8 @@
   }
 
   document.addEventListener('click', ev => {
-    const nav = ev.target.closest('#nav button');
-    if (nav) { go(nav.dataset.view); return; }
+    const nav = ev.target.closest('#nav button, [data-view-link]');
+    if (nav) { ev.preventDefault(); go(nav.dataset.view || nav.dataset.viewLink); return; }
     const el = ev.target.closest('[data-action]');
     if (!el || !actions[el.dataset.action]) return;
     if (el.tagName === 'A' || el.tagName === 'BUTTON') ev.preventDefault();
@@ -2167,7 +2168,7 @@
         closeModal();
         render();
       }
-    }).then(() => { if (!ui.auth) render(); }).catch(e => console.error('Flux sync:', e));
+    }).then(() => { if (!ui.auth) render(); }).catch(e => console.error('Helder sync:', e));
   }
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {

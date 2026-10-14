@@ -1,7 +1,7 @@
 /*
- * Flux — tegenpartijen online opzoeken.
+ * Helder — tegenpartijen online opzoeken.
  *
- * In plaats van een vaste lijst merken zoekt Flux elke onbekende tegenpartij op in open bronnen:
+ * In plaats van een vaste lijst merken zoekt Helder elke onbekende tegenpartij op in open bronnen:
  *  - Wikidata: wat voor organisatie het is ("Belgische supermarktketen", "openbaarvervoerbedrijf", ...)
  *  - OpenStreetMap (Nominatim): wat voor zaak het is (shop=supermarket, amenity=pharmacy, ...)
  * Het resultaat wordt via de zoekwoorden van je categorieën aan een categorie gekoppeld

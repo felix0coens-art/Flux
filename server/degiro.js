@@ -12,7 +12,7 @@
  */
 
 const BASE = 'https://trader.degiro.nl';
-const UA = 'Mozilla/5.0 (Flux persoonlijke boekhouding; self-hosted)';
+const UA = 'Mozilla/5.0 (Helder persoonlijke boekhouding; self-hosted)';
 
 class DegiroError extends Error {
   constructor(message, code) { super(message); this.code = code; this.status = code === 'otp' || code === 'auth' ? 401 : 502; }
@@ -66,7 +66,7 @@ function rowValues(row) {
   return out;
 }
 
-/** Haalt portefeuille, transacties en kasbewegingen op en zet ze om naar het Flux-formaat. */
+/** Haalt portefeuille, transacties en kasbewegingen op en zet ze om naar het Helder-formaat. */
 async function fetchAll(fetchFn, credentials, opts) {
   opts = opts || {};
   const today = opts.today || new Date().toISOString().slice(0, 10);

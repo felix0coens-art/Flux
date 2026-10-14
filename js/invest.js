@@ -1,7 +1,7 @@
 /*
- * Flux — beleggingen (Degiro).
+ * Helder — beleggingen (Degiro).
  *
- * Gegevens komen van de rechtstreekse Degiro-koppeling (via de Flux-server) of van de
+ * Gegevens komen van de rechtstreekse Degiro-koppeling (via de Helder-server) of van de
  * exportbestanden die Degiro zelf aanbiedt (Portefeuille.csv, Transacties.csv, Rekeningoverzicht.csv).
  * Beide worden omgezet naar hetzelfde formaat:
  *
@@ -166,7 +166,7 @@
 
   // ---------- Reconstructie van de portefeuille op elke datum ----------
   //
-  // Uit je transacties (aan- en verkopen) en kasbewegingen weet Flux hoeveel stuks en hoeveel cash
+  // Uit je transacties (aan- en verkopen) en kasbewegingen weet Helder hoeveel stuks en hoeveel cash
   // je op elk moment had. Dat wordt verankerd aan de laatst gekende stand (Degiro-koppeling of
   // portefeuille-export). De koers per datum komt uit:
   //   1. historische marktkoersen (indien opgehaald via de server, zie server/prices.js), anders
@@ -278,7 +278,7 @@
     return { date, positionsEur: Math.round(positionsEur), cashEur: Math.round(cashEur), valueEur: Math.round(positionsEur + cashEur), quality: total && market === total ? 'market' : 'trades' };
   }
 
-  /** Kan Flux de waarde reconstrueren? (transacties en/of een gekende stand nodig) */
+  /** Kan Helder de waarde reconstrueren? (transacties en/of een gekende stand nodig) */
   function canEstimate(inv) { return !!inv && ((inv.trades || []).length > 0 || snapshotsOf(inv).length > 0); }
 
   /** Reeks waarden op de gegeven datums; echte waarderingen hebben voorrang. */

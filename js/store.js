@@ -1,5 +1,5 @@
 /*
- * Flux — lokale opslag (localStorage), standaardgegevens en demodata.
+ * Helder — lokale opslag (localStorage), standaardgegevens en demodata.
  */
 (function (root) {
   'use strict';
@@ -115,7 +115,7 @@
         return state;
       }
     } catch (e) {
-      console.error('Flux: kon gegevens niet laden', e);
+      console.error('Helder: kon gegevens niet laden', e);
     }
     return defaultState();
   }
@@ -125,7 +125,7 @@
       storage().setItem(key || STORAGE_KEY, JSON.stringify(state));
       return true;
     } catch (e) {
-      console.error('Flux: kon gegevens niet opslaan', e);
+      console.error('Helder: kon gegevens niet opslaan', e);
       return false;
     }
   }
@@ -230,7 +230,7 @@
     s.imports = Object.values(imports).map(i => Object.assign(i, {
       period: (() => { const d = txs.filter(t => t.importId === i.id).map(t => t.date).sort(); return d.length ? { from: d[0], to: d[d.length - 1] } : null; })()
     }));
-    // Gekend beginsaldo vóór de eerste transactie; Flux rekent de rest uit de transacties
+    // Gekend beginsaldo vóór de eerste transactie; Helder rekent de rest uit de transacties
     const before = C.addDays(start, -1);
     s.accounts[0].balance = { date: before, amount: 350000, source: 'manual' };
     s.accounts[1].balance = { date: before, amount: 800000, source: 'manual' };

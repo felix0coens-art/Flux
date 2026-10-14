@@ -1,14 +1,14 @@
 'use strict';
 /*
- * Historische koersen voor je beleggingen, zodat Flux de waarde van je portefeuille op elk moment
+ * Historische koersen voor je beleggingen, zodat Helder de waarde van je portefeuille op elk moment
  * kan reconstrueren uit je transacties (zonder maandelijks een export op te laden).
  *
  * Bron: Yahoo Finance (publieke koersgrafieken, geen sleutel nodig). Dit is geen officiële API en kan
- * wijzigen; lukt het niet, dan gebruikt Flux je eigen aankoopkoersen. Er worden enkel ISIN's/namen
+ * wijzigen; lukt het niet, dan gebruikt Helder je eigen aankoopkoersen. Er worden enkel ISIN's/namen
  * van fondsen verstuurd, geen persoonsgegevens of bedragen.
  */
 
-const UA = 'Mozilla/5.0 (Flux persoonlijke boekhouding; self-hosted)';
+const UA = 'Mozilla/5.0 (Helder persoonlijke boekhouding; self-hosted)';
 const EU_EXCHANGES = ['AMS', 'PAR', 'BRU', 'GER', 'FRA', 'MIL', 'EBS', 'MCE', 'LIS', 'VIE', 'HEL', 'DUB', 'IOB', 'LSE'];
 
 async function getJson(fetchFn, url) {

@@ -7,6 +7,7 @@ COPY index.html manifest.webmanifest sw.js ./
 COPY css ./css
 COPY js ./js
 COPY icons ./icons
+COPY fonts ./fonts
 COPY server ./server
 RUN mkdir -p /data && chown node:node /data
 USER node

@@ -1,7 +1,7 @@
 {
-  "name": "flux",
+  "name": "helder",
   "version": "2.0.0",
-  "description": "Flux — persoonlijke boekhouding, op al je toestellen",
+  "description": "Helder — persoonlijke boekhouding, op al je toestellen",
   "private": true,
   "scripts": {
     "start": "node server/server.js",

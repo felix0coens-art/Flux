@@ -1,14 +1,14 @@
-# Flux — persoonlijke boekhouding
+# Helder — persoonlijke boekhouding
 
-Flux houdt je persoonlijke boekhouding bij: bankrekeningen, inkomsten en uitgaven, voorschotten aan vrienden, budgetten, vaste lasten en je beleggingen bij Degiro.
-Je host Flux zelf en gebruikt het op al je toestellen: laptop, tablet en iPhone (als app op je beginscherm).
+Helder houdt je persoonlijke boekhouding bij: bankrekeningen, inkomsten en uitgaven, voorschotten aan vrienden, budgetten, vaste lasten en je beleggingen bij Degiro.
+Je host Helder zelf en gebruikt het op al je toestellen: laptop, tablet en iPhone (als app op je beginscherm).
 Je gegevens staan op je eigen server, niet bij een derde partij.
 
 ---
 
-## Hoe Flux werkt
+## Hoe Helder werkt
 
-Flux heeft zes tabbladen:
+Helder heeft zes tabbladen:
 
 | Tabblad | Waarvoor |
 |---|---|
@@ -19,18 +19,18 @@ Flux heeft zes tabbladen:
 | **Beleggingen** | Je Degiro-portefeuille: waarde, inleg, winst, dividend, **TWR** en **MWR**, een grafiek door de jaren met elke bijstorting, en het rendement per jaar. |
 | **Instellingen** | Account, rekeningen, categorieën, automatische regels, online opzoeken, back-up. |
 
-### Altijd duidelijk wat er in Flux zit
+### Altijd duidelijk wat er in Helder zit
 
 - **Elk bestand is een import.** Per import zie je de bestandsnaam, de bank, de rekening, de periode, het aantal toegevoegde transacties en het aantal rijen dat overgeslagen werd. Bij elke transactie zie je uit welk bestand ze komt, of dat je ze manueel invoerde.
-- **Hetzelfde bestand kan geen tweede keer opgeladen worden.** Flux herkent de inhoud, dus ook als je het bestand hernoemde.
-- **Overlappende bestanden zijn geen probleem.** Laad je bijvoorbeeld september–oktober op terwijl september er al in zit, dan worden enkel de nieuwe rijen toegevoegd. Flux toont vooraf hoeveel er nieuw is en hoeveel er al in zat, en uit welk bestand.
+- **Hetzelfde bestand kan geen tweede keer opgeladen worden.** Helder herkent de inhoud, dus ook als je het bestand hernoemde.
+- **Overlappende bestanden zijn geen probleem.** Laad je bijvoorbeeld september–oktober op terwijl september er al in zit, dan worden enkel de nieuwe rijen toegevoegd. Helder toont vooraf hoeveel er nieuw is en hoeveel er al in zat, en uit welk bestand.
 - **Elke import kan je ongedaan maken.** In het tabblad Bank verwijder je met één klik alle transacties van één bestand.
 - **Voorbeeldgegevens zitten in een aparte zandbak** (*Instellingen → Voorbeeldmodus*). Zolang die aanstaat zie je bovenaan een duidelijke balk. Je eigen gegevens worden er nooit door aangeraakt en de zandbak wordt niet gesynchroniseerd.
-- **Bij de update naar deze versie zijn alle vroegere gegevens gewist**, zoals je vroeg: lokaal in elke browser en op de server. Op de server blijft een back-up bewaard (`user-….json.v2.bak` in de datamap), maar Flux zet die nooit vanzelf terug.
+- **Bij de update naar deze versie zijn alle vroegere gegevens gewist**, zoals je vroeg: lokaal in elke browser en op de server. Op de server blijft een back-up bewaard (`user-….json.v2.bak` in de datamap), maar Helder zet die nooit vanzelf terug.
 
 ### Bankbestanden: KBC/CBC en Argenta
 
-Beide banken worden automatisch herkend, inclusief de IBAN van je rekening. Bij de eerste import maakt Flux de rekening aan. Bevat een KBC-export meerdere rekeningen, dan worden die per rekening opgesplitst.
+Beide banken worden automatisch herkend, inclusief de IBAN van je rekening. Bij de eerste import maakt Helder de rekening aan. Bevat een KBC-export meerdere rekeningen, dan worden die per rekening opgesplitst.
 
 - **KBC/CBC**: KBC Touch op de computer → *Rekeningen* → je rekening → *Verrichtingen* → periode kiezen → *Exporteren* → **CSV**. Het saldo wordt automatisch overgenomen uit de saldokolom.
 - **Argenta**: internetbankieren → *Rekeningen* → je rekening → *Verrichtingen* → *Downloaden* → **CSV**. Elke rij heeft een unieke referentie, dus dubbels worden exact herkend. Het saldo geef je één keer zelf in, via de rekening → *Bewerk*.
@@ -50,13 +50,13 @@ Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat
 - **↔ Eigen rekening**: overschrijvingen tussen je eigen rekeningen worden automatisch herkend op IBAN;
 - **✂ Opsplitsen** over meerdere categorieën.
 
-Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Flux stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
+Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Helder stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
 
 Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 
 ### Inkomsten met kosten
 
-Elke inkomstencategorie is een **bron**. Flux maakt er geen vooraf aan: je maakt ze zelf aan in het tabblad *Inkomsten*, of rechtstreeks vanuit een transactie via *+ Nieuwe inkomstenbron…*. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
+Elke inkomstencategorie is een **bron**. Helder maakt er geen vooraf aan: je maakt ze zelf aan in het tabblad *Inkomsten*, of rechtstreeks vanuit een transactie via *+ Nieuwe inkomstenbron…*. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
 
 ### Vaste lasten
 
@@ -66,7 +66,7 @@ Vaste lasten zijn geen apart tabblad. Ze worden **automatisch herkend** in je tr
 
 ### Rechtstreeks ophalen
 
-Dit kan wanneer Flux op je eigen server draait. Ga naar *Beleggingen → Ophalen uit Degiro…* en log in met je Degiro-gebruikersnaam, je wachtwoord en je 2FA-code. Flux haalt dan je portefeuille, transacties en kasbewegingen op.
+Dit kan wanneer Helder op je eigen server draait. Ga naar *Beleggingen → Ophalen uit Degiro…* en log in met je Degiro-gebruikersnaam, je wachtwoord en je 2FA-code. Helder haalt dan je portefeuille, transacties en kasbewegingen op.
 
 - Je wachtwoord en 2FA-code worden **niet bewaard**. Je logt elke keer opnieuw in, en de Degiro-sessie wordt meteen weer afgesloten.
 - Degiro heeft **geen officiële API**. Deze koppeling gebruikt dezelfde webdiensten als de Degiro-website. Ze kan stoppen met werken als Degiro iets wijzigt, en ze is niet door Degiro goedgekeurd. De exportbestanden hieronder werken altijd.
@@ -81,17 +81,17 @@ Op de Degiro-website:
 3. **Portefeuille van vandaag**: *Portefeuille* → *Exporteren* → **CSV** (`Portfolio.csv`). Kies bij het opladen de datum van vandaag.
 4. **Portefeuille op elke 31 december** sinds je begon: bij het exporteren van je portefeuille kies je de **datum** 31/12/jjjj. Laad elk bestand op met die datum. Dit is nodig voor een correct rendement per jaar en een precieze TWR. Wil je een fijnere grafiek, exporteer dan ook per kwartaal of per maand.
 
-Je kan alle bestanden tegelijk opladen; Flux herkent zelf welk bestand wat is. Hetzelfde bestand twee keer opladen voegt niets dubbel toe.
+Je kan alle bestanden tegelijk opladen; Helder herkent zelf welk bestand wat is. Hetzelfde bestand twee keer opladen voegt niets dubbel toe.
 
 ### Je hoeft niet elke maand iets op te laden
 
-Flux **reconstrueert de waarde van je portefeuille op elk moment** uit je transacties:
+Helder **reconstrueert de waarde van je portefeuille op elk moment** uit je transacties:
 
 - **Aantal stuks per datum**: uit je aan- en verkopen, verankerd aan de laatst gekende stand.
 - **Cash op Degiro per datum**: uit stortingen, opnames, dividenden, kosten en aankopen.
-- **Koers per datum**: draait Flux op je server, dan haalt hij automatisch **historische marktkoersen** op (Yahoo Finance, wekelijks, omgerekend naar euro, elke 3 dagen ververst). Anders gebruikt Flux **je eigen aankoopkoersen** en gekende standen, en interpoleert daartussen.
+- **Koers per datum**: draait Helder op je server, dan haalt hij automatisch **historische marktkoersen** op (Yahoo Finance, wekelijks, omgerekend naar euro, elke 3 dagen ververst). Anders gebruikt Helder **je eigen aankoopkoersen** en gekende standen, en interpoleert daartussen.
 
-Na één keer *Ophalen uit Degiro* of één portefeuille-export vult Flux dus zelf alle tussenliggende maanden in: in de grafiek, in het **vermogen door de tijd** op het overzicht, en voor het **rendement per jaar** (gemarkeerd als *geschat*). Een export of ophaling op een bepaalde datum blijft altijd voorrang krijgen als *werkelijke stand*. Doe af en toe *Ophalen uit Degiro* om de huidige stand bij te werken; dat is genoeg.
+Na één keer *Ophalen uit Degiro* of één portefeuille-export vult Helder dus zelf alle tussenliggende maanden in: in de grafiek, in het **vermogen door de tijd** op het overzicht, en voor het **rendement per jaar** (gemarkeerd als *geschat*). Een export of ophaling op een bepaalde datum blijft altijd voorrang krijgen als *werkelijke stand*. Doe af en toe *Ophalen uit Degiro* om de huidige stand bij te werken; dat is genoeg.
 
 ### Vermogen door de tijd
 
@@ -100,19 +100,19 @@ Op het overzicht toont een grafiek je **totale vermogen**: elke bankrekening apa
 ### Rendement: TWR en MWR
 
 - **MWR / MWRR** (money-weighted, berekend als XIRR) is **jouw persoonlijke rendement**. Het houdt rekening met wanneer en hoeveel je stortte. Deze berekening is exact: ze heeft enkel al je stortingen en opnames nodig, plus de huidige waarde.
-- **TWR** (time-weighted) is het **rendement van je beleggingen zelf**, los van je stortingen. Dit cijfer vergelijk je met een index of fonds. Flux berekent het per periode tussen twee waarderingen (Modified Dietz) en ketent die periodes aan elkaar. Met een portefeuille-export per 31/12 is elk jaar correct; ontbreekt er een jaareinde, dan toont Flux welke export nodig is.
+- **TWR** (time-weighted) is het **rendement van je beleggingen zelf**, los van je stortingen. Dit cijfer vergelijk je met een index of fonds. Helder berekent het per periode tussen twee waarderingen (Modified Dietz) en ketent die periodes aan elkaar. Met een portefeuille-export per 31/12 is elk jaar correct; ontbreekt er een jaareinde, dan toont Helder welke export nodig is.
 - **Per jaar** zie je de beginwaarde, stortingen, opnames, eindwaarde, het resultaat (= eind − begin − netto stortingen), de TWR, de MWR en het dividend. Voor het lopende jaar is dat het rendement tot nu, niet omgerekend naar een jaar.
 - Dividend en kosten blijven binnen de portefeuille en tellen dus mee in het rendement. Ze tellen niet als stortingen.
 
 ## Hosten
 
-Flux bestaat uit één kleine Node.js-server, zonder database. Je hebt **HTTPS** nodig: dat beschermt je wachtwoord, en zonder HTTPS kan je Flux niet als app op je iPhone installeren. Kies een van deze drie manieren.
+Helder bestaat uit één kleine Node.js-server, zonder database. Je hebt **HTTPS** nodig: dat beschermt je wachtwoord, en zonder HTTPS kan je Helder niet als app op je iPhone installeren. Kies een van deze drie manieren.
 
 ### Optie A — Thuis, privé en gratis, met Tailscale (aanbevolen om te starten)
 
-Flux draait op een computer, NAS of Raspberry Pi bij je thuis. Je bereikt die vanaf je iPhone via [Tailscale](https://tailscale.com), een gratis privénetwerk tussen je eigen toestellen. Flux is dan niet zichtbaar voor de rest van het internet.
+Helder draait op een computer, NAS of Raspberry Pi bij je thuis. Je bereikt die vanaf je iPhone via [Tailscale](https://tailscale.com), een gratis privénetwerk tussen je eigen toestellen. Helder is dan niet zichtbaar voor de rest van het internet.
 
-1. Installeer [Docker](https://docs.docker.com/get-docker/) op de computer die Flux moet draaien, en start Flux:
+1. Installeer [Docker](https://docs.docker.com/get-docker/) op de computer die Helder moet draaien, en start Helder:
    ```bash
    git clone https://github.com/felix0coens-art/Flux.git && cd Flux
    docker build -t flux .
@@ -153,11 +153,11 @@ Elke dienst die een Docker-image kan draaien met een **blijvende schijf** (persi
 
 Bij de eerste start bestaat er nog geen account. De server toont dan in zijn log een **setupcode**; die vul je samen met je gebruikersnaam en wachtwoord in op het welkomstscherm. Je kan het account ook meteen bij de eerste start laten aanmaken met de omgevingsvariabelen `FLUX_USERNAME` en `FLUX_PASSWORD`. Wil je een extra gebruiker, bijvoorbeeld je partner, met eigen gegevens? Voer dan `docker exec -it flux node server/server.js adduser naam` uit (zonder Docker: `npm run adduser -- naam`).
 
-### Flux op je iPhone installeren
+### Helder op je iPhone installeren
 
-1. Open het adres van je Flux in **Safari** en meld je aan.
+1. Open het adres van je Helder in **Safari** en meld je aan.
 2. Tik op de deelknop (vierkant met pijl) en kies **Zet op beginscherm**.
-3. Flux staat nu als app op je beginscherm, schermvullend en ook zonder verbinding te gebruiken.
+3. Helder staat nu als app op je beginscherm, schermvullend en ook zonder verbinding te gebruiken.
 
 Op Android gaat het via Chrome → menu → **App installeren**.
 
@@ -176,9 +176,9 @@ Op Android gaat het via Chrome → menu → **App installeren**.
 
 ### AI-classificatie (optioneel)
 
-Zonder API-sleutel zoekt Flux gratis in Wikidata en OpenStreetMap. Met een API-sleutel van [console.anthropic.com](https://console.anthropic.com) (`ANTHROPIC_API_KEY`) laat Flux daarnaast Claude elke tegenpartij classificeren. Claude zoekt op het web als het een naam niet kent. Dit kost per opzoeking een paar cent aan API-gebruik. Daarom zoekt Flux enkel op wanneer jij dat vraagt, en per tegenpartij één keer, niet per transactie. De sleutel blijft op je server, en het verzoek gebruikt de automatische terugval naar een ander model als het eerste weigert.
+Zonder API-sleutel zoekt Helder gratis in Wikidata en OpenStreetMap. Met een API-sleutel van [console.anthropic.com](https://console.anthropic.com) (`ANTHROPIC_API_KEY`) laat Helder daarnaast Claude elke tegenpartij classificeren. Claude zoekt op het web als het een naam niet kent. Dit kost per opzoeking een paar cent aan API-gebruik. Daarom zoekt Helder enkel op wanneer jij dat vraagt, en per tegenpartij één keer, niet per transactie. De sleutel blijft op je server, en het verzoek gebruikt de automatische terugval naar een ander model als het eerste weigert.
 
-### Flux bijwerken zonder je gegevens te verliezen
+### Helder bijwerken zonder je gegevens te verliezen
 
 Je gegevens en de code staan **los van elkaar**:
 
@@ -194,7 +194,7 @@ docker compose up -d --build     # opnieuw bouwen en herstarten; het volume flux
 # zonder Docker:  npm ci --omit=dev  en de server herstarten
 ```
 
-Open daarna Flux op je toestellen. Een oude versie in de cache wordt automatisch vervangen.
+Open daarna Helder op je toestellen. Een oude versie in de cache wordt automatisch vervangen.
 
 Garanties in de code:
 
@@ -226,7 +226,7 @@ Alle gegevens staan in de datamap: één JSON-bestand per gebruiker, `users.json
 
 ## Zonder server (enkel lokaal)
 
-Dubbelklik je op `index.html`, dan werkt Flux volledig in die ene browser, zonder account en zonder synchronisatie. Het online opzoeken gebeurt dan rechtstreeks vanuit de browser, en enkel via Wikidata en OpenStreetMap. Zet je later een server op, dan vraagt Flux bij de eerste aanmelding in dezelfde browser of je bestaande gegevens naar je account mogen.
+Dubbelklik je op `index.html`, dan werkt Helder volledig in die ene browser, zonder account en zonder synchronisatie. Het online opzoeken gebeurt dan rechtstreeks vanuit de browser, en enkel via Wikidata en OpenStreetMap. Zet je later een server op, dan vraagt Helder bij de eerste aanmelding in dezelfde browser of je bestaande gegevens naar je account mogen.
 
 ## Ontwikkeling
 
@@ -249,3 +249,10 @@ tests/                     tests (npm test)
 ```
 
 Bedragen staan intern als gehele centen (negatief = uitgave). Je kan lokaal starten met `npm start` en dan surfen naar <http://localhost:8080>.
+
+## Huisstijl
+
+- Naam en logo: **H€lder**: het woordmerk met het €-teken als "e". Op kleine formaten (app-icoon, tabblad) staat enkel het €-teken op een marineblauw blokje (`icons/`).
+- Kleur: marineblauw `#14284b`.
+- Lettertype: [Rethink Sans](https://github.com/hans-thiessen/Rethink-Sans), zelf gehost in `fonts/` (SIL Open Font License, zie `fonts/OFL-LICENSE.txt`), dus zonder verbinding met Google.
+- Technische namen blijven ongewijzigd, zodat bestaande gegevens en installaties blijven werken: de opslag in de browser (`flux-data-v1`), de sessiecookie, de `FLUX_*`-omgevingsvariabelen en het Docker-volume `flux-data`.

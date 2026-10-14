@@ -1,5 +1,5 @@
 /*
- * Flux — synchronisatie met de Flux-server.
+ * Helder — synchronisatie met de Helder-server.
  *
  * Werkt "offline first": de app werkt altijd met de kopie in deze browser. Wijzigingen worden
  * gemarkeerd als "dirty" en op de achtergrond naar de server gestuurd; wijzigingen van andere
@@ -53,7 +53,7 @@
       err.code = data && data.code;
       throw err;
     }
-    if (!data) { const err = new Error('Geen Flux-server'); err.status = 0; throw err; }
+    if (!data) { const err = new Error('Geen Helder-server'); err.status = 0; throw err; }
     return data;
   }
 
@@ -133,7 +133,7 @@
     if (!server.state) {
       // Nieuw account: lokale gegevens (indien gewenst) uploaden
       let base = local;
-      if (localHasData && !sameUser && !confirm('Er staan al gegevens in deze browser. Wil je die in je nieuwe Flux-account zetten?\n\nKies "Annuleren" om met een leeg account te beginnen.')) {
+      if (localHasData && !sameUser && !confirm('Er staan al gegevens in deze browser. Wil je die in je nieuwe Helder-account zetten?\n\nKies "Annuleren" om met een leeg account te beginnen.')) {
         base = opts.freshState();
       }
       opts.setState(base, { stampAll: true });
@@ -225,7 +225,7 @@
     return api('POST', '/api/prices', { instruments });
   }
 
-  /** Haalt je Degiro-gegevens op via de Flux-server. Inloggegevens worden niet bewaard. */
+  /** Haalt je Degiro-gegevens op via de Helder-server. Inloggegevens worden niet bewaard. */
   async function degiro(username, password, otp) {
     return api('POST', '/api/degiro/sync', { username, password, otp });
   }

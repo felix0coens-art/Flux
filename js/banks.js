@@ -1,10 +1,10 @@
 /*
- * Flux — import van rekeninguittreksels (CSV) met vaste profielen per bank.
+ * Helder — import van rekeninguittreksels (CSV) met vaste profielen per bank.
  *
  * Elk opgeladen bestand wordt een "import" met herkomst (bestandsnaam, bank, rekening, periode).
  * Dubbels worden op twee niveaus tegengehouden:
  *  1. hetzelfde bestand (zelfde inhoud) wordt geweigerd;
- *  2. rijen die al in Flux zitten (uit een overlappend bestand) worden overgeslagen, op basis
+ *  2. rijen die al in Helder zitten (uit een overlappend bestand) worden overgeslagen, op basis
  *     van de bankreferentie (Argenta) of datum + bedrag + saldo (KBC) of, algemeen, een vingerafdruk.
  */
 (function (root) {
