@@ -535,3 +535,4 @@ tr.is-disabled td { opacity: .55; }
 .eb-form li { margin: 4px 0; }
 .eb-fields td { padding: 3px 6px 3px 0; vertical-align: middle; }
 .eb-fields code { word-break: break-all; }
+.refund-note { font-weight: 400; white-space: nowrap; }

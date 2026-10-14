@@ -345,7 +345,7 @@
           <h2>Vermogen</h2>
           <div class="list">
             ${balances.map(x => `<div class="list-row"><div class="grow">${esc(x.a.name)}<div class="small muted">gekend saldo van ${fmtDate(x.b.since)} + latere transacties</div></div><span class="amount">${money(x.b.amount)}</span></div>`).join('')}
-            ${invSum ? `<div class="list-row"><div class="grow">Beleggingen (Degiro)<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
+            ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen))}</span></div>
           </div>
@@ -834,7 +834,14 @@
       <td class="nowrap">${fmtDate(t.date)}${opts.showAccount ? `<div class="small muted">${esc(accName(t.accountId))}</div>` : ''}</td>
       <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}">${t.title ? `<div class="tx-title">${esc(t.title)}</div><div class="desc">${esc([t.counterparty, t.description].filter(Boolean).join(' · '))}</div>` : `<div>${esc(t.counterparty || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>`}
         <div class="badge-row">${opts.showKind ? kindBadge(k) : ''}${extra.join('')}${opts.showSource ? sourceBadge(t) : ''}</div></td>
-      <td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td>
+      ${(() => {
+        // Uitgave waarop terugbetaald werd (vrienden, annulering): toon wat je zelf betaalde
+        const back = opts.refunds && t.amount < 0 ? opts.refunds[t.id] || 0 : 0;
+        if (!back) return `<td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td>`;
+        const n = state.transactions.filter(x => x.refundOf === t.id).length;
+        return `<td class="amount ${amountClass(t.amount + back)}" title="Netto: wat je zelf betaalde">${money(t.amount + back)}
+          <div class="small muted refund-note"><s>${money(t.amount)}</s> · ↩ ${money(back)} terug${n > 1 ? ` (${n}×)` : ''}</div></td>`;
+      })()}
       <td class="assign-cell">${assignSelect(t)}${hint ? `<div><button class="btn small ghost" data-action="rule-hint" data-id="${esc(t.id)}">⚙ Altijd zo voor “${esc((t.counterparty || t.description).slice(0, 28))}”</button></div>` : ''}</td>
     </tr>`;
   }
@@ -846,7 +853,7 @@
     const allSel = shown.length && shown.every(t => ui.selected.has(t.id));
     return `${selectionBar()}<div class="table-wrap"><table class="tx-table">
       <thead><tr><th class="sel-cell"><input type="checkbox" data-select-all="${esc(shown.map(t => t.id).join(','))}" ${allSel ? 'checked' : ''} aria-label="Alles selecteren"></th><th>Datum</th><th>Omschrijving</th><th class="right">Bedrag</th><th>Gekoppeld aan</th></tr></thead>
-      <tbody>${list.slice(0, lim).map(t => txRow(t, opts)).join('')}</tbody></table></div>
+      <tbody>${(() => { const o = Object.assign({ refunds: C.refundTotals(state) }, opts); return shown.map(t => txRow(t, o)).join(''); })()}</tbody></table></div>
       ${list.length > lim ? `<p style="text-align:center"><button class="btn" data-action="more" data-key="${opts && opts.moreKey || 'list'}">Toon meer (${list.length - lim})</button></p>` : ''}`;
   }
 
