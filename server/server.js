@@ -27,6 +27,7 @@ const Degiro = require('./degiro.js');
 const Prices = require('./prices.js');
 const EnableBanking = require('./enablebanking.js');
 const SaxoLink = require('./saxo.js');
+const FilesLib = require('./files.js');
 const Accounts = require('./accounts.js');
 
 // Koerscache in het geheugen (12 uur)
@@ -115,6 +116,9 @@ const Saxo = SaxoLink.create({
   remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
   publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
 });
+
+// Bonnetjes (httpError is een function-declaratie, dus hier al bruikbaar)
+const Files = FilesLib.create(DATA_DIR, (status, message) => httpError(status, message));
 
 const Acc = Accounts.create({
   readJson, writeJson, withLock, getUsers: () => getUsers(), hashPassword: (p) => hashPassword(p), verifyPassword: (p, u) => verifyPassword(p, u),
@@ -540,6 +544,12 @@ async function handleApi(req, res, pathname, query) {
   }
   if (pathname === '/api/account/google-unlink' && req.method === 'POST') return send(res, 200, await Acc.googleUnlink(req, user));
   if (role === 'admin' && pathname !== '/api/password') throw httpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
+
+  // Bonnetjes bij transacties
+  if (pathname === '/api/files' && req.method === 'POST') return send(res, 200, await Files.upload(user, await readBody(req)));
+  if (pathname === '/api/files/delete' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Files.remove(user, String(b.id || ''))); }
+  const fileMatch = pathname.match(/^\/api\/files\/([A-Za-z0-9_-]{8,40})$/);
+  if (fileMatch && req.method === 'GET') return Files.send(res, user, fileMatch[1]);
 
   if (pathname === '/api/account/delete' && req.method === 'POST') {
     const b = await readBody(req);

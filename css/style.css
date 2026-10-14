@@ -866,3 +866,12 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .tax-head p { flex: 1; min-width: 240px; margin: 0; }
 .tax-table td { padding: 6px 0; border-bottom: 1px solid var(--border); }
 .tax-table td.amount { text-align: right; white-space: nowrap; padding-left: 12px; }
+/* Bonnetjes */
+.tx-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.file-chip { position: relative; display: inline-flex; flex-direction: column; width: 92px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.file-chip a { display: flex; flex-direction: column; color: var(--text); text-decoration: none; }
+.file-chip img { width: 92px; height: 72px; object-fit: cover; display: block; background: var(--surface-2); }
+.file-pdf { width: 92px; height: 72px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #c92a2a; background: #fff0f0; }
+.file-name { font-size: 11px; padding: 3px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-chip .chip-x { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer; }
+.file-add { cursor: pointer; }

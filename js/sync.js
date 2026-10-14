@@ -272,6 +272,13 @@
     await refreshFeatures();
   }
 
+  /** Bonnetjes: bestanden staan op de server, de transactie onthoudt enkel id, naam en type. */
+  const files = {
+    upload: (name, type, data) => api('POST', '/api/files', { name, type, data }),
+    remove: id => api('POST', '/api/files/delete', { id }),
+    url: id => '/api/files/' + encodeURIComponent(id)
+  };
+
   /** Eigen Anthropic API-sleutel voor AI-classificatie (de sleutel zelf blijft op de server). */
   const aiKey = {
     status: () => api('GET', '/api/ai/key'),
@@ -307,7 +314,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

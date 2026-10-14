@@ -98,6 +98,7 @@ function create(store) {
     await withLock('users', async () => { const users = await getUsers(); delete users[username]; await writeJson('users.json', users); });
     const base = userFile(username).replace(/\.json$/, '');
     const hex = Buffer.from(username).toString('hex');
+    try { fs.rmSync(path.join(dataDir, 'files-' + hex), { recursive: true, force: true }); } catch (e) { /* geen */ }
     for (const f of [userFile(username), 'bank-' + hex + '.json', 'keys-' + hex + '.json', 'saxo-' + hex + '.json']) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) { /* geen */ } }
     let files = [];
     try { files = fs.readdirSync(path.join(dataDir, 'backups')); } catch (e) { files = []; }

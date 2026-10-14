@@ -138,6 +138,7 @@ function delete_own_account(string $username): void {
         unset($users[$username]);
         write_json('users.json', $users);
     });
+    if (function_exists('files_remove_all')) files_remove_all($username);
     $base = preg_replace('/\.json$/', '', user_file($username));
     foreach ([user_file($username), 'bank-' . bin2hex($username) . '.json', 'keys-' . bin2hex($username) . '.json', 'saxo-' . bin2hex($username) . '.json'] as $f) @unlink(data_dir() . '/' . $f);
     $dir = data_dir() . '/backups';

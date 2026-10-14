@@ -13,6 +13,7 @@ require __DIR__ . '/php/lib/degiro.php';
 require __DIR__ . '/php/lib/ai.php';
 require __DIR__ . '/php/lib/enablebanking.php';
 require __DIR__ . '/php/lib/saxo.php';
+require __DIR__ . '/php/lib/files.php';
 require __DIR__ . '/php/lib/accounts.php';
 
 @set_time_limit(300);
@@ -187,6 +188,11 @@ function handle(string $method, string $path): void {
     if ($path === '/api/account/google-unlink' && $method === 'POST') { send(200, google_unlink($user)); return; }
 
     if ($role === 'admin' && $path !== '/api/password') throw new HttpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
+
+    // Bonnetjes bij transacties
+    if ($path === '/api/files' && $method === 'POST') { send(200, file_upload($user, body())); return; }
+    if ($path === '/api/files/delete' && $method === 'POST') { $b = body(); send(200, file_delete($user, (string) ($b['id'] ?? ''))); return; }
+    if (preg_match('#^/api/files/([A-Za-z0-9_-]{8,40})$#', $path, $fm) && $method === 'GET') { file_send($user, $fm[1]); return; }
 
     if ($path === '/api/account/delete' && $method === 'POST') {
         $b = body();
