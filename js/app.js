@@ -3147,16 +3147,24 @@
         <p class="small legal-links">Al een account? <a href="#" data-action="auth-login">Meld je aan</a></p>
         <p class="small muted legal-links">Door een account aan te maken ga je akkoord met de <a href="voorwaarden.html" target="_blank" rel="noopener">gebruiksvoorwaarden</a> en de <a href="privacy.html" target="_blank" rel="noopener">privacyverklaring</a>.</p></div>`;
     }
-    const google = g ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Aanmelden met Google</a>
-      <div class="or"><span>of met gebruikersnaam</span></div>` : '';
-    return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div>
-      <p class="muted">${a.expired ? 'Je sessie is verlopen. Meld je opnieuw aan.' : 'Meld je aan.'}</p>
-      ${google}
-      <form data-form="login" class="form-stack">
+    // Kan je enkel met Google een account maken? Dan staat Google centraal en zit aanmelden met
+    // gebruikersnaam (voor wie al zo'n account heeft, bv. de beheerder) achter een klein linkje.
+    const googleFirst = !!g && !canPw;
+    const pwForm = `<form data-form="login" class="form-stack">
         <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" value="${esc(a.previousUser || '')}" required></label>
         <label class="field"><span>Wachtwoord</span><input type="password" name="password" autocomplete="current-password" required></label>
-        <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Aanmelden</button></form>
-      ${open ? '<p class="small legal-links">Nog geen account? <a href="#" data-action="auth-register"><strong>Maak er een aan</strong></a></p>' : a.auth && a.auth.registration ? '<p class="small muted legal-links">Nieuwe accounts zijn momenteel gesloten.</p>' : ''}
+        <div class="errors">${esc(a.error || '')}</div><button class="btn ${googleFirst ? '' : 'primary'}" type="submit">Aanmelden</button></form>`;
+    const showPw = !googleFirst || a.showPw || !!a.error || (a.previousUser && !/^g_/.test(a.previousUser));
+    const signupLine = canG && !canPw ? '<p class="small muted legal-links">Nog geen account? Klik gewoon op <strong>Aanmelden met Google</strong>: je account wordt dan meteen aangemaakt.</p>'
+      : open ? '<p class="small legal-links">Nog geen account? <a href="#" data-action="auth-register"><strong>Maak er een aan</strong></a></p>'
+      : a.auth && a.auth.registration ? '<p class="small muted legal-links">Nieuwe accounts zijn momenteel gesloten.</p>' : '';
+    return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div>
+      <p class="muted">${a.expired ? 'Je sessie is verlopen. Meld je opnieuw aan.' : 'Meld je aan.'}</p>
+      ${g ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Aanmelden met Google</a>` : ''}
+      ${googleFirst
+        ? (showPw ? `<div class="or"><span>of met gebruikersnaam</span></div>${pwForm}` : '<p class="small legal-links"><a href="#" data-action="auth-show-pw">Aanmelden met gebruikersnaam en wachtwoord</a></p>')
+        : `${g ? '<div class="or"><span>of met gebruikersnaam</span></div>' : ''}${pwForm}`}
+      ${signupLine}
       <p class="small muted app-about">Helder is een gratis app voor je persoonlijke boekhouding: je bankuitgaven en inkomsten overzichtelijk ingedeeld, voorschotten aan vrienden opvolgen en je beleggingen en vermogen door de tijd volgen. Elk account heeft een eigen, afgeschermde boekhouding.</p>
       <p class="small muted legal-links">${g ? 'Door aan te melden ga je akkoord met de ' : ''}<a href="voorwaarden.html" target="_blank" rel="noopener">${g ? 'gebruiksvoorwaarden' : 'Gebruiksvoorwaarden'}</a>${g ? ' en de ' : ' · '}<a href="privacy.html" target="_blank" rel="noopener">${g ? 'privacyverklaring' : 'Privacyverklaring'}</a>.</p></div>`;
   }
@@ -3361,6 +3369,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'auth-show-pw': () => { if (ui.auth) { ui.auth.showPw = true; render(); const u = $('[data-form=login] [name=username]'); if (u) u.focus(); } },
     'settings-tab': el => { ui.settingsTab = el.dataset.tab; try { localStorage.setItem('flux-settings-tab', ui.settingsTab); } catch (e) { /* niet erg */ } render(); window.scrollTo(0, 0); },
     'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
     'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
