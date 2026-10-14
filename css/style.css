@@ -512,3 +512,5 @@ svg.bars text.small-label { font-size: 10px; }
 .switch-row input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--primary); }
 tr.is-disabled td { opacity: .55; }
 .chart-wrap text.small-label { font-size: 10.5px; }
+.import-history summary { cursor: pointer; list-style: revert; }
+.import-history[open] summary { margin-bottom: 12px; }

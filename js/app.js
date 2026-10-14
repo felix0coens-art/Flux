@@ -84,6 +84,7 @@
   function sourceBadge(t) {
     if (t.source === 'import') {
       const i = imp(t.importId);
+      if (i && i.bank === 'bankkoppeling') return `<span class="badge src" title="${esc('Opgehaald via de bankkoppeling op ' + fmtDateTime(i.importedAt))}">🔗 ${esc(String(i.bankName || '').replace(/ \(bankkoppeling\)$/, ''))}</span>`;
       return `<span class="badge src" title="${i ? esc('Opgeladen op ' + fmtDateTime(i.importedAt)) : ''}">📄 ${esc(i ? i.fileName : 'import')}</span>`;
     }
     return '<span class="badge src">✎ Manueel</span>';
@@ -831,8 +832,17 @@
       ${dataFromRow()}
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
 
-      <div class="card" style="margin-bottom:16px">
-        <h2>Opgeladen bestanden</h2>
+      <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
+      <div class="filters">
+        <div class="seg">
+          ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
+        </div>
+        <select data-filter="bank.account"><option value="">Alle rekeningen</option>${accountOptions(f.account)}</select>
+        <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
+      </div>
+      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
+      <details class="card import-history" style="margin-top:24px">
+        <summary><strong>Geschiedenis van imports</strong> <span class="small muted">· ${imports.length} keer gegevens binnengehaald (bestanden en bankkoppeling) — hier kan je een import bekijken of ongedaan maken</span></summary>
         ${imports.length ? `<div class="table-wrap"><table>
           <thead><tr><th>Bestand</th><th>Rekening</th><th>Periode</th><th class="right">Toegevoegd</th><th class="right">Overgeslagen</th><th>Opgeladen</th><th></th></tr></thead>
           <tbody>${imports.map(i => `<tr>
@@ -845,17 +855,7 @@
             <td class="nowrap right"><button class="btn small" data-action="show-import" data-id="${esc(i.id)}">Bekijk</button>
               <button class="btn small danger" data-action="undo-import" data-id="${esc(i.id)}">Ongedaan maken</button></td>
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nog geen bestanden opgeladen.</p>'}
-      </div>
-
-      <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
-      <div class="filters">
-        <div class="seg">
-          ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
-        </div>
-        <select data-filter="bank.account"><option value="">Alle rekeningen</option>${accountOptions(f.account)}</select>
-        <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
-      </div>
-      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}`;
+      </details>`;
   }
 
   // ----- Beheer (beheerdersaccount) -----
@@ -1177,7 +1177,7 @@
       }).join('');
       return `<div class="link-conn">
         <div class="link-conn-head"><strong>${esc(conn.aspsp)}</strong> ${statusText}<span class="spacer"></span>
-          <button class="btn small primary" data-action="bank-fetch" data-id="${esc(conn.id)}" ${bankLink.busy[conn.id] || expired ? 'disabled' : ''}>Nu ophalen</button>
+          <button class="btn small primary" data-action="bank-fetch" data-id="${esc(conn.id)}" ${bankLink.busy[conn.id] || expired ? 'disabled' : ''}>↻ Vernieuwen</button>
           ${expired || (left !== null && left <= 30) || err ? `<button class="btn small" data-action="bank-renew" data-id="${esc(conn.id)}">Opnieuw toestemming geven</button>` : ''}
           <button class="btn small ghost danger" data-action="bank-disconnect" data-id="${esc(conn.id)}">Verbreken</button></div>
         ${err ? `<div class="notice small">${esc(err)}</div>` : ''}
@@ -1185,7 +1185,7 @@
     }).join('');
     return `<div class="card link-card">${head(`<button class="btn small" data-action="bank-connect">+ Bank koppelen</button><button class="btn small ghost" data-action="bank-setup">Instellingen</button>`)}
       ${conns || '<p class="muted">Nog geen bank gekoppeld. Klik op <strong>+ Bank koppelen</strong> en kies KBC, Argenta, …</p>'}
-      <p class="small muted">Nieuwe transacties worden opgehaald telkens je Helder opent (hoogstens om de 6 uur). Ze komen in Helder als een import die je kan bekijken of ongedaan maken, en wat al in Helder zat (ook uit CSV-bestanden) wordt overgeslagen.</p></div>`;
+      <p class="small muted">Helder haalt vanzelf nieuwe transacties op telkens je de app opent (hoogstens om de 6 uur). Wil je meteen bijwerken, klik dan op ↻ Vernieuwen. Wat al in Helder zat, wordt overgeslagen.</p></div>`;
   }
 
   function bankSetupModal() {
