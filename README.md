@@ -57,7 +57,7 @@ Daarna:
 
 ### Een transactie koppelen
 
-Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat ze is:
+Elke transactie staat eerst op **Te verwerken**. In het veld *Gekoppeld aan* **typ** je een stukje van de categorie (bv. `boods`) en druk je op **Enter**. Met ↑ en ↓ kies je een andere optie, en met Esc stop je. Na Enter spring je meteen naar de volgende transactie, dus je verwerkt een hele lijst zonder muis. Bestaat de categorie nog niet, dan maakt Enter ze aan. Je kiest uit:
 
 - een **inkomst** (en van welke bron) of een **uitgave** (en welke categorie);
 - **↗ Voorgeschoten voor iemand**: je betaalde iets voor een vriend. Dit telt niet als uitgave; het komt op de lijst "wie is mij nog wat schuldig". Betaalde je ook voor jezelf? Splits de betaling dan, bijvoorbeeld € 50 restaurant voor jezelf en 2 × € 50 voorschot voor Pieter en Sofie;
@@ -68,6 +68,8 @@ Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat
 - **✂ Opsplitsen** over meerdere categorieën.
 
 Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Helder stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
+
+**Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijder je transacties die uit een bankbestand of de bankkoppeling kwamen, dan onthoudt Helder ze. Bij een volgende import of ophaalbeurt komen ze niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
 
 Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 

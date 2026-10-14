@@ -258,8 +258,18 @@
     const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
+    // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)
+    const act = document.activeElement;
+    const keep = act && act.dataset && act.dataset.assignInput && $('#main').contains(act)
+      ? { id: act.dataset.assignInput, value: act.value, typed: picker.typed && picker.input === act, start: act.selectionStart, end: act.selectionEnd } : null;
+    closePicker(false);
+    for (const id of ui.selected) if (!txById(id)) ui.selected.delete(id);
     $('#main').innerHTML = banner + (views[ui.view] || renderDashboard)();
     afterRender();
+    if (keep) {
+      const el = $$('[data-assign-input]').find(x => x.dataset.assignInput === keep.id);
+      if (el) { el.value = keep.value; el.focus(); try { el.setSelectionRange(keep.start, keep.end); } catch (e) { /* niet erg */ } openPicker(el, keep.typed); }
+    }
   }
 
   function todoCount() { return state.transactions.filter(t => kindOf(t) === 'todo').length; }
@@ -487,26 +497,183 @@
   }
 
   /** Eén keuzelijst om een transactie te koppelen aan wat ze is. */
+  /** Keuzes om een transactie te koppelen (zelfde opties als vroeger in de keuzelijst). */
+  function assignOptions(t, bulk) {
+    const incoming = t ? t.amount > 0 : false;
+    const out = [];
+    const add = (value, label, group, hint) => out.push({ value, label, group, hint: hint || '' });
+    const cats = (kind, group) => state.categories.filter(c => c.kind === kind).sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(c => add('cat:' + c.id, c.name, group, isIncomeCost(c) ? '− ' + catName(c.incomeId) : ''));
+    if (bulk) {
+      cats('expense', 'Uitgave'); cats('income', 'Inkomst');
+      add('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)', 'Speciaal');
+      add('transfer', '↔ Naar/van eigen rekening', 'Speciaal');
+      add('', '— Terug naar te verwerken —', 'Speciaal');
+      return out;
+    }
+    cats(incoming ? 'income' : 'expense', incoming ? 'Inkomst' : 'Uitgave');
+    add('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…', incoming ? 'Inkomst' : 'Uitgave');
+    add('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van een voorschot…' : '↗ Voorgeschoten voor iemand…', 'Speciaal');
+    if (incoming) add('refund', '↩ Terugbetaling van een uitgave…', 'Speciaal');
+    add('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)', 'Speciaal');
+    add('transfer', '↔ Naar/van eigen rekening', 'Speciaal');
+    add('split', '✂ Opsplitsen…', 'Speciaal');
+    if (t && (t.categoryId || t.isTransfer)) add('', '— Terug naar te verwerken —', 'Speciaal');
+    cats(incoming ? 'expense' : 'income', incoming ? 'Toch een uitgave' : 'Toch een inkomst');
+    return out;
+  }
+
+  function assignLabel(t) {
+    if (t.isTransfer) return '↔ Eigen rekening';
+    if (t.categoryId === C.SYS_ADVANCE) return t.amount > 0 ? '↙ Terugbetaling voorschot' : '↗ Voorgeschoten';
+    if (t.categoryId === C.SYS_INVEST) return '📈 Belegging';
+    return t.categoryId ? catName(t.categoryId) : '';
+  }
+
   function assignSelect(t) {
     const k = kindOf(t);
     if (k === 'split' || k === 'refund' || (t.splits && t.splits.length)) return `<button class="btn small" data-action="edit-tx" data-id="${esc(t.id)}">${k === 'refund' ? '↩ Terugbetaling' : '✂ Gesplitst'} — bekijk</button>`;
-    const val = t.isTransfer ? 'transfer' : t.categoryId ? 'cat:' + t.categoryId : '';
-    const opt = (v, l) => `<option value="${v}" ${val === v ? 'selected' : ''}>${l}</option>`;
-    const cats = kind => state.categories.filter(c => c.kind === kind).sort((a, b) => a.name.localeCompare(b.name))
-      .map(c => opt('cat:' + c.id, esc(c.name) + (isIncomeCost(c) ? ' (− ' + esc(catName(c.incomeId)) + ')' : ''))).join('');
-    const incoming = t.amount > 0;
-    return `<select class="assign" data-assign="${esc(t.id)}" aria-label="Koppelen">
-      ${opt('', '— Te verwerken —')}
-      <optgroup label="${incoming ? 'Inkomst' : 'Uitgave'}">${cats(incoming ? 'income' : 'expense')}${opt('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…')}</optgroup>
-      <optgroup label="Speciaal">
-        ${opt('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van een voorschot…' : '↗ Voorgeschoten voor iemand…')}
-        ${incoming ? opt('refund', '↩ Terugbetaling van een uitgave…') : ''}
-        ${opt('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)')}
-        ${opt('transfer', '↔ Naar/van eigen rekening')}
-        ${opt('split', '✂ Opsplitsen…')}
-      </optgroup>
-      <optgroup label="${incoming ? 'Toch een uitgave (bv. teruggestort)' : 'Toch een inkomst'}">${cats(incoming ? 'expense' : 'income')}</optgroup>
-    </select>`;
+    const label = assignLabel(t);
+    return `<div class="assign-box ${label ? '' : 'todo'}"><input type="text" class="assign-input" data-assign-input="${esc(t.id)}" value="${esc(label)}" data-label="${esc(label)}"
+      placeholder="Te verwerken — typ…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-label="Koppelen"><span class="assign-caret" aria-hidden="true">▾</span></div>`;
+  }
+
+  // ----- Snel koppelen: typen, pijltjes en Enter -----
+
+  const picker = { input: null, id: null, items: [], index: 0, typed: false };
+  const normQ = v => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  function pickerItems(id, query) {
+    const bulk = id === '__bulk__';
+    const opts = assignOptions(bulk ? null : txById(id), bulk);
+    const q = normQ(query);
+    if (!q) return opts;
+    const words = q.split(' ');
+    return opts.map(o => {
+      const n = normQ(o.label + ' ' + o.hint);
+      if (!words.every(w => n.includes(w))) return null;
+      const name = normQ(o.label);
+      const score = name.startsWith(q) ? 0 : name.split(' ').some(w => w.startsWith(words[0])) ? 1 : 2;
+      return Object.assign({ score }, o);
+    }).filter(Boolean).sort((a, b) => a.score - b.score);
+  }
+
+  function openPicker(input, typed) {
+    picker.input = input;
+    picker.id = input.dataset.assignInput;
+    picker.typed = !!typed;
+    picker.items = pickerItems(picker.id, typed ? input.value : '');
+    picker.index = typed ? 0 : Math.max(0, picker.items.findIndex(o => o.label === input.dataset.label));
+    renderPicker();
+  }
+
+  function renderPicker() {
+    let pop = $('#assign-pop');
+    if (!pop) { pop = document.createElement('div'); pop.id = 'assign-pop'; pop.className = 'assign-pop'; pop.setAttribute('role', 'listbox'); document.body.appendChild(pop); }
+    if (!picker.input || !document.body.contains(picker.input)) { pop.hidden = true; return; }
+    let last = null;
+    pop.innerHTML = picker.items.length ? picker.items.map((o, i) => {
+      const head = !picker.typed && o.group !== last ? `<div class="assign-group">${esc(o.group)}</div>` : '';
+      last = o.group;
+      return `${head}<div class="assign-opt ${i === picker.index ? 'active' : ''}" role="option" data-pick="${i}">${esc(o.label)}${o.hint ? ` <span class="muted small">${esc(o.hint)}</span>` : ''}</div>`;
+    }).join('') : '<div class="assign-empty">Niets gevonden. <span class="muted">Enter = nieuwe categorie</span></div>';
+    const r = picker.input.getBoundingClientRect();
+    const width = Math.max(r.width, 240);
+    pop.style.width = width + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - width - 8)) + 'px';
+    const below = window.innerHeight - r.bottom;
+    pop.style.maxHeight = Math.max(160, Math.min(320, Math.max(below, r.top) - 16)) + 'px';
+    pop.hidden = false;
+    if (below < 200 && r.top > below) { pop.style.top = (r.top + window.scrollY - pop.offsetHeight - 4) + 'px'; }
+    else pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    picker.input.setAttribute('aria-expanded', 'true');
+    const act = $('.assign-opt.active', pop);
+    if (act) act.scrollIntoView({ block: 'nearest' });
+  }
+
+  function closePicker(restore) {
+    const pop = $('#assign-pop');
+    if (pop) pop.hidden = true;
+    if (picker.input) {
+      picker.input.setAttribute('aria-expanded', 'false');
+      if (restore) picker.input.value = picker.input.dataset.label || '';
+    }
+    picker.input = null;
+  }
+
+  /** Kiest een optie; met Enter springt Helder meteen naar de volgende transactie. */
+  function choosePick(i, viaKeyboard) {
+    const input = picker.input;
+    if (!input) return;
+    const item = picker.items[i];
+    const id = picker.id;
+    if (!item) {
+      if (picker.typed && input.value.trim() && id !== '__bulk__') { closePicker(true); newCategoryFor(id, input.value.trim()); }
+      return;
+    }
+    const all = $$('[data-assign-input]').filter(x => x.dataset.assignInput !== '__bulk__');
+    const pos = all.indexOf(input);
+    closePicker(false);
+    input.blur();
+    if (id === '__bulk__') { bulkAssign(item.value); return; }
+    assignTx(id, item.value);
+    if (viaKeyboard && !modal) {
+      requestAnimationFrame(() => {
+        const next = $$('[data-assign-input]').filter(x => x.dataset.assignInput !== '__bulk__');
+        const stillThere = next.findIndex(x => x.dataset.assignInput === id);
+        const target = next[stillThere >= 0 ? stillThere + 1 : pos];
+        if (target) { target.focus(); target.select(); }
+      });
+    }
+  }
+
+  function newCategoryFor(id, name) {
+    const t = txById(id);
+    if (!t) return;
+    openModal({ type: 'category', assignTo: t.id, category: { id: C.uid('cat'), name, kind: t.amount > 0 ? 'income' : 'expense', color: t.amount > 0 ? '#37b24d' : '#3b5bdb', lookupTags: '' } });
+  }
+
+  // ----- Selecteren en in één keer verwijderen of koppelen -----
+
+  ui.selected = new Set();
+
+  function selectionBar() {
+    const n = ui.selected.size;
+    if (!n) return '';
+    return `<div class="select-bar" role="region" aria-label="Selectie">
+      <strong>${n} geselecteerd</strong>
+      <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
+      <button class="btn small danger" data-action="bulk-delete">🗑 Verwijderen</button>
+      <button class="btn small ghost" data-action="bulk-clear">Selectie wissen</button></div>`;
+  }
+
+  function bulkAssign(value) {
+    const ids = Array.from(ui.selected);
+    let n = 0;
+    for (const id of ids) {
+      const t = txById(id);
+      if (!t || (t.splits && t.splits.length) || t.refundOf) continue;
+      if (value === 'transfer') { t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; }
+      else if (value === '') { t.categoryId = null; t.categorySource = null; if (t.transferMode === 'yes') t.transferMode = 'auto'; }
+      else { t.categoryId = value.slice(4); t.categorySource = 'manual'; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no'; }
+      n++;
+    }
+    ui.selected.clear();
+    ui.ruleHint = null;
+    commit(n === 1 ? '1 transactie gekoppeld' : n + ' transacties gekoppeld');
+  }
+
+  function bulkDelete() {
+    const list = Array.from(ui.selected).map(txById).filter(Boolean);
+    if (!list.length) return;
+    const fromFile = list.filter(t => t.source === 'import').length;
+    const total = list.reduce((sum, t) => sum + t.amount, 0);
+    if (!confirm(`${list.length} transactie${list.length === 1 ? '' : 's'} verwijderen (samen ${C.formatMoney(total)})?`
+      + (fromFile ? `\n\n${fromFile} ervan kwam${fromFile === 1 ? '' : 'en'} uit een bankbestand of de bankkoppeling. Helder onthoudt ze, zodat ze bij een volgende import niet terugkomen.` : '')
+      + '\n\nDit kan je niet ongedaan maken.')) return;
+    const n = Banks.removeTransactions(state, list.map(t => t.id));
+    ui.selected.clear();
+    commit(n === 1 ? '1 transactie verwijderd' : n + ' transacties verwijderd');
   }
 
   function txRow(t, opts) {
@@ -519,7 +686,9 @@
     if (t.categorySource === 'system') extra.push('<span class="badge small muted" title="Automatisch herkend">⚙ automatisch</span>');
     if (C.looksLikeRefund(t)) extra.push('<span class="badge maybe">Van een vriend?</span>');
     const hint = ui.ruleHint && ui.ruleHint.txId === t.id && t.categoryId === ui.ruleHint.categoryId && (t.counterparty || t.description);
-    return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''}">
+    const sel = ui.selected.has(t.id);
+    return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''} ${sel ? 'is-selected' : ''}">
+      <td class="sel-cell"><input type="checkbox" data-select="${esc(t.id)}" ${sel ? 'checked' : ''} aria-label="Selecteer"></td>
       <td class="nowrap">${fmtDate(t.date)}${opts.showAccount ? `<div class="small muted">${esc(accName(t.accountId))}</div>` : ''}</td>
       <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}">${t.title ? `<div class="tx-title">${esc(t.title)}</div><div class="desc">${esc([t.counterparty, t.description].filter(Boolean).join(' · '))}</div>` : `<div>${esc(t.counterparty || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>`}
         <div class="badge-row">${opts.showKind ? kindBadge(k) : ''}${extra.join('')}${opts.showSource ? sourceBadge(t) : ''}</div></td>
@@ -531,8 +700,10 @@
   function txTable(list, opts) {
     if (!list.length) return `<div class="card empty-state">${opts && opts.empty || 'Geen transacties.'}</div>`;
     const lim = (opts && opts.limit) || 150;
-    return `<div class="table-wrap"><table class="tx-table">
-      <thead><tr><th>Datum</th><th>Omschrijving</th><th class="right">Bedrag</th><th>Gekoppeld aan</th></tr></thead>
+    const shown = list.slice(0, lim);
+    const allSel = shown.length && shown.every(t => ui.selected.has(t.id));
+    return `${selectionBar()}<div class="table-wrap"><table class="tx-table">
+      <thead><tr><th class="sel-cell"><input type="checkbox" data-select-all="${esc(shown.map(t => t.id).join(','))}" ${allSel ? 'checked' : ''} aria-label="Alles selecteren"></th><th>Datum</th><th>Omschrijving</th><th class="right">Bedrag</th><th>Gekoppeld aan</th></tr></thead>
       <tbody>${list.slice(0, lim).map(t => txRow(t, opts)).join('')}</tbody></table></div>
       ${list.length > lim ? `<p style="text-align:center"><button class="btn" data-action="more" data-key="${opts && opts.moreKey || 'list'}">Toon meer (${list.length - lim})</button></p>` : ''}`;
   }
@@ -1734,6 +1905,7 @@
             <div><strong>${p.parsed.period ? fmtDate(p.parsed.period.from) + ' – ' + fmtDate(p.parsed.period.to) : '—'}</strong><span>periode</span></div>
             <div><strong>${p.parsed.balance ? money(p.parsed.balance.amount) : '—'}</strong><span>${p.parsed.balance ? 'saldo op ' + fmtDate(p.parsed.balance.date) : 'geen saldo in bestand'}</span></div>
           </div>
+          ${p.plan.duplicates.some(d => d.deleted) ? `<p class="small muted">Waarvan ${p.plan.duplicates.filter(d => d.deleted).length} die je eerder verwijderde: die blijven weg.</p>` : ''}
           ${Object.keys(p.plan.fromImports).length ? `<p class="small muted">Al aanwezig uit: ${Object.entries(p.plan.fromImports).map(([id, n]) => `${esc(imp(id) ? imp(id).fileName : '?')} (${n})`).join(', ')}</p>` : ''}
           ${p.plan.fresh.length && !sf ? `<details><summary class="small">Bekijk de ${p.plan.fresh.length} nieuwe transacties</summary><div class="table-wrap"><table><tbody>${p.plan.fresh.slice(0, 50).map(t => `<tr><td class="nowrap">${fmtDate(t.date)}</td><td>${esc(t.counterparty)}<div class="desc">${esc(t.description)}</div></td><td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
         </div>`;
@@ -2146,6 +2318,8 @@
     'list-status': el => { ui.list.status = el.dataset.status; ui.list.limit = 150; render(); },
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
     'new-tx': el => openModal({ type: 'tx', tx: newTx(el && el.dataset.account) }),
+    'bulk-delete': bulkDelete,
+    'bulk-clear': () => { ui.selected.clear(); render(); },
     'bank-setup': () => { openModal({ type: 'bankSetup', appId: (bankLink.status && bankLink.status.appId) || '' }); },
     'bank-connect': () => { openModal({ type: 'bankConnect', country: 'BE' }); loadAspsps(); },
     'bank-start': el => startBankConnect(el.dataset.name, modal.country, Number(el.dataset.days) || undefined),
@@ -2279,6 +2453,7 @@
   document.addEventListener('input', ev => {
     const el = ev.target;
     if (el.dataset.tl) { onTimelineInput(el); return; }
+    if (el.dataset.assignInput) { openPicker(el, true); return; }
     if (el.dataset.filter === 'bank.search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
@@ -2299,7 +2474,9 @@
 
   document.addEventListener('change', ev => {
     const el = ev.target;
-    if (el.dataset.assign) { assignTx(el.dataset.assign, el.value); return; }
+    if (el.dataset.select) { if (el.checked) ui.selected.add(el.dataset.select); else ui.selected.delete(el.dataset.select); render(); return; }
+    if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
+    if (el.dataset.assignInput) return;
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
@@ -2348,7 +2525,35 @@
     }
   });
 
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && modal) closeModal(); });
+  document.addEventListener('keydown', ev => {
+    const el = ev.target;
+    if (el && el.dataset && el.dataset.assignInput && picker.input === el) {
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const n = picker.items.length;
+        if (n) picker.index = (picker.index + (ev.key === 'ArrowDown' ? 1 : -1) + n) % n;
+        renderPicker();
+        return;
+      }
+      if (ev.key === 'Enter') { ev.preventDefault(); choosePick(picker.index, true); return; }
+      if (ev.key === 'Escape') { ev.preventDefault(); closePicker(true); el.blur(); return; }
+      if (ev.key === 'Tab') { closePicker(true); return; }
+    }
+    if (ev.key === 'Escape' && modal) closeModal();
+  });
+  document.addEventListener('focusin', ev => {
+    const el = ev.target;
+    if (el.dataset && el.dataset.assignInput) { el.select(); openPicker(el, false); }
+  });
+  document.addEventListener('focusout', ev => {
+    if (ev.target.dataset && ev.target.dataset.assignInput && picker.input === ev.target) setTimeout(() => { if (picker.input === ev.target && document.activeElement !== ev.target) closePicker(true); }, 120);
+  });
+  document.addEventListener('mousedown', ev => {
+    const opt = ev.target.closest('[data-pick]');
+    if (opt) { ev.preventDefault(); choosePick(Number(opt.dataset.pick), false); }
+  });
+  window.addEventListener('resize', () => { if (picker.input) renderPicker(); });
+  window.addEventListener('scroll', () => { if (picker.input) renderPicker(); }, { passive: true });
   window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
 
   document.addEventListener('submit', async ev => {

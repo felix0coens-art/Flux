@@ -746,6 +746,7 @@
     const ids = new Set(state.transactions.map(t => t.id));
     for (const tx of state.transactions) {
       if (tx.refundOf && !ids.has(tx.refundOf)) tx.refundOf = null;
+      if (tx.advanceOf && !ids.has(tx.advanceOf)) tx.advanceOf = null;
       if (tx.categoryId && !state.categories.some(c => c.id === tx.categoryId)) { tx.categoryId = null; tx.categorySource = null; }
       if (tx.splits) tx.splits = tx.splits.filter(s => state.categories.some(c => c.id === s.categoryId));
     }
@@ -895,7 +896,7 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted'];
   const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 

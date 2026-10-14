@@ -186,16 +186,19 @@
     const loose = new Map();
     for (const t of state.transactions) if (t.accountId === accountId) loose.set('fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' })), t);
     // Transacties die via de bankkoppeling binnenkwamen hebben andere referenties: herkennen op bedrag en datum
-    const linked = state.transactions.filter(t => t.accountId === accountId && isLinkedRef(t.bankRef));
+    const gone = (state.deleted || []).filter(d => d.accountId === accountId);
+    const goneKeys = new Map(gone.map(d => [d.key, d]));
+    const linked = state.transactions.filter(t => t.accountId === accountId && isLinkedRef(t.bankRef))
+      .concat(gone.filter(d => isLinkedRef(d.bankRef)));
     const usedLinked = new Set();
     const seen = new Set();
     const fresh = [], duplicates = [];
     for (const t of parsed.transactions) {
       const key = rowKey(t);
       const fp = 'fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' }));
-      const dup = existing.get(key) || (t.bankRef || t.balanceAfter != null ? null : loose.get(fp))
+      const dup = existing.get(key) || goneKeys.get(key) || (t.bankRef || t.balanceAfter != null ? null : loose.get(fp))
         || (seen.has(key) ? null : closestMatch(linked, t, usedLinked));
-      if (dup || seen.has(key)) duplicates.push({ tx: t, existing: dup || null });
+      if (dup || seen.has(key)) duplicates.push({ tx: t, existing: dup && !dup.deletedAt ? dup : null, deleted: !!(dup && dup.deletedAt) });
       else { fresh.push(t); seen.add(key); }
     }
     const fromImports = {};
@@ -303,15 +306,16 @@
    * en transacties uit een CSV-bestand of manuele invoer via bedrag en datum (hoogstens 4 dagen verschil).
    */
   function planLinked(state, accountId, rows) {
-    const inAcc = state.transactions.filter(t => t.accountId === accountId);
+    const gone = (state.deleted || []).filter(d => d.accountId === accountId);
+    const inAcc = state.transactions.filter(t => t.accountId === accountId).concat(gone);
     const byRef = new Map(inAcc.filter(t => t.bankRef).map(t => [t.bankRef, t]));
     const pool = inAcc.filter(t => !isLinkedRef(t.bankRef));
     const used = new Set(), seen = new Set();
     const fresh = [], duplicates = [];
     for (const t of rows.slice().sort((a, b) => a.date.localeCompare(b.date))) {
-      if (t.bankRef && (byRef.has(t.bankRef) || seen.has(t.bankRef))) { duplicates.push({ tx: t, existing: byRef.get(t.bankRef) || null }); continue; }
+      if (t.bankRef && (byRef.has(t.bankRef) || seen.has(t.bankRef))) { const x = byRef.get(t.bankRef) || null; duplicates.push({ tx: t, existing: x && !x.deletedAt ? x : null, deleted: !!(x && x.deletedAt) }); continue; }
       const m = closestMatch(pool, t, used);
-      if (m) { duplicates.push({ tx: t, existing: m }); continue; }
+      if (m) { duplicates.push({ tx: t, existing: m.deletedAt ? null : m, deleted: !!m.deletedAt }); continue; }
       if (t.bankRef) seen.add(t.bankRef);
       fresh.push(t);
     }
@@ -337,6 +341,29 @@
     return apply(state, { fileName: label, fileHash: 'link|' + accountId + '|' + now, fresh: planned.fresh, duplicates: planned.duplicates }, parsed, accountId, now);
   }
 
+  /**
+   * Verwijdert transacties. Kwamen ze uit een bestand of de bankkoppeling, dan onthoudt Helder ze,
+   * zodat ze bij een volgende import of ophaalbeurt niet terugkomen.
+   */
+  function removeTransactions(state, ids, now) {
+    const set = new Set(ids);
+    const at = new Date(now || Date.now()).toISOString();
+    const removed = state.transactions.filter(t => set.has(t.id));
+    state.deleted = state.deleted || [];
+    for (const t of removed) {
+      if (t.source !== 'import') continue;
+      state.deleted.push({ id: C.uid('del'), accountId: t.accountId, key: rowKey(t), bankRef: t.bankRef || null, date: t.date, amount: t.amount,
+        counterparty: t.counterparty || '', description: String(t.description || '').slice(0, 120), importId: t.importId || null, deletedAt: at });
+    }
+    state.transactions = state.transactions.filter(t => !set.has(t.id));
+    return removed.length;
+  }
+
+  /** Een verwijderde transactie toch terugzetten bij de volgende import (vergeten). */
+  function forgetDeleted(state, id) {
+    state.deleted = (state.deleted || []).filter(d => d.id !== id);
+  }
+
   /** Een KBC-export kan meerdere rekeningen bevatten: splits per IBAN. */
   function splitByAccount(parsed) {
     const ibans = parsed.accountIbans.length ? parsed.accountIbans : [null];
@@ -352,7 +379,7 @@
   }
 
   const api = { PROFILES, merchantFromDescription, detect, parse, plan, apply, undo, hashText, rowKey, endBalance, splitByAccount,
-    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef };
+    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef, removeTransactions, forgetDeleted };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxBanks = api;
 })(typeof window !== 'undefined' ? window : globalThis);
