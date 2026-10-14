@@ -776,3 +776,64 @@ table.ledger tr.lg-surplus td:first-child { border-left: 3px solid var(--green);
 .at-main a { display: block; font-weight: 600; }
 @media (max-width: 600px) { .action-tx { grid-template-columns: minmax(0, 1fr) auto auto; } }
 .grid.cards.actions-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+/* ---------- Gsm: tabbalk onderaan ---------- */
+#tabbar, #tab-more { display: none; }
+@media (max-width: 700px) {
+  #nav { display: none !important; }
+  #tabbar:not([hidden]) { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: var(--surface); border-top: 1px solid var(--border); padding: 4px 4px max(4px, env(safe-area-inset-bottom)); box-shadow: 0 -4px 14px rgba(20,40,75,.06); }
+  #tabbar button { position: relative; background: none; border: 0; font: inherit; font-size: 11px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border-radius: 10px; }
+  #tabbar button span { font-size: 20px; line-height: 1; }
+  #tabbar button.active { color: var(--primary); font-weight: 700; background: var(--primary-soft); }
+  #tabbar .tab-count { position: absolute; top: 2px; right: calc(50% - 22px); background: var(--red, #d9480f); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 5px; line-height: 16px; }
+  #tab-more:not([hidden]) { display: flex; flex-direction: column; position: fixed; right: 8px; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 51; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(20,40,75,.18); padding: 6px; min-width: 200px; }
+  #tab-more button { text-align: left; background: none; border: 0; font: inherit; padding: 12px 14px; border-radius: 10px; color: var(--text); }
+  #tab-more button.active { background: var(--primary-soft); font-weight: 700; }
+  main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+
+  /* Transacties als kaartjes in plaats van een tabel */
+  #main .tx-table thead { display: none; }
+  #main .tx-table, .tx-table tbody { display: block; }
+  #main .tx-table tr { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-areas: "sel desc amt" "sel date date" "sel assign assign";
+    gap: 2px 8px; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+  #main .tx-table td { display: block; padding: 0 !important; border: 0 !important; }
+  #main .tx-table td.sel-cell { grid-area: sel; padding-top: 2px !important; }
+  #main .tx-table td.nowrap { grid-area: date; font-size: 12px; color: var(--muted); }
+  #main .tx-table td.nowrap .small { display: inline; margin-left: 6px; }
+  #main .tx-table td.clickable { grid-area: desc; min-width: 0; }
+  #main .tx-table td.amount { grid-area: amt; text-align: right; }
+  #main .tx-table td.assign-cell { grid-area: assign; margin-top: 6px; }
+  #main .tx-table .desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #main .tx-table tr.is-todo { border-left: 3px solid var(--orange, #e8590c); }
+}
+/* Overzicht: één blok met de kerncijfers, Te doen, sparen; de rest onder Meer details */
+.hero { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.hero-stat .label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.hero-stat .value { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hero-stat.main .value { font-size: 28px; }
+.hero-stat .hint { font-size: 12px; color: var(--muted); }
+.dash-top { margin-bottom: 16px; align-items: start; }
+.dash-top .savings .sv-main { grid-template-columns: 1fr; gap: 10px; }
+.todo-list { display: flex; flex-direction: column; }
+.todo-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.todo-row:last-child { border-bottom: 0; }
+a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
+.todo-row .grow { display: flex; flex-direction: column; min-width: 0; }
+.todo-icon { font-size: 18px; width: 24px; text-align: center; }
+.todo-go { color: var(--muted); font-size: 20px; }
+.more-details { margin-top: 4px; }
+.more-details > summary { cursor: pointer; padding: 10px 2px; margin-bottom: 8px; }
+@media (max-width: 700px) {
+  .hero { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hero-stat .value { font-size: 20px; }
+  .hero-stat.main .value { font-size: 22px; }
+}
+@media (max-width: 700px) {
+  .tl-presets { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .tl-presets button { white-space: nowrap; flex-shrink: 0; }
+  .tl-track { height: 52px; }
+  .tl-hint { display: none; }
+  .page-head .btn { padding: 7px 10px; font-size: 14px; }
+}

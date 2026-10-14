@@ -278,10 +278,16 @@
 
   function render() {
     renderSyncBadge();
-    $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
+    $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
+    const more = $('#tabbar [data-tab-more]');
+    if (more) more.classList.toggle('active', ['income', 'actions', 'invest', 'settings'].includes(ui.view));
+    const tb = $('#tabbar');
+    if (tb) tb.hidden = !!(ui.auth || ui.admin);
     const todo = todoCount();
     const bankBtn = $('#nav [data-view=bank]');
     if (bankBtn) bankBtn.innerHTML = 'Bank' + (todo ? ` <span class="count">${todo}</span>` : '');
+    const tabCount = $('#tabbar .tab-count');
+    if (tabCount) { tabCount.hidden = !todo; tabCount.textContent = todo > 99 ? '99+' : String(todo); }
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
@@ -352,47 +358,48 @@
     const invSum = inv() ? Invest.summary(inv()) : null;
     const open = adv.people.filter(p => p.open !== 0);
 
+    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen);
+    const cancels = C.cancellationPairs(state).length;
+    const actionsOpen = (state.actions || []).filter(a => !a.closed && a.expectBack).map(a => ({ a, s: C.actionSummary(state, a) })).filter(x => x.s.open > 0);
+    // Te doen: alles wat je aandacht vraagt, op één plek
+    const todoItems = [
+      todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
+      cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
+      ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${money(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
+      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${money(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
+      ...actionsOpen.map(x => `<a href="#" class="todo-row" data-action="action-view" data-id="${esc(x.a.id)}"><span class="todo-icon">🏷</span><span class="grow"><strong>${esc(x.a.name)}: nog ${money(x.s.open)} terug te krijgen</strong><span class="small muted">${x.a.person ? 'van ' + esc(x.a.person) : 'actie'}</span></span><span class="todo-go">›</span></a>`),
+      ...budgets.map(b => `<div class="todo-row"><span class="todo-icon">${b.status === 'over' ? '⚠️' : '⏳'}</span><span class="grow"><strong>Budget ${esc(catLabel(b.budget.categoryId))} ${b.status === 'over' ? 'overschreden' : 'bijna op'}</strong><span class="small muted">${Math.round(b.pct * 100)}% · ${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</span></span></div>`),
+      ...upcoming.slice(0, 4).map(r => `<div class="todo-row"><span class="todo-icon">🔁</span><span class="grow"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</span></span><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`)
+    ].filter(Boolean);
+
     return `
       <div class="page-head"><h1>Overzicht</h1></div>
       ${timeline()}
-      ${(() => { const n = C.cancellationPairs(state).length; return n ? `<div class="notice info"><a href="#" data-action="goto" data-view="bank">↩ ${n} mogelijke annulering${n === 1 ? '' : 'en'} gevonden</a>: een inkomst met hetzelfde bedrag als een eerdere uitgave.</div>` : ''; })()}
-      ${todo ? `<div class="notice info"><a href="#" data-action="goto" data-view="bank">📥 ${todo} transactie(s) wachten om gekoppeld te worden</a> aan een inkomst, uitgave, voorschot, belegging of eigen rekening.</div>` : ''}
-      <div class="grid kpis">
-        <div class="card kpi"><div class="label">Netto inkomsten</div><div class="value pos">${money(sum.netIncome)}</div>
-          <div class="hint">bruto ${money(sum.income)}${sum.incomeCosts ? ' − kosten ' + money(sum.incomeCosts) : ''}</div></div>
-        <div class="card kpi"><div class="label">Uitgaven</div><div class="value">${money(sum.expenses)}</div><div class="hint">na terugbetalingen</div></div>
-        <div class="card kpi"><div class="label">Over in deze periode</div><div class="value ${sum.net >= 0 ? 'pos' : ''}">${money(sum.net)}</div>
-          <div class="hint">${sum.net < 0 ? 'meer uitgegeven dan verdiend' : sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : ''}</div></div>
-        <div class="card kpi"><div class="label">Belegd</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
+      <div class="card hero">
+        <div class="hero-stat"><div class="label">Binnen</div><div class="value pos">${money(sum.netIncome)}</div><div class="hint">netto inkomsten${sum.incomeCosts ? ' (na ' + money(sum.incomeCosts) + ' kosten)' : ''}</div></div>
+        <div class="hero-stat"><div class="label">Buiten</div><div class="value">${money(sum.expenses)}</div><div class="hint">uitgaven, na terugbetalingen</div></div>
+        <div class="hero-stat main"><div class="label">${sum.net >= 0 ? 'Over' : 'Tekort'}</div><div class="value ${sum.net >= 0 ? 'pos' : 'negv'}">${money(Math.abs(sum.net))}</div><div class="hint">${sum.net >= 0 && sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : sum.net < 0 ? 'meer uitgegeven dan verdiend' : ''}</div></div>
+        <div class="hero-stat"><div class="label">Vermogen</div><div class="value">${money(worth)}</div><div class="hint">rekeningen${invSum ? ' + beleggingen' : ''}</div></div>
       </div>
-      ${savingsCard(lines)}
-      ${incomeVsExpenses(sum, lines, range, multi)}
-      <div class="card" style="margin-bottom:16px"><h2>Vermogen door de tijd</h2>${netWorthChart(range)}</div>
-      <div class="grid two">
+      <div class="grid two dash-top">
+        <div class="card todo-card"><h2>Te doen</h2>${todoItems.length ? `<div class="todo-list">${todoItems.join('')}</div>` : '<p class="muted">🎉 Niets te doen. Alles is verwerkt.</p>'}</div>
+        ${savingsCard(lines)}
+      </div>
+      <details class="more-details" data-keep="dashMore" ${(ui.keepOpen.dashMore != null ? ui.keepOpen.dashMore : window.innerWidth > 700) ? 'open' : ''}>
+        <summary><strong>Meer details</strong> <span class="small muted">· inkomsten tegenover uitgaven, per maand, vermogen door de tijd</span></summary>
+        ${incomeVsExpenses(sum, lines, range, multi)}
+        <div class="card" style="margin-bottom:16px"><h2>Vermogen door de tijd</h2>${netWorthChart(range)}</div>
         <div class="card">
           <h2>Vermogen</h2>
           <div class="list">
             ${balances.map(x => `<div class="list-row"><div class="grow">${esc(x.a.name)}<div class="small muted">gekend saldo van ${fmtDate(x.b.since)} + latere transacties</div></div><span class="amount">${money(x.b.amount)}</span></div>`).join('')}
             ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
-            <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen))}</span></div>
+            <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
           ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}
         </div>
-        <div class="card">
-          <h2>Voorschotten</h2>
-          ${open.length ? '<div class="list">' + open.map(p => `<div class="list-row"><div class="grow"><a href="#advances" data-view-link="advances">${esc(p.person)}</a><div class="small muted">voorgeschoten ${money(p.advanced)} · terug ${money(p.repaid)}</div></div><span class="amount">${p.open > 0 ? money(p.open) + ' open' : money(-p.open) + ' te veel'}</span></div>`).join('') + '</div>'
-            : '<p class="muted">Niemand is je nog iets schuldig.</p>'}
-        </div>
-        <div class="card">
-          <h2>Aandacht</h2>
-          <div class="list">
-            ${budgets.map(b => `<div class="list-row"><div class="grow">Budget ${esc(catLabel(b.budget.categoryId))}<div class="small muted">${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</div></div><span class="badge ${b.status}">${b.status === 'over' ? 'overschreden' : 'bijna op'} · ${Math.round(b.pct * 100)}%</span></div>`).join('')}
-            ${upcoming.map(r => `<div class="list-row"><div class="grow">🔁 ${esc(r.name)}<div class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</div></div><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`).join('')}
-            ${!budgets.length && !upcoming.length ? '<p class="muted">Niets bijzonders.</p>' : ''}
-          </div>
-        </div>
-      </div>`;
+      </details>`;
   }
 
   /** Gespaard dit jaar (beleggingsrekening + spaarrekeningen), met een doel dat je zelf kiest. */
@@ -408,7 +415,7 @@
     const editing = ui.editGoal || !goal;
     const parts = [sv.invested ? `${money(sv.invested)} naar je beleggingsrekening` : '', sv.toSavings ? `${money(sv.toSavings)} naar je spaarrekening${state.accounts.filter(a => a.type === 'spaar').length > 1 ? 'en' : ''}` : ''].filter(Boolean);
     const pace = !goal ? '' : sv.total >= goal ? '🎉 Doel gehaald!' : sv.total >= expected ? `✓ Je ligt op schema (verwacht tegen vandaag: ${money(expected)}).` : `Je ligt ${money(expected - sv.total)} achter op schema.`;
-    return `<div class="card savings" style="margin-bottom:16px">
+    return `<div class="card savings">
       <div class="sv-head"><h2>💰 Gespaard in ${y}</h2><span class="spacer"></span>${goal && !ui.editGoal ? '<button class="btn small ghost" data-action="goal-edit">Doel wijzigen</button>' : ''}</div>
       <div class="sv-main">
         <div><div class="sv-amount ${sv.total >= 0 ? '' : 'negv'}">${money(sv.total)}</div>
@@ -1064,8 +1071,8 @@
       <div class="page-head"><h1>Bank</h1><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Manuele transactie</button>
         <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
-      <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
-        Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
+      ${state.transactions.length ? '' : `<p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
+        Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>`}
       ${cancelCard()}
       <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
       <div class="filters">
@@ -4136,8 +4143,12 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   }
 
   document.addEventListener('click', ev => {
-    const nav = ev.target.closest('#nav button, [data-view-link]');
-    if (nav) { ev.preventDefault(); go(nav.dataset.view || nav.dataset.viewLink); return; }
+    const moreBtn = ev.target.closest('[data-tab-more]');
+    const sheet = $('#tab-more');
+    if (moreBtn) { const open = sheet.hidden; sheet.hidden = !open; moreBtn.setAttribute('aria-expanded', String(open)); return; }
+    if (sheet && !sheet.hidden && !ev.target.closest('#tab-more')) sheet.hidden = true;
+    const nav = ev.target.closest('#nav button, #tabbar [data-view], #tab-more [data-view], [data-view-link]');
+    if (nav) { ev.preventDefault(); if (sheet) sheet.hidden = true; go(nav.dataset.view || nav.dataset.viewLink); return; }
     const el = ev.target.closest('[data-action]');
     if (!el || !actions[el.dataset.action]) return;
     if (el.tagName === 'A' || el.tagName === 'BUTTON') ev.preventDefault();
