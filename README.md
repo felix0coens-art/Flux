@@ -38,6 +38,23 @@ Beide banken worden automatisch herkend, inclusief de IBAN van je rekening. Bij 
 
 Menunamen kunnen licht verschillen per versie van de app of website.
 
+### Bankkoppeling: automatisch ophalen bij KBC, Argenta, …
+
+In plaats van CSV-bestanden op te laden kan Helder je transacties en saldo rechtstreeks bij je bank ophalen. Dat loopt via [Enable Banking](https://enablebanking.com), een erkende dienst onder de Europese PSD2-regels. Je meldt je aan bij je eigen bank (itsme, kaartlezer of bank-app) en Helder krijgt enkel **leestoegang**. Je bankwachtwoord gaat nooit via Helder.
+
+Eenmalig instellen, in Helder via **Bank → Bankkoppeling instellen**. Daar staan de stappen:
+1. Maak een account bij Enable Banking en registreer in hun Control Panel een *application* (Production). Gebruik als redirect URL het adres dat Helder toont (`https://helderfin.be/api/bank/callback`), en laat de sleutel in je browser aanmaken. Je krijgt een `.pem`-bestand.
+2. Activeer de app door je **eigen rekeningen** te koppelen ("restricted" modus): de app werkt dan enkel voor jouw rekeningen.
+3. Vul in Helder de Application ID in en kies het `.pem`-bestand. Helder test meteen of het werkt.
+4. Klik op **+ Bank koppelen**, kies KBC, CBC of Argenta en meld je aan bij je bank.
+
+Daarna:
+- Nieuwe transacties worden opgehaald telkens je Helder opent (hoogstens om de 6 uur), of met **Nu ophalen**.
+- Elke ophaalbeurt verschijnt bij *Opgeladen bestanden* als een import die je kan bekijken of ongedaan maken.
+- Wat al in Helder zat wordt overgeslagen: via de referentie van de bank, en voor CSV-bestanden of manuele transacties via bedrag en datum (hoogstens 4 dagen verschil). Dat werkt in beide richtingen, dus je kan CSV-bestanden en de koppeling door elkaar gebruiken.
+- Na ± 180 dagen moet je opnieuw toestemming geven bij je bank. Dat is een PSD2-regel. Helder toont vooraf hoeveel dagen je nog hebt en een knop *Opnieuw toestemming geven*.
+- De sleutel van Enable Banking staat enkel op je server (`helder-data/enablebanking.json`) en wordt nooit naar je toestellen gestuurd.
+
 ### Een transactie koppelen
 
 Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat ze is:
@@ -292,6 +309,7 @@ server/server.js           HTTP-server: app, login, synchronisatie, opzoeken (me
 server/ai.js               optionele classificatie via Claude
 server/degiro.js           rechtstreekse Degiro-koppeling
 server/prices.js           historische koersen (Yahoo Finance) voor de reconstructie
+server/enablebanking.js    bankkoppeling via Enable Banking (PSD2); in PHP: php/lib/enablebanking.php
 api.php, php/lib/          dezelfde server in PHP, voor gewone webhosting (Vimexx, DirectAdmin, ...)
 php/router.php             om de PHP-versie lokaal te draaien: php -S localhost:8080 php/router.php
 .htaccess, .user.ini       Apache- en PHP-instellingen voor de webhosting

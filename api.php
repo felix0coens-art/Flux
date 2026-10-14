@@ -11,6 +11,7 @@ require __DIR__ . '/php/lib/lookup.php';
 require __DIR__ . '/php/lib/prices.php';
 require __DIR__ . '/php/lib/degiro.php';
 require __DIR__ . '/php/lib/ai.php';
+require __DIR__ . '/php/lib/enablebanking.php';
 
 @set_time_limit(300);
 ini_set('display_errors', '0');
@@ -98,7 +99,34 @@ function handle(string $method, string $path): void {
         return;
     }
 
+    // Terugkeer van de bank na het aanmelden (gewone pagina, de 'state' bepaalt de gebruiker)
+    if ($path === '/api/bank/callback' && $method === 'GET') {
+        try { $r = bank_callback('http_fetch', $_GET); }
+        catch (BankError $e) { $r = ['ok' => false, 'message' => $e->getMessage()]; }
+        http_response_code($r['ok'] ? 200 : 400);
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-store');
+        foreach (SECURITY_HEADERS as $k => $v) header("$k: $v");
+        echo bank_callback_page($r);
+        return;
+    }
+
     if (!$user) throw new HttpError(401, 'Niet aangemeld');
+
+    if (strpos($path, '/api/bank/') === 0) {
+        try {
+            if ($path === '/api/bank/status' && $method === 'GET') { send(200, bank_status($user)); return; }
+            if ($path === '/api/bank/config' && $method === 'POST') { send(200, bank_save_config('http_fetch', body())); return; }
+            if ($path === '/api/bank/aspsps' && $method === 'GET') { send(200, bank_aspsps('http_fetch', (string) ($_GET['country'] ?? 'BE'))); return; }
+            if ($path === '/api/bank/connect' && $method === 'POST') { send(200, bank_connect('http_fetch', $user, body())); return; }
+            if ($path === '/api/bank/fetch' && $method === 'POST') { send(200, bank_fetch('http_fetch', $user, body())); return; }
+            if ($path === '/api/bank/disconnect' && $method === 'POST') { send(200, bank_disconnect('http_fetch', $user, body())); return; }
+        } catch (BankError $e) {
+            throw new HttpError($e->status, $e->getMessage(), $e->kind);
+        } catch (RuntimeException $e) {
+            throw new HttpError(502, 'Enable Banking is niet bereikbaar: ' . $e->getMessage());
+        }
+    }
 
     if ($path === '/api/sync' && $method === 'POST') {
         $b = body(false);

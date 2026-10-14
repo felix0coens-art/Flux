@@ -185,12 +185,16 @@
     // Ook manuele/oude transacties zonder bankreferentie herkennen via vingerafdruk
     const loose = new Map();
     for (const t of state.transactions) if (t.accountId === accountId) loose.set('fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' })), t);
+    // Transacties die via de bankkoppeling binnenkwamen hebben andere referenties: herkennen op bedrag en datum
+    const linked = state.transactions.filter(t => t.accountId === accountId && isLinkedRef(t.bankRef));
+    const usedLinked = new Set();
     const seen = new Set();
     const fresh = [], duplicates = [];
     for (const t of parsed.transactions) {
       const key = rowKey(t);
       const fp = 'fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' }));
-      const dup = existing.get(key) || (t.bankRef || t.balanceAfter != null ? null : loose.get(fp));
+      const dup = existing.get(key) || (t.bankRef || t.balanceAfter != null ? null : loose.get(fp))
+        || (seen.has(key) ? null : closestMatch(linked, t, usedLinked));
       if (dup || seen.has(key)) duplicates.push({ tx: t, existing: dup || null });
       else { fresh.push(t); seen.add(key); }
     }
@@ -235,6 +239,104 @@
     return n;
   }
 
+  // ---------- Bankkoppeling (Enable Banking / PSD2) ----------
+
+  const LINK_PREFIX = 'eb:';
+  function isLinkedRef(ref) { return typeof ref === 'string' && ref.indexOf(LINK_PREFIX) === 0; }
+
+  /** Dichtstbijzijnde transactie met hetzelfde bedrag, hoogstens 4 dagen verschil, die nog niet gebruikt is. */
+  function closestMatch(list, t, used) {
+    const d0 = Date.parse(t.date);
+    let best = null, bestDiff = Infinity;
+    for (const x of list) {
+      if (used.has(x.id) || x.amount !== t.amount) continue;
+      const diff = Math.abs(Date.parse(x.date) - d0) / 86400000;
+      if (diff <= 4 && diff < bestDiff) { best = x; bestDiff = diff; }
+    }
+    if (best) used.add(best.id);
+    return best;
+  }
+
+  function ebAmount(a) {
+    if (a == null) return NaN;
+    const v = typeof a === 'object' ? (a.balance_amount ? a.balance_amount.amount : a.amount) : a;
+    return parseFloat(String(v).replace(',', '.'));
+  }
+
+  /** Zet een transactie van Enable Banking om naar een rij zoals uit een bankbestand. Enkel geboekte transacties. */
+  function fromEnableBanking(t) {
+    if (!t || (t.status && t.status !== 'BOOK')) return null;
+    const raw = ebAmount(t.transaction_amount);
+    if (!isFinite(raw)) return null;
+    const value = Math.round(Math.abs(raw) * 100);
+    const out = t.credit_debit_indicator ? t.credit_debit_indicator === 'DBIT' : raw < 0;
+    const party = (out ? t.creditor : t.debtor) || {};
+    const partyAcc = (out ? t.creditor_account : t.debtor_account) || {};
+    const remit = [];
+    for (const r of t.remittance_information || []) { const v = String(r).replace(/\s+/g, ' ').trim(); if (v && !remit.includes(v)) remit.push(v); }
+    const description = remit.join(' · ');
+    const date = C.parseDate(String(t.booking_date || t.value_date || t.transaction_date || '').slice(0, 10));
+    if (!date) return null;
+    const bal = ebAmount(t.balance_after_transaction);
+    return {
+      date, amount: out ? -value : value,
+      counterparty: String(party.name || '').trim() || merchantFromDescription(remit.find(d => merchantFromDescription(d)) || '') || '',
+      counterpartyIban: C.normalizeIban(partyAcc.iban || ''),
+      description,
+      bankRef: t.entry_reference ? LINK_PREFIX + t.entry_reference : null,
+      balanceAfter: isFinite(bal) ? Math.round(bal * 100) : null
+    };
+  }
+
+  /** Beste saldo uit de lijst van de bank (afgesloten geboekt saldo eerst). */
+  function balanceFromEnableBanking(balances, today) {
+    const order = ['CLBD', 'ITBD', 'XPCD', 'ITAV', 'CLAV', 'OPBD', 'PRCD', 'INFO', 'OTHR'];
+    const rank = b => { const i = order.indexOf(b.balance_type); return i < 0 ? order.length : i; };
+    const list = (balances || []).filter(b => isFinite(ebAmount(b))).sort((a, b) => rank(a) - rank(b));
+    if (!list.length) return null;
+    const b = list[0];
+    return { date: C.parseDate(String(b.reference_date || '').slice(0, 10)) || today, amount: Math.round(ebAmount(b) * 100) };
+  }
+
+  /**
+   * Welke opgehaalde transacties zijn nieuw? Herkent dezelfde transactie via de referentie van de bank,
+   * en transacties uit een CSV-bestand of manuele invoer via bedrag en datum (hoogstens 4 dagen verschil).
+   */
+  function planLinked(state, accountId, rows) {
+    const inAcc = state.transactions.filter(t => t.accountId === accountId);
+    const byRef = new Map(inAcc.filter(t => t.bankRef).map(t => [t.bankRef, t]));
+    const pool = inAcc.filter(t => !isLinkedRef(t.bankRef));
+    const used = new Set(), seen = new Set();
+    const fresh = [], duplicates = [];
+    for (const t of rows.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+      if (t.bankRef && (byRef.has(t.bankRef) || seen.has(t.bankRef))) { duplicates.push({ tx: t, existing: byRef.get(t.bankRef) || null }); continue; }
+      const m = closestMatch(pool, t, used);
+      if (m) { duplicates.push({ tx: t, existing: m }); continue; }
+      if (t.bankRef) seen.add(t.bankRef);
+      fresh.push(t);
+    }
+    return { fresh, duplicates };
+  }
+
+  /** Voegt opgehaalde transacties toe als één import (zichtbaar en ongedaan te maken zoals een bestand). */
+  function applyLinked(state, accountId, planned, info, now) {
+    now = now || Date.now();
+    const dates = planned.fresh.map(t => t.date).sort();
+    const parsed = {
+      profile: { id: 'bankkoppeling', name: info.bankName + ' (bankkoppeling)' },
+      period: dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null,
+      errors: [], balance: info.balance || null
+    };
+    const d = new Date(now);
+    const label = `Bankkoppeling ${info.bankName} · ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    if (!planned.fresh.length) {
+      const acc = state.accounts.find(a => a.id === accountId);
+      if (acc && parsed.balance && (!acc.balance || parsed.balance.date >= acc.balance.date)) acc.balance = { date: parsed.balance.date, amount: parsed.balance.amount, source: 'import' };
+      return null;
+    }
+    return apply(state, { fileName: label, fileHash: 'link|' + accountId + '|' + now, fresh: planned.fresh, duplicates: planned.duplicates }, parsed, accountId, now);
+  }
+
   /** Een KBC-export kan meerdere rekeningen bevatten: splits per IBAN. */
   function splitByAccount(parsed) {
     const ibans = parsed.accountIbans.length ? parsed.accountIbans : [null];
@@ -249,7 +351,8 @@
     });
   }
 
-  const api = { PROFILES, merchantFromDescription, detect, parse, plan, apply, undo, hashText, rowKey, endBalance, splitByAccount };
+  const api = { PROFILES, merchantFromDescription, detect, parse, plan, apply, undo, hashText, rowKey, endBalance, splitByAccount,
+    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxBanks = api;
 })(typeof window !== 'undefined' ? window : globalThis);

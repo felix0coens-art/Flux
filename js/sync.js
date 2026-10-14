@@ -230,8 +230,19 @@
     return api('POST', '/api/degiro/sync', { username, password, otp });
   }
 
+  /** Bankkoppeling (Enable Banking): de server bewaart de sleutel en de toestemmingen. */
+  const bank = {
+    status: () => api('GET', '/api/bank/status'),
+    saveConfig: (appId, privateKey) => api('POST', '/api/bank/config', { appId, privateKey }),
+    removeConfig: () => api('POST', '/api/bank/config', { remove: true }),
+    aspsps: country => api('GET', '/api/bank/aspsps?country=' + encodeURIComponent(country || 'BE')),
+    connect: (aspsp, country, maxDays) => api('POST', '/api/bank/connect', { aspsp, country, maxDays }),
+    fetch: (connectionId, accountUid, dateFrom) => api('POST', '/api/bank/fetch', { connectionId, accountUid, dateFrom }),
+    disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
+  };
+
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices,
+    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices, bank,
     get mode() { return mode; },
     get user() { return meta.user; },
     get features() { return features; },

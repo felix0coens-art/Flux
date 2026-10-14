@@ -25,6 +25,7 @@ const Lookup = require('../js/lookup.js');
 const AI = require('./ai.js');
 const Degiro = require('./degiro.js');
 const Prices = require('./prices.js');
+const EnableBanking = require('./enablebanking.js');
 
 // Koerscache in het geheugen (12 uur)
 const priceCache = {
@@ -66,6 +67,13 @@ function withLock(key, fn) {
 }
 
 function userFile(username) { return 'user-' + Buffer.from(username).toString('hex') + '.json'; }
+
+// Bankkoppeling (Enable Banking)
+const Bank = EnableBanking.create({
+  readJson, writeJson, withLock,
+  remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
+  publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
+});
 
 // ---------- Gebruikers en sessies ----------
 
@@ -363,7 +371,7 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-async function handleApi(req, res, pathname) {
+async function handleApi(req, res, pathname, query) {
   // CSRF-bescherming: wijzigende verzoeken moeten van de app zelf komen
   if (req.method !== 'GET' && req.headers['x-flux'] !== '1') throw httpError(403, 'Verboden');
   const user = await sessionUser(req);
@@ -405,7 +413,32 @@ async function handleApi(req, res, pathname) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
 
+  // Terugkeer van de bank na het aanmelden (gewone pagina, de 'state' bepaalt de gebruiker)
+  if (pathname === '/api/bank/callback' && req.method === 'GET') {
+    let r;
+    try { r = await Bank.callback(fetch, Object.fromEntries(query)); }
+    catch (e) { if (!(e instanceof EnableBanking.BankError)) console.error('Bank:', e.message); r = { ok: false, message: e instanceof EnableBanking.BankError ? e.message : 'Enable Banking is niet bereikbaar.' }; }
+    res.writeHead(r.ok ? 200 : 400, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
+    return res.end(EnableBanking.callbackPage(r));
+  }
+
   if (!user) throw httpError(401, 'Niet aangemeld');
+
+  if (pathname.startsWith('/api/bank/')) {
+    try {
+      if (pathname === '/api/bank/status' && req.method === 'GET') return send(res, 200, await Bank.status(req, user));
+      if (pathname === '/api/bank/config' && req.method === 'POST') return send(res, 200, await Bank.saveConfig(fetch, await readBody(req)));
+      if (pathname === '/api/bank/aspsps' && req.method === 'GET') return send(res, 200, await Bank.aspsps(fetch, query.get('country')));
+      if (pathname === '/api/bank/connect' && req.method === 'POST') return send(res, 200, await Bank.connect(fetch, req, user, await readBody(req)));
+      if (pathname === '/api/bank/fetch' && req.method === 'POST') return send(res, 200, await Bank.fetchAccount(fetch, req, user, await readBody(req)));
+      if (pathname === '/api/bank/disconnect' && req.method === 'POST') return send(res, 200, await Bank.disconnect(fetch, user, await readBody(req)));
+    } catch (e) {
+      if (e instanceof EnableBanking.BankError) throw httpError(e.status, e.message, e.kind);
+      if (e.status) throw e;
+      console.error('Bank:', e.message);
+      throw httpError(502, 'Enable Banking is niet bereikbaar: ' + e.message);
+    }
+  }
 
   if (pathname === '/api/sync' && req.method === 'POST') {
     const b = await readBody(req);
@@ -463,9 +496,10 @@ async function handleApi(req, res, pathname) {
 
 function createServer() {
   return http.createServer(async (req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const url = new URL(req.url, 'http://x');
+    const pathname = decodeURIComponent(url.pathname);
     try {
-      if (pathname.startsWith('/api/')) await handleApi(req, res, pathname);
+      if (pathname.startsWith('/api/')) await handleApi(req, res, pathname, url.searchParams);
       else if (req.method === 'GET' || req.method === 'HEAD') await serveStatic(req, res, pathname);
       else send(res, 405, 'Niet toegestaan');
     } catch (e) {

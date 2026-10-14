@@ -563,8 +563,9 @@
       <div class="page-head"><h1>Bank</h1><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Manuele transactie</button>
         <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
-      <p class="muted">Laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend). Elk bestand kan maar één keer opgeladen worden,
-        en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
+      <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend).
+        Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
+      ${bankLinkCard()}
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
 
       <div class="card" style="margin-bottom:16px">
@@ -592,6 +593,208 @@
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}`;
+  }
+
+  // ----- Bankkoppeling (Enable Banking) -----
+
+  const bankLink = { status: null, error: '', busy: {}, errors: {}, awaiting: false };
+  const LINK_REFRESH_MS = 6 * 3600000;
+  const POPULAR_BANKS = /^(kbc|cbc|kbc brussels|argenta|belfius|bnp paribas fortis|ing|crelan|keytrade)/i;
+
+  function bankLinkAvailable() { return !!(Sync && Sync.mode === 'server' && !demo); }
+  function daysLeft(iso) { return iso ? Math.ceil((Date.parse(iso) - Date.now()) / 86400000) : null; }
+
+  async function loadBankLink(opts) {
+    if (!bankLinkAvailable()) return;
+    try { bankLink.status = await Sync.bank.status(); bankLink.error = ''; }
+    catch (e) { bankLink.error = e.message; }
+    if (ui.view === 'bank' && !modal) render();
+    if (opts && opts.auto) await autoFetchLinked();
+  }
+
+  function linkedAccount(a) {
+    return state.accounts.find(x => x.ebUid === a.uid) || (a.iban ? state.accounts.find(x => x.iban && C.normalizeIban(x.iban) === C.normalizeIban(a.iban)) : null);
+  }
+
+  function ensureLinkedAccount(conn, a) {
+    let acct = linkedAccount(a);
+    if (!acct) {
+      const bank = /kbc|cbc/i.test(conn.aspsp) ? 'kbc' : /argenta/i.test(conn.aspsp) ? 'argenta' : undefined;
+      acct = { id: C.uid('acc'), name: (conn.aspsp + ' ' + (a.name || (a.iban ? '…' + a.iban.slice(-4) : ''))).trim(), iban: a.iban || '', type: 'zicht', bank };
+      state.accounts.push(acct);
+    }
+    acct.ebUid = a.uid;
+    return acct;
+  }
+
+  /** Haalt nieuwe transacties en het saldo op voor alle rekeningen van één bankkoppeling. */
+  async function fetchLinked(conn, opts) {
+    opts = opts || {};
+    if (!bankLinkAvailable() || bankLink.busy[conn.id]) return;
+    bankLink.busy[conn.id] = true;
+    bankLink.errors[conn.id] = '';
+    if (ui.view === 'bank' && !modal) render();
+    let added = 0, changed = false;
+    const notes = [];
+    try {
+      for (const a of conn.accounts) {
+        const acct = ensureLinkedAccount(conn, a);
+        changed = true;
+        const linkedDates = state.transactions.filter(t => t.accountId === acct.id && t.importId && (imp(t.importId) || {}).bank === 'bankkoppeling').map(t => t.date).sort();
+        const from = linkedDates.length ? C.addDays(linkedDates[linkedDates.length - 1], -10) : C.addDays(today, -730);
+        const r = await Sync.bank.fetch(conn.id, a.uid, from);
+        if (demo) return;
+        const rows = (r.transactions || []).map(Banks.fromEnableBanking).filter(Boolean);
+        const planned = Banks.planLinked(state, acct.id, rows);
+        Banks.applyLinked(state, acct.id, planned, { bankName: conn.aspsp, balance: Banks.balanceFromEnableBanking(r.balances, today) });
+        acct.ebFetchedAt = new Date().toISOString();
+        added += planned.fresh.length;
+        if (r.limited) notes.push('de bank gaf enkel de laatste 90 dagen');
+      }
+    } catch (e) {
+      bankLink.errors[conn.id] = e.code === 'expired' ? 'De toestemming is verlopen. Geef opnieuw toestemming.' : e.message;
+      if (!opts.quiet) toast(conn.aspsp + ': ' + bankLink.errors[conn.id]);
+    } finally {
+      bankLink.busy[conn.id] = false;
+    }
+    const msg = added ? `${conn.aspsp}: ${added} nieuwe transacties opgehaald${notes.length ? ' (' + notes[0] + ')' : ''}` : (opts.quiet || bankLink.errors[conn.id] ? null : `${conn.aspsp}: geen nieuwe transacties`);
+    if (changed) commit(msg); else if (ui.view === 'bank' && !modal) render();
+  }
+
+  /** Bij het openen van Helder: rekeningen ophalen die langer dan 6 uur niet bijgewerkt werden. */
+  async function autoFetchLinked() {
+    const st = bankLink.status;
+    if (!st || !st.configured) return;
+    for (const conn of st.connections) {
+      if (daysLeft(conn.validUntil) !== null && daysLeft(conn.validUntil) <= 0) continue;
+      const stale = conn.accounts.some(a => { const x = linkedAccount(a); return !x || !x.ebFetchedAt || Date.now() - Date.parse(x.ebFetchedAt) > LINK_REFRESH_MS; });
+      if (stale) await fetchLinked(conn, { quiet: true });
+    }
+  }
+
+  function bankLinkCard() {
+    if (demo) return '';
+    const head = extra => `<div class="link-head"><h2>🔗 Bankkoppeling</h2><span class="spacer"></span>${extra || ''}</div>`;
+    if (!Sync || Sync.mode !== 'server') {
+      return `<div class="card link-card">${head()}<p class="small muted">Transacties automatisch ophalen bij KBC, Argenta en andere banken werkt via je Helder-server (bv. helderfin.be)${Sync && Sync.mode === 'offline' ? '. Je bent nu offline.' : '.'}</p></div>`;
+    }
+    const st = bankLink.status;
+    if (!st) return `<div class="card link-card">${head()}<p class="small muted">${bankLink.error ? esc(bankLink.error) : 'Laden…'}</p></div>`;
+    if (!st.configured) {
+      return `<div class="card link-card">${head()}
+        <p>Laat Helder je transacties rechtstreeks bij je bank ophalen, zonder CSV-bestanden. Dit loopt via <strong>Enable Banking</strong>, een erkende dienst onder de Europese PSD2-regels: je meldt je aan bij je eigen bank, Helder krijgt enkel <strong>leestoegang</strong>.</p>
+        <button class="btn primary" data-action="bank-setup">Bankkoppeling instellen</button></div>`;
+    }
+    const conns = st.connections.map(conn => {
+      const left = daysLeft(conn.validUntil);
+      const expired = left !== null && left <= 0;
+      const err = bankLink.errors[conn.id];
+      const statusText = bankLink.busy[conn.id] ? '<span class="badge">Bezig met ophalen…</span>'
+        : expired || /verlopen/.test(err || '') ? '<span class="badge over">Toestemming verlopen</span>'
+        : left !== null && left <= 14 ? `<span class="badge warn">Nog ${left} dagen toestemming</span>`
+        : left !== null ? `<span class="badge ok">Toestemming nog ${left} dagen</span>` : '';
+      const accs = conn.accounts.map(a => {
+        const x = linkedAccount(a);
+        return `<li><strong>${esc(a.iban ? C.formatIban(a.iban) : a.name || a.uid)}</strong>${a.name ? ` <span class="muted">${esc(a.name)}</span>` : ''}
+          <div class="small muted">→ ${x ? esc(x.name) + (x.ebFetchedAt ? ' · bijgewerkt ' + esc(fmtDateTime(x.ebFetchedAt)) : ' · nog niet opgehaald') : 'nieuwe rekening in Helder bij het eerste ophalen'}</div></li>`;
+      }).join('');
+      return `<div class="link-conn">
+        <div class="link-conn-head"><strong>${esc(conn.aspsp)}</strong> ${statusText}<span class="spacer"></span>
+          <button class="btn small primary" data-action="bank-fetch" data-id="${esc(conn.id)}" ${bankLink.busy[conn.id] || expired ? 'disabled' : ''}>Nu ophalen</button>
+          ${expired || (left !== null && left <= 30) || err ? `<button class="btn small" data-action="bank-renew" data-id="${esc(conn.id)}">Opnieuw toestemming geven</button>` : ''}
+          <button class="btn small ghost danger" data-action="bank-disconnect" data-id="${esc(conn.id)}">Verbreken</button></div>
+        ${err ? `<div class="notice small">${esc(err)}</div>` : ''}
+        <ul class="link-accounts">${accs || '<li class="muted">Geen rekeningen gedeeld.</li>'}</ul></div>`;
+    }).join('');
+    return `<div class="card link-card">${head(`<button class="btn small" data-action="bank-connect">+ Bank koppelen</button><button class="btn small ghost" data-action="bank-setup">Instellingen</button>`)}
+      ${conns || '<p class="muted">Nog geen bank gekoppeld. Klik op <strong>+ Bank koppelen</strong> en kies KBC, Argenta, …</p>'}
+      <p class="small muted">Nieuwe transacties worden opgehaald telkens je Helder opent (hoogstens om de 6 uur). Ze komen in Helder als een import die je kan bekijken of ongedaan maken, en wat al in Helder zat (ook uit CSV-bestanden) wordt overgeslagen.</p></div>`;
+  }
+
+  function bankSetupModal() {
+    const m = modal;
+    const st = bankLink.status || {};
+    return modalShell('Bankkoppeling instellen', `
+      ${st.configured ? `<div class="notice info small">✓ Ingesteld met app <strong>${esc(st.appName || st.appId)}</strong> (${esc(st.appId)}).</div>` : ''}
+      <p>Helder gebruikt <strong>Enable Banking</strong> om je rekeningen bij KBC, CBC, Argenta en andere banken te lezen. Je stelt dit één keer in:</p>
+      <ol class="steps">
+        <li>Maak een account op <a href="https://enablebanking.com" target="_blank" rel="noopener">enablebanking.com</a> en open het <strong>Control Panel</strong>.</li>
+        <li>Registreer een nieuwe <strong>application</strong>:
+          <ul><li>Environment: <strong>Production</strong></li>
+            <li>Naam: <em>Helder</em></li>
+            <li>Allowed redirect URLs: <code id="eb-redirect">${esc(st.redirectUrl || '')}</code> <button class="btn small" data-action="copy" data-copy="${esc(st.redirectUrl || '')}">Kopieer</button></li>
+            <li>Laat de sleutel <strong>in je browser genereren</strong>. Je krijgt een <code>.pem</code>-bestand: bewaar het goed.</li></ul></li>
+        <li>Activeer de app door <strong>je eigen rekeningen te koppelen</strong> (in het Control Panel bij de app). Zo werkt ze enkel voor jouw rekeningen ("restricted" modus).</li>
+        <li>Vul hieronder de <strong>Application ID</strong> in en kies het <code>.pem</code>-bestand.</li>
+      </ol>
+      <form data-form="bank-setup" class="form-stack" autocomplete="off">
+        <label class="field"><span>Application ID</span><input type="text" name="appId" id="eb-appid" value="${esc(m.appId || '')}" placeholder="bv. 1a2b3c4d-…" autocapitalize="none" required></label>
+        <label class="field"><span>Privésleutel (.pem-bestand)</span><input type="file" id="eb-pem" accept=".pem,.key,.txt,application/x-pem-file"></label>
+        ${m.pemName ? `<div class="small muted">Gekozen: ${esc(m.pemName)}</div>` : ''}
+        <div class="errors">${esc(m.error || '')}</div>
+        <button class="btn primary" type="submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Controleren bij Enable Banking…' : 'Opslaan en testen'}</button>
+      </form>
+      <p class="small muted">De sleutel wordt enkel op je Helder-server bewaard (in de map helder-data, niet via het web bereikbaar) en nooit naar je toestellen gestuurd. Je bankwachtwoord gaat nooit via Helder.</p>`,
+      `${st.configured ? '<button class="btn danger" data-action="bank-remove-config">Instelling verwijderen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+  }
+
+  async function bankSetupSubmit(form) {
+    const m = modal;
+    m.appId = String(new FormData(form).get('appId') || '').trim();
+    if (!m.pem) { m.error = 'Kies het .pem-bestand met de privésleutel.'; renderModal(); return; }
+    m.busy = true; m.error = '';
+    renderModal();
+    try {
+      const r = await Sync.bank.saveConfig(m.appId, m.pem);
+      m.pem = null;
+      await loadBankLink();
+      closeModal();
+      toast('Bankkoppeling ingesteld' + (r.appName ? ' (' + r.appName + ')' : '') + '. Koppel nu je bank.');
+      render();
+    } catch (e) {
+      if (modal !== m) return;
+      m.busy = false; m.error = e.message; renderModal();
+    }
+  }
+
+  function bankConnectModal() {
+    const m = modal;
+    const q = (m.search || '').toLowerCase();
+    const list = (m.aspsps || []).filter(a => !q || a.name.toLowerCase().includes(q));
+    const popular = list.filter(a => POPULAR_BANKS.test(a.name));
+    const rest = list.filter(a => !POPULAR_BANKS.test(a.name));
+    const btn = a => `<button class="btn bank-choice" data-action="bank-start" data-name="${esc(a.name)}" data-days="${a.maxDays || ''}" ${m.busy ? 'disabled' : ''}>${esc(a.name)}</button>`;
+    return modalShell('Bank koppelen', `
+      <p class="small muted">Je gaat naar je eigen bank om aan te melden (itsme, kaartlezer of bank-app) en geeft Helder leestoegang tot je rekeningen. Daarna kom je vanzelf terug.</p>
+      <div class="filters"><select id="eb-country">${[['BE', 'België'], ['NL', 'Nederland'], ['LU', 'Luxemburg'], ['FR', 'Frankrijk'], ['DE', 'Duitsland']].map(([v, l]) => `<option value="${v}" ${m.country === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input type="search" id="eb-search" placeholder="Zoek je bank…" value="${esc(m.search || '')}"></div>
+      ${m.error ? `<div class="errors">${esc(m.error)}</div>` : ''}
+      ${!m.aspsps ? '<p class="muted">Banken laden…</p>' : `
+        ${popular.length ? `<div class="bank-choices">${popular.map(btn).join('')}</div>` : ''}
+        ${rest.length ? `<details ${q ? 'open' : ''}><summary class="small">Andere banken (${rest.length})</summary><div class="bank-choices">${rest.map(btn).join('')}</div></details>` : ''}
+        ${!list.length ? '<p class="muted">Geen bank gevonden.</p>' : ''}`}
+      ${m.busy ? '<p><strong>Doorsturen naar je bank…</strong></p>' : ''}`,
+      '<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>', true);
+  }
+
+  async function loadAspsps() {
+    const m = modal;
+    m.aspsps = null; m.error = '';
+    renderModal();
+    try { const r = await Sync.bank.aspsps(m.country); if (modal === m) { m.aspsps = r.aspsps; renderModal(); } }
+    catch (e) { if (modal === m) { m.aspsps = []; m.error = e.message; renderModal(); } }
+  }
+
+  async function startBankConnect(name, country, maxDays) {
+    const m = modal;
+    if (m) { m.busy = true; renderModal(); }
+    try {
+      const r = await Sync.bank.connect(name, country, maxDays);
+      bankLink.awaiting = true;
+      location.href = r.url;
+    } catch (e) {
+      if (m && modal === m) { m.busy = false; m.error = e.message; renderModal(); } else toast(e.message);
+    }
   }
 
   // ----- Inkomsten -----
@@ -1072,7 +1275,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal };
+    const fns = { tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -1943,6 +2146,23 @@
     'list-status': el => { ui.list.status = el.dataset.status; ui.list.limit = 150; render(); },
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
     'new-tx': el => openModal({ type: 'tx', tx: newTx(el && el.dataset.account) }),
+    'bank-setup': () => { openModal({ type: 'bankSetup', appId: (bankLink.status && bankLink.status.appId) || '' }); },
+    'bank-connect': () => { openModal({ type: 'bankConnect', country: 'BE' }); loadAspsps(); },
+    'bank-start': el => startBankConnect(el.dataset.name, modal.country, Number(el.dataset.days) || undefined),
+    'bank-renew': el => { const c = bankLink.status.connections.find(x => x.id === el.dataset.id); if (c) startBankConnect(c.aspsp, c.country); },
+    'bank-fetch': el => { const c = bankLink.status.connections.find(x => x.id === el.dataset.id); if (c) fetchLinked(c); },
+    'bank-disconnect': async el => {
+      const c = bankLink.status.connections.find(x => x.id === el.dataset.id);
+      if (!c || !confirm(`Koppeling met ${c.aspsp} verbreken?\n\nHelder haalt dan geen nieuwe transacties meer op. Wat al in Helder zit, blijft staan.`)) return;
+      try { await Sync.bank.disconnect(c.id); toast('Koppeling verbroken'); } catch (e) { toast(e.message); }
+      loadBankLink();
+    },
+    'bank-remove-config': async () => {
+      if (!confirm('De instelling van Enable Banking verwijderen? Je bankkoppelingen werken dan niet meer tot je ze opnieuw instelt.')) return;
+      try { await Sync.bank.removeConfig(); closeModal(); toast('Instelling verwijderd'); } catch (e) { toast(e.message); }
+      loadBankLink();
+    },
+    'copy': el => { try { navigator.clipboard.writeText(el.dataset.copy); toast('Gekopieerd'); } catch (e) { toast('Kopiëren lukte niet: selecteer en kopieer de tekst zelf.'); } },
     'edit-tx': el => { const t = txById(el.dataset.id); if (t) openModal({ type: 'tx', tx: JSON.parse(JSON.stringify(t)) }); },
     'save-tx': saveTx,
     'delete-tx': () => {
@@ -2042,6 +2262,7 @@
     ui.view = VIEWS.includes(view) ? view : 'dashboard';
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
+    if (ui.view === 'bank' && !bankLink.status && bankLinkAvailable()) loadBankLink();
     if (!silent) { render(); window.scrollTo(0, 0); }
   }
 
@@ -2070,6 +2291,10 @@
     if (modal && modal.type === 'tx' && (el.closest('#splits') || el.id === 'tx-amount')) { updateSplitRemaining(); updateTxSections(); }
     if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();
+    if (modal && modal.type === 'bankConnect' && el.id === 'eb-search') {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#eb-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
+    }
   });
 
   document.addEventListener('change', ev => {
@@ -2105,6 +2330,18 @@
       if (el.dataset.partName != null) modal.parts[Number(el.dataset.partName)].newName = el.value;
       if (el.dataset.partType != null) modal.parts[Number(el.dataset.partType)].newType = el.value;
     }
+    if (modal.type === 'bankSetup' && el.id === 'eb-pem' && el.files[0]) {
+      const file = el.files[0];
+      readFile(file).then(text => {
+        modal.pem = text; modal.pemName = file.name;
+        const id = file.name.replace(/\.(pem|key|txt)$/i, '');
+        const typed = $('#eb-appid') ? $('#eb-appid').value.trim() : '';
+        modal.appId = typed || (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : '');
+        renderModal();
+      });
+      return;
+    }
+    if (modal.type === 'bankConnect' && el.id === 'eb-country') { modal.country = el.value; loadAspsps(); return; }
     if (modal.type === 'degiroFiles') {
       if (el.id === 'dg-files' && el.files.length) loadDegiroFiles(el.files);
       if (el.dataset.dgDate != null) modal.files[Number(el.dataset.dgDate)].date = el.value;
@@ -2119,6 +2356,7 @@
     if (!form) return;
     ev.preventDefault();
     if (form.dataset.form === 'degiro') { degiroSubmit(form); return; }
+    if (form.dataset.form === 'bank-setup') { bankSetupSubmit(form); return; }
     if (form.dataset.form === 'new-income') {
       const name = String(new FormData(form).get('name') || '').trim();
       if (!name) return;
@@ -2137,6 +2375,7 @@
       ui.auth = null;
       render();
       toast('Aangemeld');
+      loadBankLink({ auto: true });
     } catch (e) {
       ui.auth = Object.assign({}, ui.auth, { error: e.message, previousUser: String(f.get('username') || '').trim() || ui.auth.previousUser });
       render();
@@ -2168,7 +2407,14 @@
         closeModal();
         render();
       }
-    }).then(() => { if (!ui.auth) render(); }).catch(e => console.error('Helder sync:', e));
+    }).then(async () => {
+      if (!ui.auth) render();
+      const back = /[?&]koppeling=/.test(location.search);
+      if (back) { history.replaceState(null, '', location.pathname + '#bank'); ui.view = 'bank'; render(); }
+      await loadBankLink({ auto: true });
+    }).catch(e => console.error('Helder sync:', e));
+    // Terug in Helder na het aanmelden bij de bank (bv. vanuit Safari naar de iPhone-app)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && bankLink.awaiting) { bankLink.awaiting = false; loadBankLink({ auto: true }); } });
   }
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
