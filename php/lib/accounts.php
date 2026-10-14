@@ -67,6 +67,8 @@ function user_public(string $username, array $u): array {
         'displayName' => $u['displayName'] ?? ($u['google']['name'] ?? $username),
         'email' => $u['google']['email'] ?? null,
         'picture' => $u['google']['picture'] ?? null,
+        // Bestaand account (met gebruikersnaam) dat ook met Google kan aanmelden
+        'googleLinked' => $u['googleLink']['email'] ?? null,
     ];
 }
 
@@ -171,14 +173,15 @@ function register_user(array $b): string {
 
 function google_redirect_uri(): string { return public_url() . '/api/auth/google/callback'; }
 
-function google_start(): string {
+/** @param ?string $link aangemelde gebruiker die zijn bestaande account aan Google wil koppelen */
+function google_start(?string $link = null): string {
     if (!google_configured()) throw new HttpError(400, 'Aanmelden met Google is niet ingesteld');
     $state = b64url(random_bytes(24));
     $nonce = b64url(random_bytes(16));
-    with_lock('google-pending', function () use ($state, $nonce) {
+    with_lock('google-pending', function () use ($state, $nonce, $link) {
         $p = read_json('google-pending.json', []);
         foreach ($p as $k => $v) if (time() - ($v['at'] ?? 0) > 900) unset($p[$k]);
-        $p[hash('sha256', $state)] = ['nonce' => $nonce, 'at' => time()];
+        $p[hash('sha256', $state)] = ['nonce' => $nonce, 'at' => time()] + ($link !== null ? ['link' => $link] : []);
         write_json('google-pending.json', $p);
     });
     return GOOGLE_AUTH . '?' . http_build_query([
@@ -223,6 +226,15 @@ function google_callback(callable $fetch, array $q): array {
     $sub = preg_replace('/[^0-9a-zA-Z]/', '', (string) $claims['sub']);
     $username = 'g_' . substr($sub, 0, 37);
     $profile = ['sub' => $sub, 'email' => (string) ($claims['email'] ?? ''), 'name' => (string) ($claims['name'] ?? ''), 'picture' => (string) ($claims['picture'] ?? '')];
+    if (!empty($pending['link'])) return google_link((string) $pending['link'], $profile);
+    // Een bestaand account dat aan dit Google-account gekoppeld is, gaat voor
+    foreach (get_users() as $name => $u) {
+        if (($u['googleLink']['sub'] ?? '') !== $sub) continue;
+        $name = (string) $name;
+        if (!empty($u['disabled'])) { log_login($name, 'google', false, 'account geblokkeerd'); return ['ok' => false, 'message' => 'Dit account is geblokkeerd.']; }
+        log_login($name, 'google', true, 'gekoppeld account');
+        return ['ok' => true, 'user' => $name, 'new' => false, 'message' => ''];
+    }
     $result = with_lock('users', function () use ($username, $profile) {
         $users = get_users();
         if (isset($users[$username])) {
@@ -240,6 +252,33 @@ function google_callback(callable $fetch, array $q): array {
     if ($result === 'disabled') { log_login($username, 'google', false, 'account geblokkeerd'); return ['ok' => false, 'message' => 'Dit account is geblokkeerd.']; }
     log_login($username, 'google', true, $result === 'new' ? 'nieuw account' : '');
     return ['ok' => true, 'user' => $username, 'new' => $result === 'new', 'message' => ''];
+}
+
+/** Bestaand account koppelen aan een Google-account, zodat je ook met Google kan aanmelden. */
+function google_link(string $username, array $profile): array {
+    $res = with_lock('users', function () use ($username, $profile) {
+        $users = get_users();
+        if (!isset($users[$username]) || isset($users[$username]['google'])) return 'gone';
+        if (isset($users['g_' . substr($profile['sub'], 0, 37)])) return 'own';
+        foreach ($users as $n => $u) if ((string) $n !== $username && ($u['googleLink']['sub'] ?? '') === $profile['sub']) return 'taken';
+        $users[$username]['googleLink'] = $profile + ['linkedAt' => gmdate('c')];
+        write_json('users.json', $users);
+        return 'ok';
+    });
+    if ($res === 'own') return ['ok' => false, 'message' => 'Dit Google-account (' . $profile['email'] . ') heeft al een eigen Helder-account. Meld je daarmee aan, of laat dat account eerst verwijderen.'];
+    if ($res === 'taken') return ['ok' => false, 'message' => 'Dit Google-account is al gekoppeld aan een ander Helder-account.'];
+    if ($res === 'gone') return ['ok' => false, 'message' => 'Dit account kan niet aan Google gekoppeld worden.'];
+    log_login($username, 'google', true, 'Google gekoppeld: ' . $profile['email']);
+    return ['ok' => true, 'user' => $username, 'new' => false, 'linked' => true, 'message' => ''];
+}
+
+function google_unlink(string $username): array {
+    with_lock('users', function () use ($username) {
+        $users = get_users();
+        if (isset($users[$username]['googleLink'])) { unset($users[$username]['googleLink']); write_json('users.json', $users); }
+    });
+    log_login($username, 'google', true, 'Google ontkoppeld');
+    return ['ok' => true];
 }
 
 // ---------- Beheer ----------

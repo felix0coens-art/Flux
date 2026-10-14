@@ -2138,6 +2138,14 @@
             <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
             <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.email ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
               <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
+            ${Sync.account && !Sync.account.email && Sync.auth && Sync.auth.google ? `<div class="section google-link">
+              <h3>Aanmelden met Google</h3>
+              ${Sync.account.googleLinked
+                ? `<p class="small">✓ Gekoppeld met <strong>${esc(Sync.account.googleLinked)}</strong>. Je kan aanmelden met Google of met je gebruikersnaam en wachtwoord; je komt altijd in hetzelfde account.</p>
+                   <button class="btn small" data-action="google-unlink">Loskoppelen van Google</button>`
+                : `<p class="small muted">Koppel je account aan je Google-account. Daarna kan je ook aanmelden met één klik op <em>Aanmelden met Google</em>. Je gegevens, gebruikersnaam en wachtwoord blijven gewoon zoals ze zijn.</p>
+                   <a class="btn google-btn small" href="/api/auth/google?link=1">${GOOGLE_ICON}Koppelen met Google</a>`}
+            </div>` : ''}
             <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>
             ${Sync.account && Sync.account.role === 'member' ? `<details class="danger-zone"><summary class="small">Account verwijderen</summary>
               <p class="small">Je account en al je gegevens worden meteen en definitief gewist, ook de back-ups op de server. Download eerst een back-up als je je gegevens wil houden.</p>
@@ -3117,7 +3125,66 @@
 
   const GOOGLE_ICON = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-16.6z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>';
 
+  /**
+   * Landingspagina voor wie niet aangemeld is: wat Helder is en doet, met het aanmeldvak er meteen bij.
+   * (De eerste installatie met setupcode toont enkel het vak.)
+   */
   function renderAuth() {
+    const card = renderAuthCard();
+    if (ui.auth.setupRequired) return card;
+    const g = ui.auth.auth && ui.auth.auth.google;
+    const features = [
+      ['🏦', 'Al je rekeningen samen', 'Koppel KBC, Argenta, Belfius en andere banken rechtstreeks, of laad hun CSV-bestanden op. Wat al in Helder zit, wordt nooit dubbel geteld.'],
+      ['✨', 'Vanzelf ingedeeld', 'Typ een paar letters en druk op Enter. Regels, online opzoeken en (als je wil) AI delen de rest automatisch in.'],
+      ['🤝', 'Voorschotten aan vrienden', 'Betaalde je de hele rekening? Zie wie je nog wat schuldig is, koppel terugbetalingen en scheld kwijt wat een cadeau was.'],
+      ['📈', 'Beleggingen', 'Degiro en Saxo in één portefeuille, met je echte rendement (TWR en MWR), dividenden en gerealiseerde winst.'],
+      ['📊', 'Inkomsten tegenover uitgaven', 'Waar je geld vandaan komt, waar het naartoe gaat en wat er overblijft, per maand en over de jaren.'],
+      ['🔒', 'Jouw gegevens blijven van jou', 'Geen reclame, geen verkoop van gegevens. Je bankwachtwoord gaat nooit via Helder en je kan alles downloaden of wissen.']
+    ];
+    return `<div class="landing">
+      <section class="landing-hero">
+        <div class="landing-pitch">
+          <div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div>
+          <h1>Je geld, eindelijk <span class="accent">helder</span>.</h1>
+          <p class="lead">Een gratis app voor je persoonlijke boekhouding. Al je rekeningen, uitgaven, voorschotten en beleggingen op één plek, zonder spreadsheets.</p>
+          <ul class="landing-points">
+            <li>✓ Rechtstreeks gekoppeld met je bank, of met CSV-bestanden</li>
+            <li>✓ Op je computer en als app op je gsm</li>
+            <li>✓ Gemaakt in België, in het Nederlands</li>
+          </ul>
+          ${g ? '' : '<p class="small muted">Al een account? Meld je aan in het vak hiernaast.</p>'}
+        </div>
+        <div class="landing-card">${card}</div>
+      </section>
+      <section class="landing-preview" aria-hidden="true">
+        <div class="preview-card">
+          <div class="preview-title">Inkomsten tegenover uitgaven <span class="muted">· oktober</span></div>
+          <div class="preview-line"><span>Netto inkomsten</span><i class="pv s1" style="width:92%"></i><b>€ 2.480</b></div>
+          <div class="preview-line"><span>Uitgaven</span><i class="pv s2" style="width:71%"></i><b>€ 1.915</b></div>
+          <div class="preview-result">€ 565 over · 23% van je netto inkomen</div>
+          <div class="preview-bars">${[62, 70, 58, 75, 66, 80, 72, 68, 77, 74, 79, 71].map((v, i) => `<span style="height:${v}%"></span><span class="o" style="height:${[48, 52, 50, 55, 47, 60, 51, 49, 58, 53, 56, 52][i]}%"></span>`).join('')}</div>
+        </div>
+      </section>
+      <section class="landing-features">
+        <h2>Wat Helder voor je doet</h2>
+        <div class="feature-grid">${features.map(([i, t, d]) => `<div class="feature"><div class="feature-icon" aria-hidden="true">${i}</div><h3>${t}</h3><p>${d}</p></div>`).join('')}</div>
+      </section>
+      <section class="landing-steps">
+        <h2>In drie stappen</h2>
+        <ol>
+          <li><strong>Maak een account</strong>${g ? ' met je Google-account, in één klik' : ''}.</li>
+          <li><strong>Koppel je bank</strong> of laad je rekeninguittreksels op.</li>
+          <li><strong>Koppel je transacties</strong>: Helder onthoudt het en doet het de volgende keer zelf.</li>
+        </ol>
+        <p><a href="#" class="btn primary" data-action="landing-top">Begin nu, het is gratis</a></p>
+      </section>
+      <footer class="landing-footer small muted">
+        <a href="privacy.html" target="_blank" rel="noopener">Privacyverklaring</a> · <a href="voorwaarden.html" target="_blank" rel="noopener">Gebruiksvoorwaarden</a> · <a href="mailto:privacy@helderfin.be">privacy@helderfin.be</a>
+      </footer>
+    </div>`;
+  }
+
+  function renderAuthCard() {
     const a = ui.auth;
     if (a.setupRequired) {
       return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div><h1>Account aanmaken</h1>
@@ -3165,7 +3232,6 @@
         ? (showPw ? `<div class="or"><span>of met gebruikersnaam</span></div>${pwForm}` : '<p class="small legal-links"><a href="#" data-action="auth-show-pw">Aanmelden met gebruikersnaam en wachtwoord</a></p>')
         : `${g ? '<div class="or"><span>of met gebruikersnaam</span></div>' : ''}${pwForm}`}
       ${signupLine}
-      <p class="small muted app-about">Helder is een gratis app voor je persoonlijke boekhouding: je bankuitgaven en inkomsten overzichtelijk ingedeeld, voorschotten aan vrienden opvolgen en je beleggingen en vermogen door de tijd volgen. Elk account heeft een eigen, afgeschermde boekhouding.</p>
       <p class="small muted legal-links">${g ? 'Door aan te melden ga je akkoord met de ' : ''}<a href="voorwaarden.html" target="_blank" rel="noopener">${g ? 'gebruiksvoorwaarden' : 'Gebruiksvoorwaarden'}</a>${g ? ' en de ' : ' · '}<a href="privacy.html" target="_blank" rel="noopener">${g ? 'privacyverklaring' : 'Privacyverklaring'}</a>.</p></div>`;
   }
 
@@ -3369,6 +3435,12 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'landing-top': () => { window.scrollTo({ top: 0, behavior: 'smooth' }); const c = $('.landing-card .google-btn') || $('.landing-card input'); if (c) setTimeout(() => c.focus(), 300); },
+    'google-unlink': async () => {
+      if (!confirm('Je account loskoppelen van Google? Je meldt je dan weer enkel aan met je gebruikersnaam en wachtwoord.')) return;
+      try { await Sync.unlinkGoogle(); toast('Losgekoppeld van Google'); } catch (e) { toast(e.message); }
+      render();
+    },
     'auth-show-pw': () => { if (ui.auth) { ui.auth.showPw = true; render(); const u = $('[data-form=login] [name=username]'); if (u) u.focus(); } },
     'settings-tab': el => { ui.settingsTab = el.dataset.tab; try { localStorage.setItem('flux-settings-tab', ui.settingsTab); } catch (e) { /* niet erg */ } render(); window.scrollTo(0, 0); },
     'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
@@ -3697,6 +3769,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       }
     }).then(async () => {
       if (!ui.auth) render();
+      if (/[?&]google=gekoppeld/.test(location.search)) { history.replaceState(null, '', location.pathname + '#settings'); ui.view = 'settings'; ui.settingsTab = 'account'; toast('Je account is gekoppeld met Google. Je kan nu ook met Google aanmelden.'); render(); }
       if (/[?&]welkom=1/.test(location.search)) { history.replaceState(null, '', location.pathname + location.hash); toast('Welkom bij Helder! Je account is aangemaakt.'); }
       const back = /[?&]koppeling=/.test(location.search);
       if (back) { history.replaceState(null, '', location.pathname + '#bank'); ui.view = 'bank'; render(); }

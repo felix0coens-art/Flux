@@ -443,7 +443,13 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/auth/google' && req.method === 'GET') {
     if (!Acc.googleConfigured()) throw httpError(400, 'Aanmelden met Google is niet ingesteld');
-    res.writeHead(302, { Location: await Acc.googleStart(req), 'Cache-Control': 'no-store' });
+    // ?link=1: de aangemelde gebruiker koppelt zijn bestaande account aan Google
+    let link = null;
+    if (query.get('link')) {
+      if (!user || !me || me.google) { res.writeHead(302, { Location: '/#settings' }); return res.end(); }
+      link = user;
+    }
+    res.writeHead(302, { Location: await Acc.googleStart(req, link), 'Cache-Control': 'no-store' });
     return res.end();
   }
   if (pathname === '/api/auth/google/callback' && req.method === 'GET') {
@@ -452,7 +458,7 @@ async function handleApi(req, res, pathname, query) {
     catch (e) { console.error('Google:', e.message); r = { ok: false, message: 'Google is niet bereikbaar. Probeer later opnieuw.' }; }
     if (r.ok) {
       const token = await createSession(r.user);
-      res.writeHead(302, Object.assign({ Location: '/' + (r.new ? '?welkom=1' : ''), 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400), 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
+      res.writeHead(302, Object.assign({ Location: '/' + (r.linked ? '?google=gekoppeld#settings' : r.new ? '?welkom=1' : ''), 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400), 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
       return res.end();
     }
     res.writeHead(400, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
@@ -532,6 +538,7 @@ async function handleApi(req, res, pathname, query) {
     if (pathname === '/api/admin/user' && req.method === 'POST') return send(res, 200, await Acc.userAction(user, await readBody(req)));
     throw httpError(404, 'Onbekend');
   }
+  if (pathname === '/api/account/google-unlink' && req.method === 'POST') return send(res, 200, await Acc.googleUnlink(req, user));
   if (role === 'admin' && pathname !== '/api/password') throw httpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
   if (pathname === '/api/account/delete' && req.method === 'POST') {

@@ -21,7 +21,9 @@ function userRole(u) {
 }
 
 function userPublic(name, u) {
-  return { user: name, role: userRole(u), displayName: u.displayName || (u.google && u.google.name) || name, email: (u.google && u.google.email) || null, picture: (u.google && u.google.picture) || null };
+  return { user: name, role: userRole(u), displayName: u.displayName || (u.google && u.google.name) || name, email: (u.google && u.google.email) || null, picture: (u.google && u.google.picture) || null,
+    // Bestaand account (met gebruikersnaam) dat ook met Google kan aanmelden
+    googleLinked: (u.googleLink && u.googleLink.email) || null };
 }
 
 const mayAi = u => !!u && (userRole(u) === 'owner' || !!u.ai);
@@ -142,13 +144,14 @@ function create(store) {
 
   const redirectUri = req => store.publicUrl(req) + '/api/auth/google/callback';
 
-  async function googleStart(req) {
+  /** @param link aangemelde gebruiker die zijn bestaande account aan Google wil koppelen */
+  async function googleStart(req, link) {
     const state = b64url(crypto.randomBytes(24)), nonce = b64url(crypto.randomBytes(16));
     await withLock('google-pending', async () => {
       const p = await readJson('google-pending.json', {});
       const now = Math.floor(Date.now() / 1000);
       for (const k of Object.keys(p)) if (now - p[k].at > 900) delete p[k];
-      p[sha(state)] = { nonce, at: now };
+      p[sha(state)] = Object.assign({ nonce, at: now }, link ? { link } : {});
       await writeJson('google-pending.json', p);
     });
     const q = new URLSearchParams({ client_id: process.env.FLUX_GOOGLE_CLIENT_ID, redirect_uri: redirectUri(req), response_type: 'code', scope: 'openid email profile', state, nonce, prompt: 'select_account' });
@@ -181,6 +184,14 @@ function create(store) {
     const sub = String(claims.sub).replace(/[^0-9a-zA-Z]/g, '');
     const username = 'g_' + sub.slice(0, 37);
     const profile = { sub, email: String(claims.email || ''), name: String(claims.name || ''), picture: String(claims.picture || '') };
+    if (pending.link) return googleLink(req, pending.link, profile);
+    // Een bestaand account dat aan dit Google-account gekoppeld is, gaat voor
+    for (const [name, u] of Object.entries(await getUsers())) {
+      if (!u.googleLink || u.googleLink.sub !== sub) continue;
+      if (u.disabled) { await logLogin(req, name, 'google', false, 'account geblokkeerd'); return { ok: false, message: 'Dit account is geblokkeerd.' }; }
+      await logLogin(req, name, 'google', true, 'gekoppeld account');
+      return { ok: true, user: name, new: false };
+    }
     const result = await withLock('users', async () => {
       const users = await getUsers();
       if (users[username]) {
@@ -198,6 +209,33 @@ function create(store) {
     if (result === 'disabled') { await logLogin(req, username, 'google', false, 'account geblokkeerd'); return { ok: false, message: 'Dit account is geblokkeerd.' }; }
     await logLogin(req, username, 'google', true, result === 'new' ? 'nieuw account' : '');
     return { ok: true, user: username, new: result === 'new' };
+  }
+
+  /** Bestaand account koppelen aan een Google-account, zodat je ook met Google kan aanmelden. */
+  async function googleLink(req, username, profile) {
+    const res = await withLock('users', async () => {
+      const users = await getUsers();
+      if (!users[username] || users[username].google) return 'gone';
+      if (users['g_' + profile.sub.slice(0, 37)]) return 'own';
+      if (Object.entries(users).some(([n, u]) => n !== username && u.googleLink && u.googleLink.sub === profile.sub)) return 'taken';
+      users[username].googleLink = Object.assign({}, profile, { linkedAt: new Date().toISOString() });
+      await writeJson('users.json', users);
+      return 'ok';
+    });
+    if (res === 'own') return { ok: false, message: 'Dit Google-account (' + profile.email + ') heeft al een eigen Helder-account. Meld je daarmee aan, of laat dat account eerst verwijderen.' };
+    if (res === 'taken') return { ok: false, message: 'Dit Google-account is al gekoppeld aan een ander Helder-account.' };
+    if (res === 'gone') return { ok: false, message: 'Dit account kan niet aan Google gekoppeld worden.' };
+    await logLogin(req, username, 'google', true, 'Google gekoppeld: ' + profile.email);
+    return { ok: true, user: username, new: false, linked: true };
+  }
+
+  async function googleUnlink(req, username) {
+    await withLock('users', async () => {
+      const users = await getUsers();
+      if (users[username] && users[username].googleLink) { delete users[username].googleLink; await writeJson('users.json', users); }
+    });
+    await logLogin(req, username, 'google', true, 'Google ontkoppeld');
+    return { ok: true };
   }
 
   async function overview(req) {
@@ -241,7 +279,7 @@ function create(store) {
     return { ok: true };
   }
 
-  return { googleConfigured, siteSettings, signupAllowed, siteChanges, saveSite, logLogin, ensureAdmin, register, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
+  return { googleConfigured, siteSettings, signupAllowed, siteChanges, saveSite, logLogin, ensureAdmin, register, deleteOwn, purgeOldBackups, googleStart, googleCallback, googleUnlink, overview, userAction };
 }
 
 function authPage(r) {

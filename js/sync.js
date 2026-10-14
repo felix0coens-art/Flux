@@ -266,6 +266,12 @@
     disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
   };
 
+  /** Bestaand account loskoppelen van Google (koppelen gebeurt via /api/auth/google?link=1). */
+  async function unlinkGoogle() {
+    await api('POST', '/api/account/google-unlink', {});
+    await refreshFeatures();
+  }
+
   /** Eigen Anthropic API-sleutel voor AI-classificatie (de sleutel zelf blijft op de server). */
   const aiKey = {
     status: () => api('GET', '/api/ai/key'),
@@ -277,6 +283,8 @@
   async function refreshFeatures() {
     const s = await api('GET', '/api/session');
     features = s.features || {};
+    if (s.user) account = s;
+    authInfo = s.auth || authInfo;
     return features;
   }
 
@@ -299,7 +307,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

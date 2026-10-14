@@ -71,7 +71,13 @@ function handle(string $method, string $path): void {
 
     // Aanmelden met Google
     if ($path === '/api/auth/google' && $method === 'GET') {
-        header('Location: ' . google_start(), true, 302);
+        // ?link=1: de aangemelde gebruiker koppelt zijn bestaande account aan Google
+        $link = null;
+        if (!empty($_GET['link'])) {
+            if (!$user || !$me || isset($me['google'])) { header('Location: /#settings', true, 302); return; }
+            $link = $user;
+        }
+        header('Location: ' . google_start($link), true, 302);
         header('Cache-Control: no-store');
         return;
     }
@@ -83,7 +89,7 @@ function handle(string $method, string $path): void {
         if ($r['ok']) {
             $token = create_session($r['user']);
             header('Set-Cookie: ' . session_cookie($token, $cookieAge));
-            header('Location: /' . (!empty($r['new']) ? '?welkom=1' : ''), true, 302);
+            header('Location: /' . (!empty($r['linked']) ? '?google=gekoppeld#settings' : (!empty($r['new']) ? '?welkom=1' : '')), true, 302);
             return;
         }
         http_response_code(400);
@@ -178,6 +184,8 @@ function handle(string $method, string $path): void {
         if ($path === '/api/admin/user' && $method === 'POST') { send(200, admin_user_action($user, body())); return; }
         throw new HttpError(404, 'Onbekend');
     }
+    if ($path === '/api/account/google-unlink' && $method === 'POST') { send(200, google_unlink($user)); return; }
+
     if ($role === 'admin' && $path !== '/api/password') throw new HttpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
     if ($path === '/api/account/delete' && $method === 'POST') {

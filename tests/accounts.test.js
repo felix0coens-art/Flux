@@ -80,7 +80,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
     };
     /** Volledige Google-aanmelding: Helder → Google (nagebootst) → terug naar Helder. */
     const googleLogin = async (profile, opts) => {
-      const startRes = await call('GET', '/api/auth/google');
+      const startRes = await call('GET', '/api/auth/google' + (opts && opts.link ? '?link=1' : ''), null, opts && opts.cookie);
       assert.equal(startRes.status, 302);
       const to = new URL(startRes.headers.get('location'));
       assert.equal(to.origin + to.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
@@ -153,6 +153,25 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       const owner = await call('POST', '/api/login', { username: 'eigenaar', password: 'heel-geheim-1' });
       assert.equal(owner.json.role, 'owner');
       assert.equal((await call('GET', '/api/data', null, owner.cookie)).json.state, null, 'de eigenaar ziet de gegevens van An niet');
+
+      // De eigenaar koppelt zijn bestaande account aan Google en kan daarna ook zo aanmelden
+      assert.equal((await call('GET', '/api/auth/google?link=1')).headers.get('location'), '/#settings', 'koppelen enkel als je aangemeld bent');
+      const taken = await googleLogin({ sub: '1001', email: 'an@example.com', name: 'An Peeters' }, { link: true, cookie: owner.cookie });
+      assert.equal(taken.status, 400, 'een Google-account met een eigen Helder-account kan niet');
+      assert.match(taken.text, /al een eigen Helder-account/);
+      const linked = await googleLogin({ sub: '2001', email: 'felix@example.com', name: 'Felix' }, { link: true, cookie: owner.cookie });
+      assert.equal(linked.status, 302, linked.text);
+      assert.equal(linked.headers.get('location'), '/?google=gekoppeld#settings');
+      const ownerMe = await call('GET', '/api/session', null, owner.cookie);
+      assert.equal(ownerMe.json.role, 'owner', 'blijft eigenaar');
+      assert.equal(ownerMe.json.googleLinked, 'felix@example.com');
+      const viaGoogle = await googleLogin({ sub: '2001', email: 'felix@example.com', name: 'Felix' });
+      assert.equal(viaGoogle.status, 302);
+      const vg = await call('GET', '/api/session', null, viaGoogle.cookie);
+      assert.deepEqual([vg.json.user, vg.json.role], ['eigenaar', 'owner'], 'met Google in hetzelfde account');
+      assert.equal((await call('POST', '/api/login', { username: 'eigenaar', password: 'heel-geheim-1' })).status, 200, 'wachtwoord werkt nog');
+      assert.equal((await call('POST', '/api/account/google-unlink', {}, owner.cookie)).status, 200);
+      assert.equal((await call('GET', '/api/session', null, owner.cookie)).json.googleLinked, null);
 
       // Tweede keer aanmelden: hetzelfde account, geen welkom
       const again = await googleLogin({ sub: '1001', email: 'an@example.com', name: 'An Peeters' });
