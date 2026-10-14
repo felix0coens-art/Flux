@@ -37,3 +37,27 @@ test('annuleringen: inkomst met hetzelfde bedrag als een eerdere uitgave wordt v
   // In het venster van een transactie staat de uitgave met hetzelfde bedrag bovenaan
   assert.equal(C.suggestRefundTargets(s, s.transactions.find(t => t.id === 'i2'))[0].tx.id, 'o2');
 });
+
+test('regels voor voorschotten zeggen ook voor wie', () => {
+  const s = Store.defaultState();
+  s.rules.push({ id: 'r1', name: 'Jan', field: 'counterparty', operator: 'name', value: 'jan peeters', categoryId: C.SYS_ADVANCE, person: 'Jan', direction: null, enabled: true, priority: 10 });
+  s.transactions.push(tx('t1', '2026-10-01', -2000, 'Jan Peeters'), tx('t2', '2026-10-05', 2000, 'Jan Peeters'));
+  C.recompute(s);
+  assert.deepEqual(s.transactions.map(t => [t.categoryId, t.person]), [[C.SYS_ADVANCE, 'Jan'], [C.SYS_ADVANCE, 'Jan']]);
+  const ov = C.advancesOverview(s);
+  assert.ok(ov.people.some(p => p.person === 'Jan'), 'niet meer bij "Onbekend"');
+  assert.ok(!ov.people.some(p => p.person === 'Onbekend'));
+  // Regel aangepast naar een andere persoon: volgt mee
+  s.rules[0].person = 'Jan P.';
+  C.recompute(s);
+  assert.equal(s.transactions[0].person, 'Jan P.');
+  // Regel weg: de persoon van de regel verdwijnt ook
+  s.rules = [];
+  C.recompute(s);
+  assert.equal(s.transactions[0].person, undefined);
+  // Een zelf ingevulde persoon wordt nooit door een regel overschreven
+  s.transactions[0] = Object.assign(s.transactions[0], { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Mieke' });
+  s.rules.push({ id: 'r2', name: 'x', field: 'any', operator: 'name', value: 'jan peeters', categoryId: C.SYS_ADVANCE, person: 'Jan', enabled: true, priority: 10 });
+  C.recompute(s);
+  assert.equal(s.transactions[0].person, 'Mieke');
+});

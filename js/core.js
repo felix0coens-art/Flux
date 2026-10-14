@@ -247,6 +247,12 @@
         tx.ruleId = newRule;
         changed++;
       }
+      // Voorschot-regels kunnen ook zeggen voor wie (anders: "Onbekend")
+      const person = rule && rule.categoryId === SYS_ADVANCE && rule.person ? String(rule.person).trim() : '';
+      if (person) {
+        if (tx.person !== person) { tx.person = person; tx.personByRule = true; changed++; }
+        else if (!tx.personByRule) tx.personByRule = true;
+      } else if (tx.personByRule) { delete tx.person; delete tx.personByRule; changed++; }
     }
     return changed;
   }

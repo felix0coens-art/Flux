@@ -818,6 +818,22 @@
       ${list.length > lim ? `<p style="text-align:center"><button class="btn" data-action="more" data-key="${opts && opts.moreKey || 'list'}">Toon meer (${list.length - lim})</button></p>` : ''}`;
   }
 
+  /** Automatische regels (staan bij Bank, waar je ook de transacties koppelt). */
+  function rulesCard() {
+    const rules = C.sortedRules(state.rules);
+    const ruleCount = {};
+    for (const t of state.transactions) if (t.ruleId) ruleCount[t.ruleId] = (ruleCount[t.ruleId] || 0) + 1;
+    return `        <div class="card rules-card" style="margin-top:24px">
+          <h2>Automatische regels</h2>
+          <p class="small muted">Regels koppelen nieuwe transacties vanzelf. Je maakt ze het makkelijkst met <em>⚙ Altijd zo</em> nadat je een transactie koppelde. De bovenste regel die past wint; manuele koppelingen worden nooit overschreven.</p>
+          ${rules.length ? `<div class="list scroll">${rules.map((r, i) => `<div class="list-row" style="${r.enabled === false ? 'opacity:.5' : ''}">
+            <div class="grow"><strong>${esc(r.name)}</strong> → ${catBadge(r.categoryId)}${r.categoryId === C.SYS_ADVANCE ? ` <span class="small">${r.person ? 'voor ' + esc(r.person) : '<span class="warn-text">voor wie?</span>'}</span>` : ''}<div class="small muted">${esc(C.RULE_FIELDS[r.field])} ${esc(C.RULE_OPERATORS[r.operator])} “${esc(r.value)}” · ${ruleCount[r.id] || 0} treffers</div></div>
+            <button class="btn small ghost" data-action="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Hoger">▲</button>
+            <button class="btn small" data-action="edit-rule" data-id="${esc(r.id)}">Bewerk</button><button class="btn small danger" data-action="delete-rule" data-id="${esc(r.id)}" aria-label="Verwijder">✕</button></div>`).join('')}</div>` : '<p class="muted">Nog geen regels.</p>'}
+          <p class="btn-row"><button class="btn" data-action="new-rule">+ Regel</button></p>
+        </div>`;
+  }
+
   /** Voorstellen: inkomst met exact hetzelfde bedrag als een eerdere uitgave (annulering, terugstorting). */
   function cancelCard() {
     const pairs = C.cancellationPairs(state);
@@ -889,6 +905,7 @@
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
+      ${rulesCard()}
       ${trashCard()}
       <details class="card import-history" style="margin-top:24px" data-keep="imports" ${ui.keepOpen.imports ? 'open' : ''}>
         <summary><strong>Geschiedenis van imports</strong> <span class="small muted">· ${imports.length} keer gegevens binnengehaald (bestanden en bankkoppeling) — hier kan je een import bekijken of ongedaan maken</span></summary>
@@ -1874,9 +1891,6 @@
     const catKind = c => c.kind === 'income' ? 'inkomstenbron' : isIncomeCost(c) ? 'kost op ' + catName(c.incomeId) : c.kind === 'advance' ? 'systeem: voorschotten' : c.kind === 'investment' ? 'systeem: beleggingen' : 'uitgaven';
     const order = c => c.kind === 'income' ? 0 : isIncomeCost(c) ? 1 : c.kind === 'expense' ? 2 : 3;
     const manual = state.transactions.filter(t => t.source !== 'import').length;
-    const rules = C.sortedRules(state.rules);
-    const ruleCount = {};
-    for (const t of state.transactions) if (t.ruleId) ruleCount[t.ruleId] = (ruleCount[t.ruleId] || 0) + 1;
     return `
       <div class="page-head"><h1>Instellingen</h1></div>
       <div class="grid two">
@@ -1918,15 +1932,6 @@
             <span class="grow small muted">${esc(catKind(c))} · ${catCount[c.id] || 0}</span>
             ${c.id.startsWith('sys_') ? '' : `<button class="btn small" data-action="edit-category" data-id="${esc(c.id)}">Bewerk</button><button class="btn small danger" data-action="delete-category" data-id="${esc(c.id)}" aria-label="Verwijder">✕</button>`}</div>`).join('')}</div>
           <p class="btn-row"><button class="btn" data-action="new-category">+ Uitgavencategorie</button><button class="btn" data-action="new-category" data-kind="income">+ Inkomstenbron</button></p>
-        </div>
-        <div class="card">
-          <h2>Automatische regels</h2>
-          <p class="small muted">Regels koppelen nieuwe transacties vanzelf. Je maakt ze het makkelijkst met <em>⚙ Altijd zo</em> nadat je een transactie koppelde. De bovenste regel die past wint; manuele koppelingen worden nooit overschreven.</p>
-          ${rules.length ? `<div class="list scroll">${rules.map((r, i) => `<div class="list-row" style="${r.enabled === false ? 'opacity:.5' : ''}">
-            <div class="grow"><strong>${esc(r.name)}</strong> → ${catBadge(r.categoryId)}<div class="small muted">${esc(C.RULE_FIELDS[r.field])} ${esc(C.RULE_OPERATORS[r.operator])} “${esc(r.value)}” · ${ruleCount[r.id] || 0} treffers</div></div>
-            <button class="btn small ghost" data-action="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Hoger">▲</button>
-            <button class="btn small" data-action="edit-rule" data-id="${esc(r.id)}">Bewerk</button><button class="btn small danger" data-action="delete-rule" data-id="${esc(r.id)}" aria-label="Verwijder">✕</button></div>`).join('')}</div>` : '<p class="muted">Nog geen regels.</p>'}
-          <p class="btn-row"><button class="btn" data-action="new-rule">+ Regel</button></p>
         </div>
         <div class="card">
           <h2>Online opzoeken</h2>
@@ -2134,6 +2139,7 @@
     const title = $('#tx-title').value.trim();
     if (title) t.title = title; else delete t.title;
     if (newCat === C.SYS_ADVANCE) { t.person = person || (linked ? linked.person : ''); ensurePerson(t.person, t.amount > 0 ? t.counterpartyIban : ''); } else delete t.person;
+    delete t.personByRule;
     for (const sp of t.splits || []) if (sp.person) ensurePerson(sp.person);
     if (advanceOf) t.advanceOf = advanceOf; else delete t.advanceOf;
     if (newCat !== t.categoryId || splits.length || t.categorySource !== 'manual') {
@@ -2201,6 +2207,7 @@
     state.rules.push({
       id: C.uid('rule'), name: t.counterparty || t.description.slice(0, 30), field: C.normalizeName(t.counterparty) ? 'counterparty' : 'any',
       operator: 'name', value: key, categoryId: t.categoryId, direction: t.amount < 0 ? 'out' : 'in', enabled: true,
+      person: t.categoryId === C.SYS_ADVANCE && t.person && t.person !== 'Onbekend' ? t.person : null,
       priority: Math.max(0, ...state.rules.map(x => x.priority || 0)) + 10
     });
     ui.ruleHint = null;
@@ -2218,6 +2225,9 @@
         <label class="field"><span>Voorwaarde</span><select id="rule-operator">${Object.entries(C.RULE_OPERATORS).map(([k, v]) => `<option value="${k}" ${r.operator === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="field full"><span>Waarde</span><input type="text" id="rule-value" value="${esc(r.value)}"></label>
         <label class="field"><span>Dan koppelen aan</span><select id="rule-category">${categoryOptions(r.categoryId, { special: true })}</select></label>
+        <label class="field" id="rule-person-field" ${r.categoryId === C.SYS_ADVANCE ? '' : 'hidden'}><span>Voorschot voor / van wie?</span>
+          <input type="text" id="rule-person" list="rule-people" value="${esc(r.person || '')}" placeholder="bv. Jan">
+          <datalist id="rule-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
         <label class="field"><span>Enkel voor</span><select id="rule-direction">
           <option value="any" ${!r.direction || r.direction === 'any' ? 'selected' : ''}>In- en uitgaand</option>
           <option value="out" ${r.direction === 'out' ? 'selected' : ''}>Uitgaand</option>
@@ -2235,12 +2245,15 @@
     return Object.assign({}, modal.rule, {
       name: $('#rule-name').value.trim() || $('#rule-value').value.trim(), field: $('#rule-field').value, operator: $('#rule-operator').value,
       value: $('#rule-value').value.trim(), categoryId: $('#rule-category').value || null, direction: dir === 'any' ? null : dir,
-      accountId: $('#rule-account').value || null, enabled: $('#rule-enabled').checked
+      accountId: $('#rule-account').value || null, enabled: $('#rule-enabled').checked,
+      person: $('#rule-category').value === C.SYS_ADVANCE ? ($('#rule-person').value.trim() || null) : null
     });
   }
   function updateRulePreview() {
     const el = $('#rule-preview');
     if (!el) return;
+    const pf = $('#rule-person-field');
+    if (pf) pf.hidden = $('#rule-category').value !== C.SYS_ADVANCE;
     const r = Object.assign(readRuleForm(), { enabled: true });
     if (!r.value) { el.innerHTML = '<span class="muted">Vul een waarde in.</span>'; return; }
     if (r.operator === 'regex') { try { new RegExp(r.value); } catch (e) { el.innerHTML = '<span style="color:var(--red)">Ongeldige reguliere expressie.</span>'; return; } }
@@ -2257,6 +2270,7 @@
     const idx = state.rules.findIndex(x => x.id === r.id);
     if (idx >= 0) state.rules[idx] = r;
     else { r.priority = Math.max(0, ...state.rules.map(x => x.priority || 0)) + 10; state.rules.push(r); }
+    if (r.person) ensurePerson(r.person);
     closeModal();
     commit('Regel opgeslagen');
   }
@@ -3146,7 +3160,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'rule-from-tx': () => {
       const t = Object.assign({}, modal.tx, { counterparty: $('#tx-counterparty').value.trim(), description: $('#tx-description').value.trim() });
       const key = C.normalizeName(t.counterparty) || C.normalizeName(t.description);
-      openModal({ type: 'rule', rule: { id: C.uid('rule'), name: t.counterparty || key, field: t.counterparty ? 'counterparty' : 'any', operator: 'name', value: key, categoryId: $('#tx-category').value || t.categoryId, direction: t.amount < 0 ? 'out' : 'in', enabled: true } });
+      openModal({ type: 'rule', rule: { id: C.uid('rule'), name: t.counterparty || key, field: t.counterparty ? 'counterparty' : 'any', operator: 'name', value: key, categoryId: $('#tx-category').value || t.categoryId, direction: t.amount < 0 ? 'out' : 'in', enabled: true, person: ($('#tx-person') && $('#tx-person').value.trim()) || t.person || null } });
     },
     'rule-hint': el => ruleFromHint(el.dataset.id),
     'new-rule': () => openModal({ type: 'rule', rule: { id: C.uid('rule'), name: '', field: 'any', operator: 'name', value: '', categoryId: null, direction: 'out', enabled: true } }),
