@@ -156,8 +156,136 @@
       out.history = (out.history || []).filter(h => h.date !== day)
         .concat([{ date: day, valueEur: incomingValue, source }])
         .sort((a, b) => a.date.localeCompare(b.date));
+      // Elke stand bewaren: aantallen en koersen op die datum helpen de reconstructie
+      out.snapshots = (out.snapshots || []).filter(x => x.date !== day)
+        .concat([{ date: day, cashEur: incoming.cashEur || 0, positions: incoming.positions.map(p => ({ key: p.isin || p.key || p.name, name: p.name, isin: p.isin || '', quantity: p.quantity || 0, valueEur: p.valueEur || 0 })) }])
+        .sort((a, b) => a.date.localeCompare(b.date));
     }
     return out;
+  }
+
+  // ---------- Reconstructie van de portefeuille op elke datum ----------
+  //
+  // Uit je transacties (aan- en verkopen) en kasbewegingen weet Flux hoeveel stuks en hoeveel cash
+  // je op elk moment had. Dat wordt verankerd aan de laatst gekende stand (Degiro-koppeling of
+  // portefeuille-export). De koers per datum komt uit:
+  //   1. historische marktkoersen (indien opgehaald via de server, zie server/prices.js), anders
+  //   2. je eigen aankoopkoersen en gekende standen, lineair geïnterpoleerd.
+
+  function keyOf(x) { return x.isin || x.key || x.name; }
+
+  function snapshotsOf(inv) {
+    const list = (inv.snapshots || []).slice();
+    if (inv.positionsDate && !list.some(x => x.date === inv.positionsDate)) {
+      list.push({ date: inv.positionsDate, cashEur: inv.cashEur || 0, positions: (inv.positions || []).map(p => ({ key: keyOf(p), quantity: p.quantity || 0, valueEur: p.valueEur || 0 })) });
+    }
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /** Gekende koerspunten (EUR-centen per stuk) per product. */
+  function pricePoints(inv) {
+    const pts = {};
+    const add = (k, date, eur) => { if (k && date && isFinite(eur) && eur > 0) (pts[k] = pts[k] || []).push({ date, eur }); };
+    for (const t of inv.trades || []) {
+      if (!t.quantity) continue;
+      add(keyOf(t), t.date, (Math.abs(t.totalEur || 0) - Math.abs(t.feesEur || 0)) / Math.abs(t.quantity));
+    }
+    for (const snap of snapshotsOf(inv)) for (const p of snap.positions || []) if (p.quantity) add(keyOf(p), snap.date, p.valueEur / p.quantity);
+    for (const k of Object.keys(pts)) pts[k].sort((a, b) => a.date.localeCompare(b.date));
+    return pts;
+  }
+
+  function interpolate(points, date) {
+    if (!points || !points.length) return null;
+    if (date <= points[0].date) return points[0].eur;
+    const last = points[points.length - 1];
+    if (date >= last.date) return last.eur;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if (date <= b.date) {
+        const span = C.daysBetween(a.date, b.date) || 1;
+        return a.eur + (b.eur - a.eur) * C.daysBetween(a.date, date) / span;
+      }
+    }
+    return last.eur;
+  }
+
+  /** Laatste marktkoers op of vóór de datum (max. 45 dagen oud). */
+  function marketPrice(inv, key, date) {
+    const m = inv.market && inv.market.series && inv.market.series[key];
+    if (!m || !m.points || !m.points.length) return null;
+    let best = null;
+    for (const p of m.points) { if (p.date <= date) best = p; else break; }
+    return best && C.daysBetween(best.date, date) <= 45 ? best.eur : null;
+  }
+
+  /** Aantal stuks per product op een datum. */
+  function holdingsAt(inv, date) {
+    const snaps = snapshotsOf(inv);
+    const anchor = snaps[snaps.length - 1] || null;
+    const q = {};
+    if (anchor) for (const p of anchor.positions || []) q[keyOf(p)] = (q[keyOf(p)] || 0) + (p.quantity || 0);
+    for (const t of inv.trades || []) {
+      const k = keyOf(t);
+      if (!anchor) { if (t.date <= date) q[k] = (q[k] || 0) + t.quantity; continue; }
+      if (t.date > date && t.date <= anchor.date) q[k] = (q[k] || 0) - t.quantity;
+      else if (t.date <= date && t.date > anchor.date) q[k] = (q[k] || 0) + t.quantity;
+    }
+    for (const k of Object.keys(q)) if (Math.abs(q[k]) < 1e-9) delete q[k];
+    return q;
+  }
+
+  /** Kaswijzigingen op de beleggingsrekening (in centen). */
+  function cashChanges(inv) {
+    const hasTrades = (inv.trades || []).length > 0;
+    const out = [];
+    for (const m of inv.movements || []) {
+      if (['deposit', 'withdrawal', 'dividend', 'dividend_tax', 'interest'].includes(m.type)) out.push({ date: m.date, amount: m.amountEur });
+      else if (m.type === 'fee' && !(hasTrades && /transactie|transaction/i.test(m.description || ''))) out.push({ date: m.date, amount: m.amountEur });
+    }
+    for (const t of inv.trades || []) out.push({ date: t.date, amount: t.totalEur || 0 });
+    return out;
+  }
+
+  function cashAt(inv, date, changes) {
+    changes = changes || cashChanges(inv);
+    const snaps = snapshotsOf(inv);
+    const anchor = snaps[snaps.length - 1] || null;
+    let cash = anchor ? anchor.cashEur || 0 : 0;
+    for (const c of changes) {
+      if (!anchor) { if (c.date <= date) cash += c.amount; }
+      else if (c.date > date && c.date <= anchor.date) cash -= c.amount;
+      else if (c.date <= date && c.date > anchor.date) cash += c.amount;
+    }
+    return Math.max(0, cash);
+  }
+
+  /** Geschatte waarde van de beleggingsrekening op een datum. */
+  function estimateAt(inv, date, cache) {
+    cache = cache || {};
+    const pts = cache.pts || (cache.pts = pricePoints(inv));
+    const changes = cache.changes || (cache.changes = cashChanges(inv));
+    const q = holdingsAt(inv, date);
+    let positionsEur = 0, market = 0, total = 0;
+    for (const [k, qty] of Object.entries(q)) {
+      if (qty <= 0) continue;
+      total++;
+      let price = marketPrice(inv, k, date);
+      if (price != null) market++; else price = interpolate(pts[k], date);
+      if (price != null) positionsEur += qty * price;
+    }
+    const cashEur = cashAt(inv, date, changes);
+    return { date, positionsEur: Math.round(positionsEur), cashEur: Math.round(cashEur), valueEur: Math.round(positionsEur + cashEur), quality: total && market === total ? 'market' : 'trades' };
+  }
+
+  /** Kan Flux de waarde reconstrueren? (transacties en/of een gekende stand nodig) */
+  function canEstimate(inv) { return !!inv && ((inv.trades || []).length > 0 || snapshotsOf(inv).length > 0); }
+
+  /** Reeks waarden op de gegeven datums; echte waarderingen hebben voorrang. */
+  function valueSeries(inv, dates) {
+    const actual = new Map(valuations(inv).map(v => [v.date, v.value]));
+    const cache = {};
+    return dates.map(d => actual.has(d) ? { date: d, valueEur: actual.get(d), actual: true } : Object.assign(estimateAt(inv, d, cache), { actual: false }));
   }
 
   /** Kerncijfers van de portefeuille. Alle bedragen in centen (EUR). */
@@ -292,24 +420,41 @@
     const ignoredFlows = flows.filter(f => f.date > last.date);
     const days = Math.max(1, C.daysBetween(start, last.date));
 
+    // Met marktkoersen: ook een geschatte waarde op elk maandeinde, voor een nauwkeurigere TWR
+    if (canEstimate(inv) && inv.market && inv.market.series) {
+      const have = new Set(points.map(p => p.date));
+      const cache = {};
+      for (let d = C.addDays(C.addMonths(start.slice(0, 8) + '01', 1), -1); d < last.date; d = C.addDays(C.addMonths(C.addDays(d, 1), 1), -1)) {
+        if (have.has(d)) continue;
+        const e = estimateAt(inv, d, cache);
+        if (e.quality === 'market') points.push({ date: d, value: e.valueEur });
+      }
+      points.sort((a, b) => a.date.localeCompare(b.date));
+    }
     const twr = chainedTwr(points, used, start, last.date);
     const mwr = xirr(used.map(f => ({ date: f.date, amount: -f.amount })).concat([{ date: last.date, amount: last.value }]));
     const netDeposits = used.reduce((s, f) => s + f.amount, 0);
 
     // Per jaar
     const years = [];
+    const estimable = canEstimate(inv);
+    const estCache = {};
     const y0 = Number(first.slice(0, 4)), y1 = Number(last.date.slice(0, 4));
     const moves = (inv.movements || []);
     for (let y = y0; y <= y1; y++) {
       const ys = (y - 1) + '-12-31', ye = y + '-12-31';
-      const startV = y === y0 ? { date: start, value: 0 } : valuationNear(vals, ys);
-      const endV = y === y1 ? (valuationNear(vals, ye) || last) : valuationNear(vals, ye);
+      let startV = y === y0 ? { date: start, value: 0 } : valuationNear(vals, ys);
+      let endV = y === y1 ? (valuationNear(vals, ye) || last) : valuationNear(vals, ye);
+      let estimated = false;
+      // Geen export op 31/12? Reconstrueer de waarde uit je transacties
+      if (!startV && estimable) { startV = { date: ys, value: estimateAt(inv, ys, estCache).valueEur }; estimated = true; }
+      if (!endV && estimable) { endV = { date: ye, value: estimateAt(inv, ye, estCache).valueEur }; estimated = true; }
       const partial = y === y1 && endV.date < ye && Math.abs(C.daysBetween(endV.date, ye)) > 4;
       const from = startV ? startV.date : ys;
       const yFlows = used.filter(f => (f.date > from || (y === y0 && f.date === from)) && f.date <= (endV ? endV.date : ye));
       const inYear = d => d.slice(0, 4) === String(y);
       const row = {
-        year: y, partial,
+        year: y, partial, estimated,
         deposits: used.filter(f => inYear(f.date) && f.amount > 0).reduce((s, f) => s + f.amount, 0),
         withdrawals: -used.filter(f => inYear(f.date) && f.amount < 0).reduce((s, f) => s + f.amount, 0),
         dividends: moves.filter(m => inYear(m.date) && (m.type === 'dividend' || m.type === 'dividend_tax')).reduce((s, m) => s + m.amountEur, 0),
@@ -336,11 +481,12 @@
       start: first, end: last.date, value: last.value, netDeposits, gain: last.value - netDeposits,
       twr, twrAnnual: twr == null ? null : Math.pow(1 + twr, 365 / days) - 1,
       mwr, valuations: vals.length, flows, ignoredFlows, years,
-      missingYearEnds: years.flatMap(y => y.missing)
+      missingYearEnds: years.flatMap(y => y.missing),
+      estimatedYears: years.filter(y => y.estimated).map(y => y.year)
     };
   }
 
-  const api = { cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

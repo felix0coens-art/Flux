@@ -21,7 +21,8 @@ async function getClient() {
 
 const SYSTEM = `Je helpt een Belgische particulier om banktransacties te categoriseren in een persoonlijke boekhouding.
 Je krijgt de categorieën van de gebruiker en een lijst tegenpartijen (zoals ze op een rekeninguittreksel staan, vaak afgekort of met plaatsnaam).
-Zoek voor elke tegenpartij uit wat voor zaak of organisatie het is. Gebruik de webzoekfunctie wanneer je een naam niet met zekerheid kent; zoek niet als het overduidelijk is.
+Heeft de gebruiker zelf een titel gegeven ("titel"), dan beschrijft die het best waarvoor de betaling diende: baseer je categorie daar in de eerste plaats op.
+Zoek anders voor elke tegenpartij uit wat voor zaak of organisatie het is. Gebruik de webzoekfunctie wanneer je een naam niet met zekerheid kent; zoek niet als het overduidelijk is.
 Kies de best passende categorie-id uit de lijst, of "" als geen enkele past of als het om een privépersoon gaat.
 Hou rekening met de richting: inkomende bedragen horen bij inkomstencategorieën (kind "income"), uitgaande bij uitgavencategorieën.
 Roep op het einde precies één keer de tool record_classifications aan, met één resultaat per tegenpartij (index zoals gegeven).`;
@@ -67,6 +68,7 @@ async function classify(items, categories, countries) {
   const cats = categories.map(c => ({ id: c.id, name: c.name, kind: c.kind === 'income' ? 'income' : 'expense' }));
   const input = items.map((it, index) => ({
     index,
+    titel: it.title ? String(it.title).slice(0, 120) : undefined,
     tegenpartij: String(it.name || '').slice(0, 120),
     mededeling: String(it.description || '').slice(0, 120),
     richting: it.direction === 'in' ? 'inkomend' : 'uitgaand'

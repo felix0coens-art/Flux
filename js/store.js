@@ -27,10 +27,10 @@
     ['cat_abonnementen', 'Abonnementen', 'expense', '#7048e8', 'streaming, video on demand, streamingdienst, music streaming, muziekdienst, subscription, abonnement, software, cloud, online service, webdienst, newspaper, krant, magazine, tijdschrift'],
     ['cat_telecom', 'Telecom & internet', 'expense', '#5f3dc4', 'telecom, telecommunication, telecommunicatie, mobile network, mobile phone operator, mobiele operator, internet service provider, internetprovider, telefonie, cable television, kabel'],
     ['cat_uitgaan', 'Restaurant & uitgaan', 'expense', '#e8590c', 'restaurant, fast food, fast-food, fastfoodketen, cafe, café, bar, pub, brasserie, bistro, horeca, ice cream, ijs, food court, frituur, snackbar, takeaway, food delivery, maaltijdbezorging, nightclub, coffee, koffie, tearoom'],
-    ['cat_vervoer', 'Vervoer', 'expense', '#f08c00', 'fuel, tankstation, petrol, gas station, filling station, brandstof, charging station, laadpaal, public transport, openbaar vervoer, openbaarvervoerbedrijf, vervoersmaatschappij, railway, spoorweg, train, trein, bus, tram, parking, parkeer, taxi, car rental, autoverhuur, car repair, garage, car wash, airline, luchtvaartmaatschappij, bicycle, fiets, toll, tol'],
+    ['cat_vervoer', 'Vervoer', 'expense', '#f08c00', 'fuel, tankstation, petrol, gas station, filling station, brandstof, charging station, laadpaal, public transport, openbaar vervoer, openbaarvervoerbedrijf, vervoersmaatschappij, railway, spoorweg, train, trein, treinticket, busticket, vliegticket, vervoerbewijs, bus, tram, parking, parkeer, taxi, car rental, autoverhuur, car repair, garage, car wash, airline, luchtvaartmaatschappij, bicycle, fiets, toll, tol'],
     ['cat_gezondheid', 'Gezondheid', 'expense', '#c2255c', 'pharmacy, apotheek, doctor, dokter, huisarts, arts, dentist, tandarts, hospital, ziekenhuis, clinic, kliniek, health, gezondheid, health insurance, ziekenfonds, mutualiteit, ziekenkas, optician, opticien, physiotherapist, kinesitherapeut, kinesist, laboratory, labo'],
     ['cat_kleding', 'Kleding', 'expense', '#d6336c', 'clothes, kleding, kledingwinkel, fashion, mode, modeketen, shoes, schoenen, schoenwinkel, apparel, textile, lingerie, sportswear'],
-    ['cat_vrijetijd', 'Vrije tijd & hobby', 'expense', '#ae3ec9', 'cinema, bioscoop, theatre, theater, sports, sport, sportwinkel, sporting goods, fitness, fitnesscentrum, swimming, zwembad, museum, leisure, recreatie, books, boekhandel, toys, speelgoed, electronics, elektronica, video game, concert, ticket, hobby, travel agency, reisbureau, hotel, camping, amusement park, pretpark, zoo, dierentuin'],
+    ['cat_vrijetijd', 'Vrije tijd & hobby', 'expense', '#ae3ec9', 'cinema, bioscoop, theatre, theater, sports, sport, sportwinkel, sporting goods, fitness, fitnesscentrum, swimming, zwembad, museum, leisure, recreatie, books, boekhandel, toys, speelgoed, electronics, elektronica, video game, concert, concertticket, festival, hobby, travel agency, reisbureau, hotel, camping, amusement park, pretpark, zoo, dierentuin'],
     ['cat_verzekering', 'Verzekeringen', 'expense', '#495057', 'insurance, verzekering, verzekeraar, assurance, insurance company, verzekeringsmaatschappij, bank, bankassurance'],
     ['cat_belasting', 'Belastingen & overheid', 'expense', '#868e96', 'tax, belasting, belastingdienst, government, overheid, overheidsdienst, government agency, municipality, gemeente, stad, city, federale overheidsdienst, public service, provincie, police, politie'],
     ['cat_cadeaus', 'Cadeaus & goede doelen', 'expense', '#f76707', 'gift, cadeau, geschenk, florist, bloemen, bloemist, charity, liefdadigheid, goede doel, non-profit, ngo, foundation, stichting'],
@@ -230,8 +230,10 @@
     s.imports = Object.values(imports).map(i => Object.assign(i, {
       period: (() => { const d = txs.filter(t => t.importId === i.id).map(t => t.date).sort(); return d.length ? { from: d[0], to: d[d.length - 1] } : null; })()
     }));
-    s.accounts[0].balance = { date: today, amount: 324050, source: 'manual' };
-    s.accounts[1].balance = { date: today, amount: 1250000, source: 'manual' };
+    // Gekend beginsaldo vóór de eerste transactie; Flux rekent de rest uit de transacties
+    const before = C.addDays(start, -1);
+    s.accounts[0].balance = { date: before, amount: 350000, source: 'manual' };
+    s.accounts[1].balance = { date: before, amount: 800000, source: 'manual' };
     s.budgets = [
       { id: 'bud_1', categoryId: 'cat_boodschappen', period: 'monthly', limit: 40000, warnAt: 0.8 },
       { id: 'bud_2', categoryId: 'cat_uitgaan', period: 'monthly', limit: 15000, warnAt: 0.8 },

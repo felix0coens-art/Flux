@@ -50,6 +50,8 @@ Elke transactie staat eerst op **Te verwerken**. Met één keuzelijst zeg je wat
 - **↔ Eigen rekening**: overschrijvingen tussen je eigen rekeningen worden automatisch herkend op IBAN;
 - **✂ Opsplitsen** over meerdere categorieën.
 
+Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Flux stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
+
 Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 
 ### Inkomsten met kosten
@@ -80,6 +82,20 @@ Op de Degiro-website:
 4. **Portefeuille op elke 31 december** sinds je begon: bij het exporteren van je portefeuille kies je de **datum** 31/12/jjjj. Laad elk bestand op met die datum. Dit is nodig voor een correct rendement per jaar en een precieze TWR. Wil je een fijnere grafiek, exporteer dan ook per kwartaal of per maand.
 
 Je kan alle bestanden tegelijk opladen; Flux herkent zelf welk bestand wat is. Hetzelfde bestand twee keer opladen voegt niets dubbel toe.
+
+### Je hoeft niet elke maand iets op te laden
+
+Flux **reconstrueert de waarde van je portefeuille op elk moment** uit je transacties:
+
+- **Aantal stuks per datum**: uit je aan- en verkopen, verankerd aan de laatst gekende stand.
+- **Cash op Degiro per datum**: uit stortingen, opnames, dividenden, kosten en aankopen.
+- **Koers per datum**: draait Flux op je server, dan haalt hij automatisch **historische marktkoersen** op (Yahoo Finance, wekelijks, omgerekend naar euro, elke 3 dagen ververst). Anders gebruikt Flux **je eigen aankoopkoersen** en gekende standen, en interpoleert daartussen.
+
+Na één keer *Ophalen uit Degiro* of één portefeuille-export vult Flux dus zelf alle tussenliggende maanden in: in de grafiek, in het **vermogen door de tijd** op het overzicht, en voor het **rendement per jaar** (gemarkeerd als *geschat*). Een export of ophaling op een bepaalde datum blijft altijd voorrang krijgen als *werkelijke stand*. Doe af en toe *Ophalen uit Degiro* om de huidige stand bij te werken; dat is genoeg.
+
+### Vermogen door de tijd
+
+Op het overzicht toont een grafiek je **totale vermogen**: elke bankrekening apart en je beleggingen, voor de periode die je op de tijdslijn kiest. Banksaldi worden teruggerekend vanaf één gekend saldo met al je transacties. Bij KBC komt dat saldo automatisch uit het bestand; bij Argenta geef je het één keer in.
 
 ### Rendement: TWR en MWR
 
@@ -228,6 +244,7 @@ js/app.js                  gebruikersinterface
 server/server.js           HTTP-server: app, login, synchronisatie, opzoeken (met cache)
 server/ai.js               optionele classificatie via Claude
 server/degiro.js           rechtstreekse Degiro-koppeling
+server/prices.js           historische koersen (Yahoo Finance) voor de reconstructie
 tests/                     tests (npm test)
 ```
 

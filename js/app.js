@@ -303,7 +303,8 @@
           <div class="hint">${sum.net < 0 ? 'meer uitgegeven dan verdiend' : sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : ''}</div></div>
         <div class="card kpi"><div class="label">Belegd</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
       </div>
-      ${multi ? `<div class="card" style="margin-bottom:16px"><h2>Per maand</h2>${monthBars(lines)}</div>` : ''}
+      <div class="card" style="margin-bottom:16px"><h2>Vermogen door de tijd</h2>${netWorthChart(range)}</div>
+      ${multi ? `<div class="card" style="margin-bottom:16px"><h2>Inkomsten en uitgaven per maand</h2>${monthBars(lines)}</div>` : ''}
       <div class="grid two">
         <div class="card">
           <h2>Vermogen</h2>
@@ -336,6 +337,113 @@
           </div>
         </div>
       </div>`;
+  }
+
+  /** Datums voor een tijdreeks: per dag bij een korte periode, anders elk maandeinde (en vandaag). */
+  function seriesDates(range) {
+    const end = range.end > today ? today : range.end;
+    const days = C.daysBetween(range.start, end);
+    const out = [];
+    if (days <= 100) {
+      const step = days > 45 ? 2 : 1;
+      for (let d = range.start; d <= end; d = C.addDays(d, step)) out.push(d);
+    } else {
+      for (let m = range.start.slice(0, 7); m <= end.slice(0, 7); m = shiftMonth(m, 1)) {
+        const me = C.periodRange('monthly', m + '-01').end;
+        out.push(me > end ? end : me);
+      }
+      if (out[0] !== range.start) out.unshift(C.addDays(range.start, -1));
+    }
+    if (out[out.length - 1] !== end) out.push(end);
+    return out;
+  }
+
+  /** Vermogen per datum: banksaldi (teruggerekend uit transacties) + beleggingen (gereconstrueerd). */
+  function netWorthSeries(range) {
+    const dates = seriesDates(range);
+    const accounts = state.accounts.filter(a => a.balance && a.balance.amount != null);
+    const invest = inv() && Invest.canEstimate(inv()) ? Invest.valueSeries(inv(), dates) : null;
+    const comps = accounts.map(a => {
+      const start = C.accountStart(state, a.id);
+      return { id: a.id, name: a.name, values: dates.map(d => (start && d < C.addDays(start, -1) && !a.balance) ? null : C.balanceAt(state, a.id, d)) };
+    });
+    if (invest) {
+      const first = (inv().trades || []).concat(inv().movements || []).map(x => x.date).sort()[0];
+      comps.push({ id: '__invest', name: 'Beleggingen (Degiro)', values: invest.map((v, i) => first && dates[i] < first ? 0 : v.valueEur), quality: invest.some(v => !v.actual && v.quality !== 'market') ? 'trades' : 'market' });
+    }
+    const totals = dates.map((d, i) => comps.reduce((s, c) => s + (c.values[i] || 0), 0));
+    return { dates, comps, totals };
+  }
+
+  function netWorthChart(range) {
+    const ser = netWorthSeries(range);
+    const missing = state.accounts.filter(a => a.type !== 'cash' && !(a.balance && a.balance.amount != null) && state.transactions.some(t => t.accountId === a.id));
+    if (!ser.comps.length) return `<p class="muted">Om je vermogen door de tijd te tonen heeft Flux voor minstens één rekening een gekend saldo nodig. Bij KBC gebeurt dat automatisch bij het opladen; bij Argenta geef je het één keer in (Bank → rekening → Bewerk).</p>`;
+    const narrow = window.innerWidth < 700;
+    const W = narrow ? 400 : 760, H = narrow ? 240 : 280, L = narrow ? 52 : 70, R = narrow ? 64 : 170, T = 14, B = 26;
+    const n = ser.dates.length;
+    const allVals = ser.totals.concat(...ser.comps.map(c => c.values.filter(v => v != null)));
+    const maxV = Math.max(1, ...allVals), minV = Math.min(0, ...allVals);
+    const top = maxV * 1.06, bottom = minV * 1.06;
+    const x = i => L + (n <= 1 ? 0 : i / (n - 1)) * (W - L - R);
+    const y = v => T + (top - v) / (top - bottom || 1) * (H - T - B);
+    const path = vals => vals.map((v, i) => v == null ? '' : (i && vals[i - 1] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+    const area = 'M' + x(0).toFixed(1) + ' ' + y(0).toFixed(1) + ' ' + ser.totals.map((v, i) => 'L' + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ') + ' L' + x(n - 1).toFixed(1) + ' ' + y(0).toFixed(1) + ' Z';
+    const raw = (top - bottom) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+    const stepV = [1, 2, 2.5, 5, 10].map(m => m * mag).find(st => st >= raw) || mag * 10;
+    const ticks = [];
+    for (let v = Math.ceil(bottom / stepV) * stepV; v <= top; v += stepV) ticks.push(v);
+    const compact = v => Math.abs(v) >= 100000 ? '€ ' + (Math.round(v / 10000) / 10).toString().replace('.', ',') + 'k' : money(v);
+    const labelEvery = Math.ceil(n / (narrow ? 5 : 10));
+    const xLabel = d => n > 100 || ser.dates[n - 1].slice(0, 4) !== ser.dates[0].slice(0, 4) ? MONTHS_SHORT[Number(d.slice(5, 7)) - 1] + ' ' + d.slice(2, 4) : d.slice(8, 10) + '/' + d.slice(5, 7);
+    const slots = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)'];
+    const lastIdx = n - 1;
+    // Eindlabels zonder overlap
+    const ends = ser.comps.map((c, ci) => ({ ci, y: y(c.values[lastIdx] || 0), v: c.values[lastIdx] })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+    nwData = { ser, x0: L, x1: W - R, W, n };
+    const invComp = ser.comps.find(c => c.id === '__invest');
+    return `
+      <div class="legend">
+        <span><i class="sw area"></i><strong>Totaal vermogen</strong></span>
+        ${ser.comps.map((c, ci) => `<span><i class="sw line" style="background:${slots[ci % slots.length]}"></i>${esc(c.name)}</span>`).join('')}
+      </div>
+      <div class="chart-wrap" id="nw-chart">
+        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Evolutie van je totale vermogen">
+          ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-line"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`).join('')}
+          ${ser.dates.map((d, i) => i % labelEvery === 0 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${xLabel(d)}</text>` : '').join('')}
+          <path d="${area}" class="nw-area"/>
+          <path d="${path(ser.totals)}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" opacity=".8"/>
+          ${ser.comps.map((c, ci) => `<path d="${path(c.values)}" fill="none" stroke="${slots[ci % slots.length]}" stroke-width="2" stroke-linejoin="round"/>`).join('')}
+          <text x="${W - R + 8}" y="${Math.max(12, y(ser.totals[lastIdx]) - 6)}" class="direct">${compact(ser.totals[lastIdx])}${narrow ? '' : ' totaal'}</text>
+          ${ends.map(e => { const nm = ser.comps[e.ci].name; return `<text x="${W - R + 8}" y="${e.y + 4}" class="direct muted-fill" style="fill:${slots[e.ci % slots.length]}"><title>${esc(nm)}</title>${narrow ? '' : esc(nm.length > 11 ? nm.slice(0, 10) + '…' : nm) + ' '}${compact(e.v || 0)}</text>`; }).join('')}
+          <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>
+        </svg>
+        <div class="chart-tip" hidden></div>
+      </div>
+      ${missing.length ? `<p class="small muted">Niet meegeteld omdat het saldo niet gekend is: ${missing.map(a => `<a href="#" data-action="edit-account" data-id="${esc(a.id)}">${esc(a.name)}</a>`).join(', ')}. Geef het saldo één keer in, dan rekent Flux de rest uit je transacties.</p>` : ''}
+      ${invComp ? `<p class="small muted">Beleggingen: ${invComp.quality === 'market' ? 'gereconstrueerd uit je transacties met historische marktkoersen.' : 'gereconstrueerd uit je transacties; tussen je aankopen geschat met je aankoopkoersen' + (Sync && Sync.mode === 'server' ? ' (historische koersen worden opgehaald zodra mogelijk).' : '. Met Flux op je server worden historische marktkoersen gebruikt.')}</p>` : ''}
+      <details><summary class="small">Toon als tabel</summary><div class="table-wrap"><table><thead><tr><th>Datum</th>${ser.comps.map(c => `<th class="right">${esc(c.name)}</th>`).join('')}<th class="right">Totaal</th></tr></thead>
+        <tbody>${ser.dates.map((d, i) => `<tr><td>${fmtDate(d)}</td>${ser.comps.map(c => `<td class="amount">${c.values[i] == null ? '—' : money(c.values[i])}</td>`).join('')}<td class="amount"><strong>${money(ser.totals[i])}</strong></td></tr>`).reverse().join('')}</tbody></table></div></details>`;
+  }
+
+  let nwData = null;
+  function onNwMove(ev) {
+    const wrap = $('#nw-chart');
+    if (!wrap || !nwData) return;
+    const svg = $('svg', wrap);
+    const rect = svg.getBoundingClientRect();
+    const sx = (ev.clientX - rect.left) / rect.width * nwData.W;
+    const i = Math.max(0, Math.min(nwData.n - 1, Math.round((sx - nwData.x0) / (nwData.x1 - nwData.x0) * (nwData.n - 1))));
+    const bx = nwData.x0 + (nwData.n <= 1 ? 0 : i / (nwData.n - 1)) * (nwData.x1 - nwData.x0);
+    const line = $('.crosshair', svg);
+    line.setAttribute('x1', bx); line.setAttribute('x2', bx); line.style.display = '';
+    const tip = $('.chart-tip', wrap);
+    tip.hidden = false;
+    const s = nwData.ser;
+    tip.innerHTML = `<strong>${fmtDate(s.dates[i])}</strong><br>` + s.comps.map(c => `${esc(c.name)}: ${c.values[i] == null ? '—' : money(c.values[i])}`).join('<br>') + `<hr><strong>Totaal: ${money(s.totals[i])}</strong>`;
+    const left = (bx / nwData.W) * rect.width;
+    tip.style.left = Math.min(rect.width - 220, Math.max(0, left + 12)) + 'px';
   }
 
   /** Netto inkomsten en uitgaven per maand in de gekozen periode. */
@@ -372,7 +480,7 @@
     if (f.status === 'done' && k === 'todo') return false;
     if (f.search) {
       const q = f.search.toLowerCase();
-      if (!`${t.counterparty} ${t.description} ${t.note || ''} ${C.centsToInput(t.amount)}`.toLowerCase().includes(q)) return false;
+      if (!`${t.title || ''} ${t.counterparty} ${t.description} ${t.note || ''} ${C.centsToInput(t.amount)}`.toLowerCase().includes(q)) return false;
     }
     return true;
   }
@@ -412,7 +520,7 @@
     const hint = ui.ruleHint && ui.ruleHint.txId === t.id && t.categoryId === ui.ruleHint.categoryId && (t.counterparty || t.description);
     return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''}">
       <td class="nowrap">${fmtDate(t.date)}${opts.showAccount ? `<div class="small muted">${esc(accName(t.accountId))}</div>` : ''}</td>
-      <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}"><div>${esc(t.counterparty || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>
+      <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}">${t.title ? `<div class="tx-title">${esc(t.title)}</div><div class="desc">${esc([t.counterparty, t.description].filter(Boolean).join(' · '))}</div>` : `<div>${esc(t.counterparty || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>`}
         <div class="badge-row">${opts.showKind ? kindBadge(k) : ''}${extra.join('')}${opts.showSource ? sourceBadge(t) : ''}</div></td>
       <td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td>
       <td class="assign-cell">${assignSelect(t)}${hint ? `<div><button class="btn small ghost" data-action="rule-hint" data-id="${esc(t.id)}">⚙ Altijd zo voor “${esc((t.counterparty || t.description).slice(0, 28))}”</button></div>` : ''}</td>
@@ -651,6 +759,7 @@
             <h3>Met exportbestanden</h3>
             <p class="small muted">Laad één of meer Degiro-exports op (CSV). Flux herkent zelf welk bestand het is.</p>
             <button class="btn" data-action="degiro-files">Exportbestanden opladen…</button>
+            ${iv && server ? `<p class="small muted" style="margin-top:8px">Historische koersen: ${iv.market && iv.market.fetchedAt ? 'opgehaald ' + esc(fmtDateTime(iv.market.fetchedAt)) + ' (' + Object.keys(iv.market.series || {}).length + ' product(en))' : 'nog niet opgehaald'} · <a href="#" data-action="fetch-prices">nu ophalen</a></p>` : ''}
             <details style="margin-top:8px"><summary class="small"><strong>Wat moet ik exact exporteren?</strong></summary>${DEGIRO_EXPORT_HELP}</details>
           </div>
         </div>
@@ -681,8 +790,8 @@
           <div class="label">MWR / MWRR — geldgewogen</div><div class="value">${pct(perf.mwr)} <span class="small muted">per jaar</span></div>
           <div class="hint">Jouw persoonlijke rendement (XIRR): houdt rekening met het moment en de grootte van elke storting.</div></div>
       </div>
-      ${perf.missingYearEnds.length ? `<div class="notice">Voor een exact rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>.
-        Exporteer in Degiro je <em>Portefeuille</em> op die datum en laad ze op met die datum. Tot dan is de TWR over die periode benaderd.</div>` : ''}
+      ${perf.missingYearEnds.length ? `<div class="notice">Voor een rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>, en er zijn geen transacties om ze uit te reconstrueren.</div>` : ''}
+      ${perf.estimatedYears.length ? `<div class="notice info">Begin- en eindwaarden van ${perf.estimatedYears.join(', ')} zijn <strong>gereconstrueerd uit je transacties</strong>${iv.market && iv.market.series ? ' met historische marktkoersen' : ' met je aankoopkoersen (historische marktkoersen worden gebruikt zodra Flux ze kan ophalen)'}. Je hoeft daarvoor geen maandelijkse export op te laden.</div>` : ''}
       ${perf.ignoredFlows.length ? `<div class="notice info">${perf.ignoredFlows.length} storting(en) na ${fmtDate(perf.end)} tellen nog niet mee, omdat er nog geen recentere waardering is.</div>` : ''}
       <div class="card" style="margin-bottom:16px">
         <h2>Portefeuille door de jaren</h2>
@@ -693,7 +802,7 @@
         <div class="table-wrap"><table>
           <thead><tr><th>Jaar</th><th class="right">Begin</th><th class="right">Stortingen</th><th class="right">Opnames</th><th class="right">Einde</th><th class="right">Resultaat</th><th class="right">TWR</th><th class="right">MWR</th><th class="right">Dividend</th></tr></thead>
           <tbody>${perf.years.map(y => `<tr>
-            <td><strong>${y.year}</strong>${y.partial ? ` <span class="small muted">t.e.m. ${fmtDate(y.endDate)}</span>` : ''}</td>
+            <td><strong>${y.year}</strong>${y.partial ? ` <span class="small muted">t.e.m. ${fmtDate(y.endDate)}</span>` : ''}${y.estimated ? ' <span class="badge small" title="Begin- of eindwaarde gereconstrueerd uit je transacties">geschat</span>' : ''}</td>
             <td class="amount">${y.startValue != null ? money(y.startValue) : '—'}</td>
             <td class="amount">${money(y.deposits)}</td>
             <td class="amount">${y.withdrawals ? money(y.withdrawals) : '—'}</td>
@@ -725,7 +834,17 @@
   /** Grafiek: portefeuillewaarde (lijn) en totale inleg (trap), met elke bijstorting als punt. */
   let chartData = null;
   function investChart(perf) {
-    const vals = Invest.valuations(inv()).filter(v => v.date >= perf.start);
+    // Echte waarderingen + reconstructie op elk maandeinde (of per week bij een korte historiek)
+    const actualVals = Invest.valuations(inv()).filter(v => v.date >= perf.start);
+    const lastActual = actualVals.length ? actualVals[actualVals.length - 1].date : perf.end;
+    const spanDays = C.daysBetween(perf.start, lastActual);
+    const extra = [];
+    if (Invest.canEstimate(inv())) {
+      for (let d = perf.start; d < lastActual; d = spanDays > 200 ? C.addDays(C.addMonths(C.addDays(d, 1).slice(0, 8) + '01', 1), -1) : C.addDays(d, 7)) if (d > perf.start) extra.push(d);
+    }
+    const est = Invest.valueSeries(inv(), extra);
+    const vals = actualVals.map(v => ({ date: v.date, value: v.value, actual: true })).concat(est.filter(e => !actualVals.some(v => v.date === e.date)).map(e => ({ date: e.date, value: e.valueEur, actual: false })))
+      .sort((a, b) => a.date.localeCompare(b.date));
     const flows = perf.flows;
     if (!vals.length) return '<p class="muted">Nog geen waarderingen.</p>';
     const start = perf.start, end = vals[vals.length - 1].date;
@@ -763,7 +882,7 @@
     return `
       <div class="legend"><span><i class="sw line s1"></i>Waarde portefeuille</span>
         <span><i class="sw line s2"></i>Totale inleg (netto stortingen)</span>
-        <span><i class="sw dot s2"></i>Bijstorting</span><span><i class="sw dot hollow"></i>Opname</span></div>
+        <span><i class="sw dot s2"></i>Bijstorting</span><span><i class="sw dot hollow"></i>Opname</span><span><i class="sw dot s1"></i>Werkelijke stand</span></div>
       <div class="chart-wrap" id="invest-chart">
         <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Waarde van je portefeuille en je totale inleg door de tijd">
           ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-line"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`).join('')}
@@ -771,6 +890,7 @@
           <path d="${stepPath}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round"/>
           <path d="${valuePath}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>
           ${steps.slice(1).map(d => `<circle cx="${x(d.date)}" cy="${y(d.value)}" r="4" class="${d.flow > 0 ? 'dep' : 'wd'}"><title>${fmtDate(d.date)}: ${d.flow > 0 ? 'storting' : 'opname'} ${money(Math.abs(d.flow))}</title></circle>`).join('')}
+          ${vals.filter(v => v.actual).map(v => `<circle cx="${x(v.date)}" cy="${y(v.value)}" r="3" class="actual"><title>${fmtDate(v.date)}: werkelijke stand ${money(v.value)}</title></circle>`).join('')}
           <text x="${W - R + 8}" y="${(apart && yLast > yCum ? yLast + 10 : yLast) + 4}" class="direct">${compact(lastVal.value)}</text>
           <text x="${W - R + 8}" y="${(apart && yCum >= yLast ? yCum + 10 : yCum) + 4}" class="direct muted-fill">${compact(cum)}${narrow ? '' : ' inleg'}</text>
           <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>
@@ -779,7 +899,7 @@
       </div>
       <details><summary class="small">Toon als tabel</summary>
         <div class="table-wrap"><table><thead><tr><th>Datum</th><th class="right">Waarde</th><th class="right">Inleg tot dan</th><th class="right">Winst</th></tr></thead>
-        <tbody>${vals.map(v => { const inl = inlegOn(v.date); return `<tr><td>${fmtDate(v.date)}</td><td class="amount">${money(v.value)}</td><td class="amount">${money(inl)}</td><td class="amount">${money(v.value - inl)}</td></tr>`; }).join('')}</tbody></table></div>
+        <tbody>${vals.map(v => { const inl = inlegOn(v.date); return `<tr><td>${fmtDate(v.date)}${v.actual ? '' : ' <span class="muted small">(geschat)</span>'}</td><td class="amount">${money(v.value)}</td><td class="amount">${money(inl)}</td><td class="amount">${money(v.value - inl)}</td></tr>`; }).join('')}</tbody></table></div>
       </details>`;
   }
   function inlegOn(date) { return (chartData ? chartData.flows : []).filter(f => f.date <= date).reduce((s, f) => s + f.amount, 0); }
@@ -802,7 +922,7 @@
     line.setAttribute('x1', bx); line.setAttribute('x2', bx); line.style.display = '';
     const tip = $('.chart-tip', wrap);
     tip.hidden = false;
-    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong><br>Waarde: ${money(best.value)}<br>Inleg: ${money(inl)}<br>Winst: ${money(best.value - inl)}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
+    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong>${best.actual ? '' : ' <span class="muted">(gereconstrueerd)</span>'}<br>Waarde: ${money(best.value)}<br>Inleg: ${money(inl)}<br>Winst: ${money(best.value - inl)}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
     const left = (bx / chartData.W) * rect.width;
     tip.style.left = Math.min(rect.width - 200, Math.max(0, left + 12)) + 'px';
   }
@@ -813,6 +933,14 @@
     $('.crosshair', wrap).style.display = 'none';
   }
   function afterRender() {
+    const nw = $('#nw-chart');
+    if (nw) {
+      nw.addEventListener('mousemove', onNwMove);
+      nw.addEventListener('mouseleave', () => { $('.chart-tip', nw).hidden = true; $('.crosshair', nw).style.display = 'none'; });
+      nw.addEventListener('touchmove', e => { if (e.touches[0]) onNwMove(e.touches[0]); }, { passive: true });
+      nw.addEventListener('touchstart', e => { if (e.touches[0]) onNwMove(e.touches[0]); }, { passive: true });
+    }
+    maybeFetchPrices();
     const wrap = $('#invest-chart');
     if (wrap) {
       wrap.addEventListener('mousemove', onChartMove);
@@ -820,6 +948,30 @@
       wrap.addEventListener('touchmove', e => { if (e.touches[0]) onChartMove(e.touches[0]); }, { passive: true });
       wrap.addEventListener('touchstart', e => { if (e.touches[0]) onChartMove(e.touches[0]); }, { passive: true });
     }
+  }
+
+  /** Haalt historische koersen op via de server als die ontbreken of ouder zijn dan 3 dagen. */
+  let pricesBusy = false;
+  async function maybeFetchPrices(force) {
+    const data = inv();
+    if (!data || demo || pricesBusy || !(Sync && Sync.mode === 'server')) return;
+    const fetchedAt = data.market && data.market.fetchedAt;
+    if (!force && fetchedAt && Date.now() - Date.parse(fetchedAt) < 3 * 86400000) return;
+    if (!force && data.market && data.market.failedAt && Date.now() - Date.parse(data.market.failedAt) < 86400000) return;
+    const keys = {};
+    for (const t of data.trades || []) { const k = t.isin || t.name; if (!keys[k] || t.date < keys[k].from) keys[k] = { key: k, isin: t.isin, name: t.name, currency: t.currency, from: t.date }; }
+    for (const p of data.positions || []) { const k = p.isin || p.key || p.name; if (!keys[k]) keys[k] = { key: k, isin: p.isin, name: p.name, currency: p.currency, from: data.positionsDate || today }; }
+    const instruments = Object.values(keys);
+    if (!instruments.length) return;
+    pricesBusy = true;
+    try {
+      const r = await Sync.prices(instruments);
+      const okCount = Object.keys(r.series || {}).length;
+      state.investments = Object.assign({}, inv(), { market: okCount ? { series: r.series, errors: r.errors, fetchedAt: new Date().toISOString() } : Object.assign({}, data.market || {}, { failedAt: new Date().toISOString(), errors: r.errors }) });
+      commit(force ? (okCount ? `Koersen opgehaald voor ${okCount} product(en)` : 'Geen koersen gevonden') : undefined);
+    } catch (e) {
+      if (force) toast('Koersen ophalen lukte niet: ' + e.message);
+    } finally { pricesBusy = false; }
   }
 
   // ----- Instellingen -----
@@ -929,7 +1081,7 @@
       const first = $('.modal-body input:not([type=file]), .modal-body select', root);
       if (first && !['tx', 'lookup', 'importView', 'import'].includes(modal.type)) first.focus();
     }
-    if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); }
+    if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); updateTitleSuggestion(); }
     if (modal.type === 'rule') updateRulePreview();
   }
 
@@ -950,12 +1102,15 @@
 
     const body = `
       <div class="provenance small">${imported ? `📄 Uit bestand <strong>${esc(i ? i.fileName : '?')}</strong>${i ? ` (${esc(i.bankName || '')}, opgeladen ${esc(fmtDateTime(i.importedAt))})` : ''}. Correcties blijven bewaard.` : isNew ? '✎ Nieuwe manuele transactie' : '✎ Manueel ingevoerd'}</div>
+      <label class="field"><span>Eigen titel <span class="muted">(optioneel — waarvoor was dit?)</span></span>
+        <input type="text" id="tx-title" value="${esc(t.title || '')}" placeholder="bv. Verjaardagscadeau mama, Treinticket Brussel, Etentje met collega's"></label>
+      <div class="small" id="tx-title-sugg"></div>
       <div class="form-grid">
         <label class="field"><span>Datum</span><input type="date" id="tx-date" value="${esc(t.date)}" required></label>
         <label class="field"><span>Bedrag (− = uitgave)</span><input type="text" inputmode="decimal" id="tx-amount" value="${t.amount ? esc((t.amount < 0 ? '-' : '') + C.centsToInput(t.amount)) : ''}" placeholder="-12,50"></label>
         <label class="field"><span>Rekening</span><select id="tx-account">${accountOptions(t.accountId)}</select></label>
-        <label class="field"><span>Tegenpartij</span><input type="text" id="tx-counterparty" value="${esc(t.counterparty)}"></label>
-        <label class="field full"><span>Mededeling</span><input type="text" id="tx-description" value="${esc(t.description)}"></label>
+        <label class="field"><span>Tegenpartij${imported ? ' <span class="muted">(van de bank)</span>' : ''}</span><input type="text" id="tx-counterparty" value="${esc(t.counterparty)}"></label>
+        <label class="field full"><span>Mededeling${imported ? ' <span class="muted">(van de bank)</span>' : ''}</span><input type="text" id="tx-description" value="${esc(t.description)}"></label>
         <label class="field"><span>IBAN tegenpartij</span><input type="text" id="tx-iban" value="${esc(C.formatIban(t.counterpartyIban))}"></label>
         <label class="field"><span>Gekoppeld aan${t.categorySource === 'rule' ? ' <span class="muted">(via regel)</span>' : t.categorySource === 'system' ? ' <span class="muted">(automatisch)</span>' : ''}</span>
           <span class="input-row"><select id="tx-category">${categoryOptions(t.categoryId, { emptyLabel: '— Te verwerken —', special: true })}</select>
@@ -1081,6 +1236,8 @@
       counterpartyIban: C.normalizeIban($('#tx-iban').value), transferMode: $('#tx-transfer').value,
       refundOf, splits, note: $('#tx-note').value.trim()
     });
+    const title = $('#tx-title').value.trim();
+    if (title) t.title = title; else delete t.title;
     if (newCat === C.SYS_ADVANCE) t.person = person || (linked ? linked.person : ''); else delete t.person;
     if (advanceOf) t.advanceOf = advanceOf; else delete t.advanceOf;
     if (newCat !== t.categoryId || splits.length || t.categorySource !== 'manual') {
@@ -1634,6 +1791,35 @@
     closeModal();
     commit(`${rules} regel(s) aangemaakt${txs ? `, ${txs} transactie(s) gekoppeld` : ''}`);
   }
+  /** Voorstel op basis van je eigen titel: eerst de zoekwoorden van je categorieën, daarna (optioneel) AI. */
+  function updateTitleSuggestion() {
+    const el = $('#tx-title-sugg');
+    if (!el) return;
+    const title = $('#tx-title').value.trim();
+    if (!title) { el.innerHTML = ''; return; }
+    const direction = C.parseAmount($('#tx-amount').value) > 0 ? 'in' : 'out';
+    const m = C.matchCategory(title, state.categories.filter(c => c.kind === 'income' || c.kind === 'expense'), direction);
+    const current = $('#tx-category').value;
+    const aiOn = Sync && Sync.mode === 'server' && Sync.features && Sync.features.ai;
+    el.innerHTML = (m && m.categoryId !== current ? `→ Voorstel uit je titel: <strong>${esc(catName(m.categoryId))}</strong> <span class="muted">(${esc(m.hits.slice(0, 2).join(', '))})</span> <button class="btn small" type="button" data-action="apply-sugg" data-id="${esc(m.categoryId)}">Toepassen</button> ` : '')
+      + (aiOn ? `<button class="btn small ghost" type="button" data-action="ai-title">🤖 Laat AI de categorie kiezen</button>` : (!m ? '<span class="muted">Geen categorie herkend in je titel. Tip: voeg zoekwoorden toe aan je categorieën (Instellingen).</span>' : ''));
+  }
+
+  async function aiFromTitle() {
+    const el = $('#tx-title-sugg');
+    const item = { title: $('#tx-title').value.trim(), name: $('#tx-counterparty').value.trim(), description: $('#tx-description').value.trim(), direction: C.parseAmount($('#tx-amount').value) > 0 ? 'in' : 'out' };
+    el.innerHTML = '<span class="muted">AI denkt na…</span>';
+    try {
+      const r = await Sync.lookup({ items: [item], categories: state.categories.filter(c => c.kind === 'income' || c.kind === 'expense').map(c => ({ id: c.id, name: c.name, kind: c.kind })), provider: 'ai', countries: state.settings.lookupCountries || 'be' });
+      const a = r.results[0] && r.results[0].ai;
+      if (a && a.categoryId) {
+        $('#tx-category').value = a.categoryId;
+        updateSplitRemaining(); updateTxSections();
+        el.innerHTML = `🤖 Gekozen: <strong>${esc(catName(a.categoryId))}</strong> <span class="muted">— ${esc(a.explanation || a.businessType || '')} (zekerheid ${esc(a.confidence)})</span>`;
+      } else el.innerHTML = `<span class="muted">AI vond geen passende categorie${a && a.explanation ? ': ' + esc(a.explanation) : ''}.</span>`;
+    } catch (e) { el.innerHTML = `<span style="color:var(--red)">AI lukte niet: ${esc(e.message)}</span>`; }
+  }
+
   async function lookupOne() {
     const el = $('#tx-lookup-result');
     const item = { name: $('#tx-counterparty').value.trim(), description: $('#tx-description').value.trim() };
@@ -1697,11 +1883,11 @@
   }
   function exportCSV() {
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const lines = [['Datum', 'Rekening', 'Tegenpartij', 'IBAN tegenpartij', 'Mededeling', 'Bedrag', 'Soort', 'Gekoppeld aan', 'Persoon', 'Bron', 'Notitie'].map(q).join(';')];
+    const lines = [['Datum', 'Rekening', 'Eigen titel', 'Tegenpartij', 'IBAN tegenpartij', 'Mededeling', 'Bedrag', 'Soort', 'Gekoppeld aan', 'Persoon', 'Bron', 'Notitie'].map(q).join(';')];
     for (const t of state.transactions.slice().sort((a, b) => a.date.localeCompare(b.date))) {
       const cats = C.splitLines(t).map(l => (l.categoryId ? catName(l.categoryId) : '') + (t.splits.length ? ' ' + C.centsToInput(l.amount) : '')).join(' + ');
       const persons = C.splitLines(t).map(l => l.person).filter(Boolean).join(', ');
-      lines.push([fmtDate(t.date), accName(t.accountId), t.counterparty, C.formatIban(t.counterpartyIban), t.description, (t.amount < 0 ? '-' : '') + C.centsToInput(t.amount),
+      lines.push([fmtDate(t.date), accName(t.accountId), t.title || '', t.counterparty, C.formatIban(t.counterpartyIban), t.description, (t.amount < 0 ? '-' : '') + C.centsToInput(t.amount),
         (KIND_LABEL[kindOf(t)] || [])[1], cats, persons, t.source === 'import' ? (imp(t.importId) || {}).fileName : 'manueel', t.note || ''].map(q).join(';'));
     }
     download('flux-transacties-' + today + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
@@ -1779,7 +1965,7 @@
     },
     'remove-split': el => { el.closest('.split-row').remove(); updateSplitRemaining(); },
     'rule-from-tx': () => {
-      const t = modal.tx;
+      const t = Object.assign({}, modal.tx, { counterparty: $('#tx-counterparty').value.trim(), description: $('#tx-description').value.trim() });
       const key = C.normalizeName(t.counterparty) || C.normalizeName(t.description);
       openModal({ type: 'rule', rule: { id: C.uid('rule'), name: t.counterparty || key, field: t.counterparty ? 'counterparty' : 'any', operator: 'name', value: key, categoryId: $('#tx-category').value || t.categoryId, direction: t.amount < 0 ? 'out' : 'in', enabled: true } });
     },
@@ -1822,11 +2008,14 @@
       commit('Categorie verwijderd');
     },
     'degiro-connect': () => openModal({ type: 'degiro' }),
+    'fetch-prices': () => maybeFetchPrices(true),
     'degiro-files': () => openModal({ type: 'degiroFiles', files: [] }),
     'degiro-apply': applyDegiroFiles,
     'degiro-clear': () => { if (!confirm('Alle beleggingsgegevens (Degiro) wissen?')) return; state.investments = { cleared: true }; commit('Beleggingsgegevens gewist'); },
     'lookup': () => { const c = C.lookupCandidates(state); if (!c.length) toast('Alles is al gekoppeld.'); else openLookup(c); },
     'lookup-one': lookupOne,
+    'apply-sugg': el => { $('#tx-category').value = el.dataset.id; updateSplitRemaining(); updateTxSections(); updateTitleSuggestion(); },
+    'ai-title': aiFromTitle,
     'lookup-apply': applyLookup,
     'sync-now': () => Sync.syncNow(),
     'change-password': () => openModal({ type: 'password' }),
@@ -1878,6 +2067,7 @@
       }, 200);
     }
     if (modal && modal.type === 'tx' && (el.closest('#splits') || el.id === 'tx-amount')) { updateSplitRemaining(); updateTxSections(); }
+    if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();
   });
 
@@ -1888,7 +2078,7 @@
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
-    if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); return; }
+    if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); if (el.id === 'tx-category') updateTitleSuggestion(); return; }
     if (modal.type === 'rule') { updateRulePreview(); return; }
     if (modal.type === 'category' && el.id === 'cat-kind') { $('#cat-income-field').hidden = el.value !== 'incomeCost'; return; }
     if (modal.type === 'lookup') {

@@ -24,6 +24,14 @@ const Store = require('../js/store.js');
 const Lookup = require('../js/lookup.js');
 const AI = require('./ai.js');
 const Degiro = require('./degiro.js');
+const Prices = require('./prices.js');
+
+// Koerscache in het geheugen (12 uur)
+const priceCache = {
+  map: new Map(),
+  get(k) { const v = this.map.get(k); return v && Date.now() - v.at < 12 * 3600000 ? v.value : null; },
+  set(k, value) { this.map.set(k, { at: Date.now(), value }); }
+};
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.resolve(process.env.FLUX_DATA_DIR || path.join(ROOT, 'data'));
@@ -263,6 +271,7 @@ async function lookupItems(body) {
 
   // Gratis bronnen: per tegenpartij (gecachet op de server)
   const free = await Promise.all(items.map(async it => {
+    if (!it.name && !it.description) return { query: '', hits: [], text: '', errors: [] };
     const key = 'free:' + countries + ':' + C.normalizeName(it.name || it.description);
     const cached = await cacheGet(key);
     if (cached) return cached;
@@ -275,7 +284,7 @@ async function lookupItems(body) {
 
   let ai = [];
   if (provider === 'ai' && items.length) {
-    ai = await AI.classify(items.map(it => ({ name: it.name, description: it.description, direction: it.direction })), categories, countries);
+    ai = await AI.classify(items.map(it => ({ title: it.title, name: it.name, description: it.description, direction: it.direction })), categories, countries);
   }
   return {
     provider,
@@ -403,6 +412,16 @@ async function handleApi(req, res, pathname) {
     // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
     if (b.schema !== Store.VERSION) throw httpError(409, 'Er is een nieuwe versie van Flux. Herlaad de pagina.');
     return send(res, 200, await syncUser(user, b.changes || null, b.rev));
+  }
+
+  if (pathname === '/api/prices' && req.method === 'POST') {
+    const b = await readBody(req);
+    const list = (Array.isArray(b.instruments) ? b.instruments : []).slice(0, 40).map(i => ({
+      key: String(i.key || '').slice(0, 60), isin: /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(i.isin || '') ? i.isin : '',
+      name: String(i.name || '').slice(0, 80), currency: String(i.currency || 'EUR').slice(0, 4),
+      from: /^\d{4}-\d{2}-\d{2}$/.test(i.from || '') ? i.from : '2015-01-01'
+    })).filter(i => i.key && (i.isin || i.name));
+    return send(res, 200, await Prices.fetchPrices(fetch, list, priceCache));
   }
 
   if (pathname === '/api/degiro/sync' && req.method === 'POST') {

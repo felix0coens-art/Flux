@@ -178,6 +178,7 @@
   // ---------- Categorisatieregels ----------
 
   const RULE_FIELDS = {
+    title: 'Eigen titel',
     counterparty: 'Tegenpartij',
     description: 'Mededeling',
     counterpartyIban: 'IBAN tegenpartij',
@@ -214,7 +215,7 @@
     if (rule.direction === 'out' && tx.amount >= 0) return false;
     if (rule.direction === 'in' && tx.amount <= 0) return false;
     if (rule.accountId && rule.accountId !== tx.accountId) return false;
-    const fields = rule.field === 'any' ? ['counterparty', 'description', 'counterpartyIban'] : [rule.field];
+    const fields = rule.field === 'any' ? ['title', 'counterparty', 'description', 'counterpartyIban'] : [rule.field];
     return fields.some(f => matchText(rule.operator, tx[f], rule.value, f === 'counterpartyIban'));
   }
 
@@ -853,6 +854,31 @@
    * Saldo van een rekening: vertrekt van een gekend saldo (bv. de saldokolom van een KBC-export
    * of manueel ingegeven) en telt de latere transacties erbij.
    */
+  /**
+   * Saldo van een rekening op het einde van een datum, teruggerekend vanaf het gekende saldo:
+   * transacties na die datum worden er afgetrokken, transacties ervoor (na het ankerpunt) erbij geteld.
+   * Geeft null als er voor deze rekening geen gekend saldo is.
+   */
+  function balanceAt(state, accountId, date, txs) {
+    const acc = state.accounts.find(a => a.id === accountId);
+    if (!acc || !acc.balance || acc.balance.amount == null) return null;
+    let bal = acc.balance.amount;
+    const anchor = acc.balance.date;
+    for (const t of txs || state.transactions) {
+      if (t.accountId !== accountId) continue;
+      if (t.date > date && t.date <= anchor) bal -= t.amount;
+      else if (t.date <= date && t.date > anchor) bal += t.amount;
+    }
+    return bal;
+  }
+
+  /** Eerste datum met een transactie op deze rekening (of null). */
+  function accountStart(state, accountId) {
+    let first = null;
+    for (const t of state.transactions) if (t.accountId === accountId && (!first || t.date < first)) first = t.date;
+    return first;
+  }
+
   function accountBalance(state, accountId) {
     const acc = state.accounts.find(a => a.id === accountId);
     if (!acc || !acc.balance || acc.balance.amount == null) return null;
@@ -1045,7 +1071,7 @@
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
-    recompute, detectInvestments, txKind, advancesOverview, accountBalance, SYS_ADVANCE, SYS_INVEST,
+    recompute, detectInvestments, txKind, advancesOverview, accountBalance, balanceAt, accountStart, SYS_ADVANCE, SYS_INVEST,
     SYNC_COLLECTIONS, SYNC_SINGLETONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
     categoryTags, matchCategory, lookupCandidates
   };

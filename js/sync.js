@@ -220,13 +220,18 @@
     return api('POST', '/api/lookup', body);
   }
 
+  /** Historische koersen (via de server) om de waarde van je beleggingen te reconstrueren. */
+  async function prices(instruments) {
+    return api('POST', '/api/prices', { instruments });
+  }
+
   /** Haalt je Degiro-gegevens op via de Flux-server. Inloggegevens worden niet bewaard. */
   async function degiro(username, password, otp) {
     return api('POST', '/api/degiro/sync', { username, password, otp });
   }
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro,
+    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices,
     get mode() { return mode; },
     get user() { return meta.user; },
     get features() { return features; },
