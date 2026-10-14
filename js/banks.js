@@ -35,6 +35,21 @@
       }
     },
     {
+      // Belfius Direct Net / Belfius Mobile: "Rekening;Boekingsdatum;Rekeninguittrekselnummer;Transactienummer;
+      // Rekening tegenpartij;Naam tegenpartij bevat;Straat en nummer;Postcode en plaats;Transactie;Valutadatum;Bedrag;Devies;BIC;Landcode;Mededelingen"
+      id: 'belfius', name: 'Belfius',
+      detect: hs => hs.includes('boekingsdatum') && (hs.includes('rekeninguittrekselnummer') || hs.includes('naam tegenpartij bevat')),
+      fields: {
+        account: ['rekening'],
+        date: ['boekingsdatum', 'valutadatum'],
+        amount: ['bedrag'],
+        counterparty: ['naam tegenpartij bevat', 'naam tegenpartij'],
+        counterpartyIban: ['rekening tegenpartij'],
+        description: ['mededelingen', 'transactie'],
+        statement: ['rekeninguittrekselnummer']
+      }
+    },
+    {
       id: 'argenta', name: 'Argenta',
       detect: hs => hs.includes('referentie') && (hs.includes('boekdatum') || hs.includes('verrichtingsdatum') || hs.includes('valutadatum')),
       fields: {

@@ -666,15 +666,22 @@
 
   // ---------- CSV-import ----------
 
+  /**
+   * Scheidingsteken: het teken dat op één regel het vaakst voorkomt (de kopregel). Sommige banken
+   * (bv. Belfius) zetten eerst enkele infolijnen met bedragen als "10.250,00" boven de tabel.
+   */
   function detectDelimiter(text) {
-    const firstLines = text.split(/\r?\n/).slice(0, 5).join('\n');
-    const counts = { ';': 0, ',': 0, '\t': 0 };
-    let inQ = false;
-    for (const ch of firstLines) {
-      if (ch === '"') inQ = !inQ;
-      else if (!inQ && ch in counts) counts[ch]++;
+    const best = { ';': 0, ',': 0, '\t': 0 };
+    for (const line of text.split(/\r?\n/).slice(0, 30)) {
+      const counts = { ';': 0, ',': 0, '\t': 0 };
+      let inQ = false;
+      for (const ch of line) {
+        if (ch === '"') inQ = !inQ;
+        else if (!inQ && ch in counts) counts[ch]++;
+      }
+      for (const k of Object.keys(counts)) best[k] = Math.max(best[k], counts[k]);
     }
-    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+    return Object.keys(best).sort((a, b) => best[b] - best[a])[0];
   }
 
   function parseCSV(text, delimiter) {

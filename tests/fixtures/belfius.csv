@@ -1,0 +1,10 @@
+Datum vanaf: 01/09/2026
+Datum tot en met: 30/09/2026
+Rekening: BE68 0682 0000 0034
+Aantal transacties: 3
+Laatste saldo: 10.250,00 EUR
+
+Rekening;Boekingsdatum;Rekeninguittrekselnummer;Transactienummer;Rekening tegenpartij;Naam tegenpartij bevat;Straat en nummer;Postcode en plaats;Transactie;Valutadatum;Bedrag;Devies;BIC;Landcode;Mededelingen
+BE68 0682 0000 0034;30/09/2026;2026/009;00045;;;;;RENTE SPAARREKENING;30/09/2026;12,34;EUR;;;Basisrente
+BE68 0682 0000 0034;15/09/2026;2026/009;00044;BE71 0961 2345 6769;FELIX COENS;Kerkstraat 1;8340 Damme;OVERSCHRIJVING VAN BE71 0961 2345 6769;15/09/2026;500,00;EUR;GKCCBEBB;BE;Sparen september
+BE68 0682 0000 0034;02/09/2026;2026/009;00043;BE71 0961 2345 6769;FELIX COENS;Kerkstraat 1;8340 Damme;OVERSCHRIJVING NAAR BE71 0961 2345 6769;02/09/2026;-1.000,00;EUR;GKCCBEBB;BE;Terug naar zichtrekening

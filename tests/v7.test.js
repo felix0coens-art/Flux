@@ -72,3 +72,17 @@ test('terugbetalingen van vrienden: de uitgave van dezelfde dag staat bovenaan',
   assert.equal(second.tx.id, 'o1', 'ook nadat de eerste terugbetaling gekoppeld is');
   assert.equal(second.openAmount, 2429 - 850);
 });
+
+test('Belfius-CSV (ook spaarrekening) wordt herkend', () => {
+  const Banks = require('../js/banks.js');
+  const fs = require('fs'); const path = require('path');
+  const r = Banks.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'belfius.csv'), 'utf8'));
+  assert.equal(r.profile.id, 'belfius');
+  assert.deepEqual(r.accountIbans, ['BE68068200000034']);
+  assert.equal(r.errors.length, 0);
+  assert.deepEqual(r.transactions.map(t => [t.date, t.amount, t.counterparty]), [
+    ['2026-09-30', 1234, ''], ['2026-09-15', 50000, 'FELIX COENS'], ['2026-09-02', -100000, 'FELIX COENS']]);
+  assert.equal(r.transactions[1].counterpartyIban, 'BE71096123456769');
+  assert.match(r.transactions[0].description, /Basisrente · RENTE SPAARREKENING/);
+  assert.deepEqual(r.period, { from: '2026-09-02', to: '2026-09-30' });
+});

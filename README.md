@@ -28,7 +28,7 @@ Helder heeft zes tabbladen:
 - **Voorbeeldgegevens zitten in een aparte zandbak** (*Instellingen → Voorbeeldmodus*). Zolang die aanstaat zie je bovenaan een duidelijke balk. Je eigen gegevens worden er nooit door aangeraakt en de zandbak wordt niet gesynchroniseerd.
 - **Bij de update naar deze versie zijn alle vroegere gegevens gewist**, zoals je vroeg: lokaal in elke browser en op de server. Op de server blijft een back-up bewaard (`user-….json.v2.bak` in de datamap), maar Helder zet die nooit vanzelf terug.
 
-### Bankbestanden: KBC/CBC en Argenta
+### Bankbestanden: KBC/CBC, Argenta en Belfius
 
 Beide banken worden automatisch herkend, inclusief de IBAN van je rekening. Bij de eerste import maakt Helder de rekening aan. Bevat een KBC-export meerdere rekeningen, dan worden die per rekening opgesplitst.
 

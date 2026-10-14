@@ -922,7 +922,7 @@
       <div class="page-head"><h1>Bank</h1><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Manuele transactie</button>
         <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
-      <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend).
+      <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
       ${bankLinkCard()}
       ${cancelCard()}
@@ -1228,7 +1228,7 @@
   function ensureLinkedAccount(conn, a) {
     let acct = linkedAccount(a);
     if (!acct) {
-      const bank = /kbc|cbc/i.test(conn.aspsp) ? 'kbc' : /argenta/i.test(conn.aspsp) ? 'argenta' : undefined;
+      const bank = /kbc|cbc/i.test(conn.aspsp) ? 'kbc' : /argenta/i.test(conn.aspsp) ? 'argenta' : /belfius/i.test(conn.aspsp) ? 'belfius' : undefined;
       acct = { id: C.uid('acc'), name: (conn.aspsp + ' ' + (a.name || (a.iban ? '…' + a.iban.slice(-4) : ''))).trim(), iban: a.iban || '', type: 'zicht', bank };
       state.accounts.push(acct);
     }
@@ -1319,7 +1319,11 @@
     }).join('');
     return `<div class="card link-card">${head(`<button class="btn small" data-action="bank-connect">+ Bank koppelen</button><button class="btn small ghost" data-action="bank-setup">Instellingen</button>`)}
       ${conns || '<p class="muted">Nog geen bank gekoppeld. Klik op <strong>+ Bank koppelen</strong> en kies KBC, Argenta, …</p>'}
-      <p class="small muted">Helder haalt vanzelf nieuwe transacties op telkens je de app opent (hoogstens om de 6 uur). Wil je meteen bijwerken, klik dan op ↻ Vernieuwen. Wat al in Helder zat, wordt overgeslagen.</p></div>`;
+      <p class="small muted">Helder haalt vanzelf nieuwe transacties op telkens je de app opent (hoogstens om de 6 uur). Wil je meteen bijwerken, klik dan op ↻ Vernieuwen. Wat al in Helder zat, wordt overgeslagen.</p>
+      <details class="small"><summary><strong>Je spaarrekening staat er niet bij?</strong></summary>
+        <p>De bankkoppeling (PSD2) is wettelijk enkel verplicht voor <em>betaalrekeningen</em>. Veel banken, zoals Belfius, geven spaarrekeningen daarom niet door, ook al duid je ze aan. Dat ligt niet aan Helder en is niet op te lossen met een andere instelling.</p>
+        <p>Oplossing: download in je bank-app of op de website van je bank de transacties van je spaarrekening als <strong>CSV</strong> en laad ze op met <strong>Bankbestand opladen</strong>. Bij Belfius: open de spaarrekening → <em>Rekeninginfo / Verrichtingen</em> → <em>Exporteren</em> → <strong>CSV</strong>. Helder herkent het bestand en maakt de spaarrekening zelf aan. Je hoeft dat maar af en toe te doen; rente en stortingen veranderen weinig.</p>
+      </details></div>`;
   }
 
   function bankSetupModal() {
