@@ -20,6 +20,29 @@ function ai_sdk_loaded(): bool {
 
 function ai_available(): bool { return (string) cfg('ANTHROPIC_API_KEY', '') !== '' && ai_sdk_loaded(); }
 
+/** Eigen Anthropic API-sleutel van een gebruiker ('' als er geen is). */
+function ai_user_key(string $user): string { return (string) (user_keys($user)['ai']['key'] ?? ''); }
+
+/** De sleutel voor deze gebruiker: zijn eigen, anders die van de server als de beheerder dat toelaat. */
+function ai_key_for(string $user, ?array $me): string {
+    if (!ai_sdk_loaded()) return '';
+    $own = ai_user_key($user);
+    if ($own !== '') return $own;
+    return ai_available() && user_may_ai($me) ? (string) cfg('ANTHROPIC_API_KEY') : '';
+}
+
+/** Eigen sleutel opslaan (na controle bij Anthropic) of verwijderen. */
+function ai_save_key(callable $fetch, string $user, array $b): array {
+    if (!empty($b['remove'])) { set_user_key($user, 'ai', null); return ['set' => false]; }
+    $key = trim((string) ($b['apiKey'] ?? ''));
+    if (!preg_match('/^sk-ant-[A-Za-z0-9_-]{20,200}$/', $key)) throw new HttpError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met sk-ant-)');
+    $base = rtrim((string) (cfg('ANTHROPIC_BASE_URL') ?: 'https://api.anthropic.com'), '/');
+    $r = $fetch($base . '/v1/models?limit=1', ['headers' => ['x-api-key' => $key, 'anthropic-version' => '2023-06-01', 'Accept' => 'application/json'], 'timeout' => 15]);
+    if ($r['status'] === 401 || $r['status'] === 403) throw new HttpError(400, 'Anthropic weigert deze sleutel. Controleer of je ze volledig kopieerde en of ze nog actief is.');
+    set_user_key($user, 'ai', ['key' => $key, 'hint' => substr($key, -4), 'savedAt' => gmdate('c')]);
+    return ['set' => true, 'hint' => substr($key, -4)];
+}
+
 const AI_SYSTEM = <<<TXT
 Je helpt een Belgische particulier om banktransacties te categoriseren in een persoonlijke boekhouding.
 Je krijgt de categorieën van de gebruiker en een lijst tegenpartijen (zoals ze op een rekeninguittreksel staan, vaak afgekort of met plaatsnaam).
@@ -65,9 +88,10 @@ function ai_classify_tool(array $categoryIds): array {
  * @param array $categories [['id', 'name', 'kind']]
  * @return array [['index', 'categoryId', 'businessType', 'confidence', 'explanation']]
  */
-function ai_classify(array $items, array $categories, string $countries): array {
-    if (!ai_available()) throw new HttpError(400, 'AI is niet geconfigureerd (ANTHROPIC_API_KEY ontbreekt)');
-    $client = new Anthropic\Client(apiKey: (string) cfg('ANTHROPIC_API_KEY'), baseUrl: cfg('ANTHROPIC_BASE_URL') ?: null);
+function ai_classify(array $items, array $categories, string $countries, string $apiKey = ''): array {
+    if ($apiKey === '') $apiKey = (string) cfg('ANTHROPIC_API_KEY', '');
+    if ($apiKey === '' || !ai_sdk_loaded()) throw new HttpError(400, 'AI is niet geconfigureerd (geen API-sleutel)');
+    $client = new Anthropic\Client(apiKey: $apiKey, baseUrl: cfg('ANTHROPIC_BASE_URL') ?: null);
     $cats = array_map(fn($c) => ['id' => $c['id'], 'name' => $c['name'], 'kind' => $c['kind'] === 'income' ? 'income' : 'expense'], $categories);
     $input = [];
     foreach ($items as $index => $it) {

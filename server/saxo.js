@@ -103,10 +103,14 @@ function normalize({ balance, netPositions, details, trades, bookings }) {
 }
 
 /**
- * @param store { readJson, writeJson, withLock, remove, publicUrl(req) }
+ * @param store { readJson, writeJson, withLock, remove, publicUrl(req), userKeys(user), setUserKey(user, name, value), isOwner(user) }
  */
 function create(store) {
-  async function config() {
+  /** De Saxo-app van een gebruiker: zijn eigen app, of voor de eigenaar die in saxo.json. */
+  async function config(user) {
+    const own = (await store.userKeys(user)).saxo;
+    if (own && own.appKey && own.appSecret) return own;
+    if (!await store.isOwner(user)) return null;
     const c = await store.readJson('saxo.json', null);
     return c && c.appKey && c.appSecret ? c : null;
   }
@@ -116,14 +120,14 @@ function create(store) {
   const redirectUrl = req => store.publicUrl(req) + '/api/saxo/callback';
   const tokenFile = user => 'saxo-' + Buffer.from(user).toString('hex') + '.json';
 
-  async function requireSaxo() {
-    const c = await config();
+  async function requireSaxo(user) {
+    const c = await config(user);
     if (!c) throw new SaxoError('De Saxo-koppeling is nog niet ingesteld', 400, 'config');
     return c;
   }
 
   async function status(req, user) {
-    const c = await config();
+    const c = await config(user);
     const t = await store.readJson(tokenFile(user), null);
     const connected = !!(t && t.refreshToken);
     return {
@@ -134,19 +138,23 @@ function create(store) {
     };
   }
 
-  async function saveConfig(b) {
-    if (b.remove) { await store.remove('saxo.json'); return { configured: false }; }
+  async function saveConfig(user, b) {
+    const owner = await store.isOwner(user);
+    if (b.remove) {
+      if (owner) await store.remove('saxo.json'); else await store.setUserKey(user, 'saxo', null);
+      return { configured: false };
+    }
     const appKey = String(b.appKey || '').trim();
     const appSecret = String(b.appSecret || '').trim();
     if (!/^[A-Za-z0-9-]{16,100}$/.test(appKey)) throw new SaxoError('Vul de App Key in (staat bij je app op het Saxo Developer Portal)', 400, 'config');
     if (!/^[A-Za-z0-9-]{16,100}$/.test(appSecret)) throw new SaxoError('Vul de App Secret in (bij je app op het Saxo Developer Portal; klik op “show”)', 400, 'config');
     const c = { appKey, appSecret, env: b.env === 'sim' ? 'sim' : 'live', savedAt: new Date().toISOString() };
-    await store.writeJson('saxo.json', c);
+    if (owner) await store.writeJson('saxo.json', c); else await store.setUserKey(user, 'saxo', c);
     return { configured: true, env: c.env };
   }
 
   async function connect(req, user) {
-    const c = await requireSaxo();
+    const c = await requireSaxo(user);
     const state = crypto.randomBytes(24).toString('base64url');
     await store.withLock('saxo-pending', async () => {
       const p = await store.readJson('saxo-pending.json', {});
@@ -195,7 +203,7 @@ function create(store) {
     if (!state || !pending) return { ok: false, message: 'Deze koppeling is verlopen of al gebruikt. Start opnieuw vanuit Helder.' };
     if (q.error) return { ok: false, message: 'Saxo gaf geen toestemming' + (q.error_description ? ': ' + q.error_description : '.') };
     if (!q.code) return { ok: false, message: 'Geen code ontvangen van Saxo.' };
-    const c = await requireSaxo();
+    const c = await requireSaxo(pending.user);
     const j = await tokenCall(fetchFn, c, { grant_type: 'authorization_code', code: String(q.code), redirect_uri: redirectUrl(req) });
     await store.withLock('saxo:' + pending.user, () => store.writeJson(tokenFile(pending.user), tokenRecord(j, null)));
     return { ok: true, message: 'Saxo Bank is gekoppeld. Helder haalt nu je portefeuille op.' };
@@ -243,7 +251,7 @@ function create(store) {
 
   /** Haalt portefeuille, saldo, transacties en kasbewegingen op, in het Helder-formaat. */
   async function fetchAll(fetchFn, req, user, b) {
-    const c = await requireSaxo();
+    const c = await requireSaxo(user);
     const token = await accessToken(fetchFn, req, c, user);
     const today = new Date().toISOString().slice(0, 10);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(String((b && b.fromDate) || '')) ? b.fromDate : '2010-01-01';

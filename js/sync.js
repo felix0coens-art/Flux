@@ -266,6 +266,20 @@
     disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
   };
 
+  /** Eigen Anthropic API-sleutel voor AI-classificatie (de sleutel zelf blijft op de server). */
+  const aiKey = {
+    status: () => api('GET', '/api/ai/key'),
+    save: apiKey => api('POST', '/api/ai/key', { apiKey }),
+    remove: () => api('POST', '/api/ai/key', { remove: true })
+  };
+
+  /** Functies (AI, bank, …) opnieuw opvragen, bv. na het instellen van een eigen sleutel. */
+  async function refreshFeatures() {
+    const s = await api('GET', '/api/session');
+    features = s.features || {};
+    return features;
+  }
+
   /** Saxo Bank (OpenAPI): de server bewaart App Key, Secret en de (kortlevende) toegangssleutels. */
   const saxo = {
     status: () => api('GET', '/api/saxo/status'),
@@ -285,7 +299,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

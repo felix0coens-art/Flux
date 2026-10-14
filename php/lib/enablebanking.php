@@ -19,9 +19,16 @@ final class BankError extends Exception {
     public function __construct(string $message, int $status = 502, string $kind = 'api') { parent::__construct($message); $this->status = $status; $this->kind = $kind; }
 }
 
-function eb_config(): ?array {
+/**
+ * De Enable Banking-app van een gebruiker: zijn eigen app, of (voor de eigenaar, of voor iedereen als de
+ * beheerder dat toelaat) de app van deze Helder in enablebanking.json.
+ */
+function eb_config(string $user): ?array {
+    $own = user_keys($user)['eb'] ?? null;
+    if (is_array($own) && !empty($own['appId']) && !empty($own['privateKey'])) return $own + ['own' => true];
+    if (!is_owner_user($user) && empty(site_settings()['bankShared'])) return null;
     $c = read_json('enablebanking.json', null);
-    return is_array($c) && !empty($c['appId']) && !empty($c['privateKey']) ? $c : null;
+    return is_array($c) && !empty($c['appId']) && !empty($c['privateKey']) ? $c + ['own' => is_owner_user($user), 'shared' => !is_owner_user($user)] : null;
 }
 
 function eb_jwt(array $c): string {
@@ -75,9 +82,10 @@ function bank_public_connections(array $connections): array {
 }
 
 function bank_status(string $user): array {
-    $c = eb_config();
+    $c = eb_config($user);
     return [
         'configured' => $c !== null,
+        'shared' => !empty($c['shared']),
         'appId' => $c['appId'] ?? null,
         'appName' => $c['appName'] ?? null,
         'redirectUrl' => redirect_url(),
@@ -85,8 +93,12 @@ function bank_status(string $user): array {
     ];
 }
 
-function bank_save_config(callable $fetch, array $b): array {
-    if (!empty($b['remove'])) { @unlink(data_dir() . '/enablebanking.json'); return ['configured' => false]; }
+function bank_save_config(callable $fetch, string $user, array $b): array {
+    $owner = is_owner_user($user);
+    if (!empty($b['remove'])) {
+        if ($owner) @unlink(data_dir() . '/enablebanking.json'); else set_user_key($user, 'eb', null);
+        return ['configured' => eb_config($user) !== null];
+    }
     $appId = trim((string) ($b['appId'] ?? ''));
     $pem = trim((string) ($b['privateKey'] ?? ''));
     if (!preg_match('/^[a-zA-Z0-9-]{8,80}$/', $appId)) throw new BankError('Vul de Application ID in (staat in het Control Panel van Enable Banking)', 400, 'config');
@@ -97,19 +109,19 @@ function bank_save_config(callable $fetch, array $b): array {
     $app = eb_call($fetch, $c, 'GET', '/application'); // controleert meteen of app-ID en sleutel kloppen
     $c['appName'] = (string) ($app['name'] ?? '');
     $c['savedAt'] = gmdate('c');
-    write_json('enablebanking.json', $c);
+    if ($owner) write_json('enablebanking.json', $c); else set_user_key($user, 'eb', $c);
     return ['configured' => true, 'appId' => $appId, 'appName' => $c['appName'], 'environment' => $app['environment'] ?? null, 'active' => $app['active'] ?? null];
 }
 
-function require_eb(): array {
-    $c = eb_config();
+function require_eb(string $user): array {
+    $c = eb_config($user);
     if (!$c) throw new BankError('De bankkoppeling is nog niet ingesteld', 400, 'config');
     return $c;
 }
 
-function bank_aspsps(callable $fetch, string $country): array {
+function bank_aspsps(callable $fetch, string $user, string $country): array {
     $country = strtoupper(preg_replace('/[^A-Za-z]/', '', $country) ?: 'BE');
-    $r = eb_call($fetch, require_eb(), 'GET', '/aspsps?country=' . rawurlencode($country));
+    $r = eb_call($fetch, require_eb($user), 'GET', '/aspsps?country=' . rawurlencode($country));
     $out = [];
     foreach (($r['aspsps'] ?? []) as $a) {
         if (isset($a['psu_types']) && is_array($a['psu_types']) && !in_array('personal', $a['psu_types'], true)) continue;
@@ -121,7 +133,7 @@ function bank_aspsps(callable $fetch, string $country): array {
 }
 
 function bank_connect(callable $fetch, string $user, array $b): array {
-    $c = require_eb();
+    $c = require_eb($user);
     $aspsp = trim((string) ($b['aspsp'] ?? ''));
     $country = strtoupper(preg_replace('/[^A-Za-z]/', '', (string) ($b['country'] ?? 'BE')) ?: 'BE');
     if ($aspsp === '') throw new BankError('Kies je bank', 400, 'input');
@@ -161,7 +173,7 @@ function bank_callback(callable $fetch, array $q): array {
     if ($state === '' || !$pending) return ['ok' => false, 'message' => 'Deze koppeling is verlopen of al gebruikt. Start opnieuw vanuit Helder.'];
     if (!empty($q['error'])) return ['ok' => false, 'message' => 'Je bank gaf geen toestemming' . (!empty($q['error_description']) ? ': ' . $q['error_description'] : '.')];
     if (empty($q['code'])) return ['ok' => false, 'message' => 'Geen code ontvangen van de bank.'];
-    $s = eb_call($fetch, require_eb(), 'POST', '/sessions', ['code' => (string) $q['code']]);
+    $s = eb_call($fetch, require_eb($pending['user']), 'POST', '/sessions', ['code' => (string) $q['code']]);
     if (empty($s['session_id'])) return ['ok' => false, 'message' => 'Enable Banking gaf geen sessie terug.'];
     $accounts = [];
     foreach (($s['accounts'] ?? []) as $a) {
@@ -189,7 +201,7 @@ function bank_connection(string $user, string $id): array {
 
 /** Transacties en saldo van één rekening ophalen. De gebruiker is aanwezig: PSU-headers meesturen. */
 function bank_fetch(callable $fetch, string $user, array $b): array {
-    $c = require_eb();
+    $c = require_eb($user);
     $conn = bank_connection($user, (string) ($b['connectionId'] ?? ''));
     $uid = (string) ($b['accountUid'] ?? '');
     if (!in_array($uid, array_column($conn['accounts'], 'uid'), true)) throw new BankError('Onbekende rekening', 404, 'input');
@@ -224,7 +236,7 @@ function bank_fetch(callable $fetch, string $user, array $b): array {
 
 function bank_disconnect(callable $fetch, string $user, array $b): array {
     $id = (string) ($b['connectionId'] ?? '');
-    $c = eb_config();
+    $c = eb_config($user);
     if ($c) { try { eb_call($fetch, $c, 'DELETE', '/sessions/' . rawurlencode($id)); } catch (Throwable $e) { /* toch lokaal verwijderen */ } }
     with_lock('bank:' . bin2hex($user), function () use ($user, $id) {
         $d = bank_data($user);

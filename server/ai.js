@@ -5,18 +5,21 @@
  */
 
 const MODEL = process.env.FLUX_AI_MODEL || 'claude-opus-5-5';
-let clientPromise = null;
+const clients = new Map();
 
+/** Heeft de server zelf een sleutel? (Gebruikers kunnen ook hun eigen sleutel instellen.) */
 function available() {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
-async function getClient() {
-  if (!available()) return null;
-  if (!clientPromise) {
-    clientPromise = import('@anthropic-ai/sdk').then(mod => new mod.default());
+async function getClient(apiKey) {
+  const key = apiKey || process.env.ANTHROPIC_API_KEY || '';
+  if (!key) return null;
+  if (!clients.has(key)) {
+    if (clients.size > 50) clients.clear();
+    clients.set(key, import('@anthropic-ai/sdk').then(mod => new mod.default({ apiKey: key })));
   }
-  return clientPromise;
+  return clients.get(key);
 }
 
 const SYSTEM = `Je helpt een Belgische particulier om banktransacties te categoriseren in een persoonlijke boekhouding.
@@ -62,9 +65,9 @@ function classifyTool(categoryIds) {
  * @param categories [{ id, name, kind }]
  * @returns [{ index, categoryId, businessType, confidence, explanation }]
  */
-async function classify(items, categories, countries) {
-  const client = await getClient();
-  if (!client) throw new Error('AI is niet geconfigureerd (ANTHROPIC_API_KEY ontbreekt)');
+async function classify(items, categories, countries, apiKey) {
+  const client = await getClient(apiKey);
+  if (!client) throw new Error('AI is niet geconfigureerd (geen API-sleutel)');
   const cats = categories.map(c => ({ id: c.id, name: c.name, kind: c.kind === 'income' ? 'income' : 'expense' }));
   const input = items.map((it, index) => ({
     index,

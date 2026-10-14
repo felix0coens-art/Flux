@@ -91,6 +91,18 @@ Dit kan wanneer Helder op je eigen server draait. Ga naar *Beleggingen → Ophal
 - Degiro heeft **geen officiële API**. Deze koppeling gebruikt dezelfde webdiensten als de Degiro-website. Ze kan stoppen met werken als Degiro iets wijzigt, en ze is niet door Degiro goedgekeurd. De exportbestanden hieronder werken altijd.
 - Elke keer ophalen voegt een waarderingspunt toe aan de grafiek. Historische standen levert deze weg niet: daarvoor gebruik je de portefeuille-export per 31 december.
 
+### Voor alle gebruikers, met hun eigen sleutels
+
+Op een publieke Helder kan elke gebruiker:
+- de **bankkoppeling** gebruiken met een eigen, gratis Enable Banking-app (Bank → Bankkoppeling instellen). In de gratis
+  "restricted" modus werkt zo'n app enkel voor de eigen rekeningen van wie ze aanmaakte. Heb je als eigenaar een contract
+  met Enable Banking, dan kan de beheerder jouw app delen met iedereen (Beheer → Bankkoppeling).
+- **Saxo** koppelen met een eigen Saxo-app (zelfde stappen als hieronder).
+- **AI** gebruiken met een eigen Anthropic API-sleutel (Instellingen → Online opzoeken); de kosten gaan dan naar hun eigen
+  Anthropic-account. De beheerder kan iemand ook toelaten om de sleutel van de server te gebruiken.
+
+Al die sleutels staan enkel op de server (`helder-data/keys-….json`), gaan nooit naar de browser en worden gewist als het account verwijderd wordt.
+
 ### Saxo Bank koppelen
 
 Helder gebruikt de officiële **Saxo OpenAPI**. Je meldt je aan op de website van Saxo zelf; Helder ziet je

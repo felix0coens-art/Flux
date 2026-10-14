@@ -70,16 +70,48 @@ function withLock(key, fn) {
 
 function userFile(username) { return 'user-' + Buffer.from(username).toString('hex') + '.json'; }
 
+// Eigen sleutels per gebruiker (Enable Banking-app, Saxo-app, Anthropic API-sleutel): enkel op de server
+const keysFile = user => 'keys-' + Buffer.from(user).toString('hex') + '.json';
+async function userKeys(user) { return (await readJson(keysFile(user), {})) || {}; }
+function setUserKey(user, name, value) {
+  return withLock('keys:' + user, async () => {
+    const k = await userKeys(user);
+    if (value == null) delete k[name]; else k[name] = value;
+    if (Object.keys(k).length) await writeJson(keysFile(user), k); else await fsp.unlink(path.join(DATA_DIR, keysFile(user))).catch(() => {});
+  });
+}
+async function isOwner(user) { return Accounts.userRole((await getUsers())[user]) === 'owner'; }
+const keyStore = { userKeys, setUserKey, isOwner, bankShared: async () => !!(await Acc.siteSettings()).bankShared };
+
+/** De AI-sleutel voor deze gebruiker: zijn eigen, anders die van de server als de beheerder dat toelaat. */
+async function aiKeyFor(user, me) {
+  const own = user ? ((await userKeys(user)).ai || {}).key : '';
+  if (own) return own;
+  return AI.available() && Accounts.mayAi(me) ? process.env.ANTHROPIC_API_KEY : '';
+}
+
+async function saveAiKey(user, b) {
+  if (b.remove) { await setUserKey(user, 'ai', null); return { set: false }; }
+  const key = String(b.apiKey || '').trim();
+  if (!/^sk-ant-[A-Za-z0-9_-]{20,200}$/.test(key)) throw httpError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met sk-ant-)');
+  const base = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+  let status = 0;
+  try { status = (await fetch(base + '/v1/models?limit=1', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', Accept: 'application/json' } })).status; } catch (e) { /* niet bereikbaar: toch bewaren */ }
+  if (status === 401 || status === 403) throw httpError(400, 'Anthropic weigert deze sleutel. Controleer of je ze volledig kopieerde en of ze nog actief is.');
+  await setUserKey(user, 'ai', { key, hint: key.slice(-4), savedAt: new Date().toISOString() });
+  return { set: true, hint: key.slice(-4) };
+}
+
 // Bankkoppeling (Enable Banking)
 const Bank = EnableBanking.create({
-  readJson, writeJson, withLock,
+  readJson, writeJson, withLock, ...keyStore,
   remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
   publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
 });
 
 // Saxo Bank (OpenAPI)
 const Saxo = SaxoLink.create({
-  readJson, writeJson, withLock,
+  readJson, writeJson, withLock, ...keyStore,
   remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
   publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
 });
@@ -284,14 +316,15 @@ async function cacheSet(key, value) {
   await withLock('lookup-cache', () => writeJson('lookup-cache.json', lookupCache));
 }
 
-async function lookupItems(body) {
+async function lookupItems(body, apiKey) {
+  if (apiKey === undefined) apiKey = AI.available() ? process.env.ANTHROPIC_API_KEY : '';
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 25);
   const categories = (Array.isArray(body.categories) ? body.categories : []).slice(0, 200)
     .map(c => ({ id: String(c.id), name: String(c.name || ''), kind: c.kind === 'income' ? 'income' : 'expense' }));
   const countries = String(body.countries || 'be').replace(/[^a-z,]/gi, '').slice(0, 30) || 'be';
   let provider = body.provider === 'free' || body.provider === 'ai' ? body.provider : 'auto';
-  if (provider === 'auto') provider = AI.available() ? 'ai' : 'free';
-  if (provider === 'ai' && !AI.available()) throw httpError(400, 'AI is niet ingesteld op deze server');
+  if (provider === 'auto') provider = apiKey ? 'ai' : 'free';
+  if (provider === 'ai' && !apiKey) throw httpError(400, 'AI is niet ingesteld op deze server');
 
   // Gratis bronnen: per tegenpartij (gecachet op de server)
   const free = await Promise.all(items.map(async it => {
@@ -308,7 +341,7 @@ async function lookupItems(body) {
 
   let ai = [];
   if (provider === 'ai' && items.length) {
-    ai = await AI.classify(items.map(it => ({ title: it.title, name: it.name, description: it.description, direction: it.direction })), categories, countries);
+    ai = await AI.classify(items.map(it => ({ title: it.title, name: it.name, description: it.description, direction: it.direction })), categories, countries, apiKey);
   }
   return {
     provider,
@@ -397,13 +430,14 @@ async function handleApi(req, res, pathname, query) {
   const users = await getUsers();
   const me = user ? users[user] || null : null;
   const role = Accounts.userRole(me);
-  const aiOk = AI.available() && Accounts.mayAi(me);
+  const aiKey = user && me && role !== 'admin' ? await aiKeyFor(user, me) : '';
+  const aiOk = !!aiKey;
 
   if (pathname === '/api/session' && req.method === 'GET') {
     return send(res, 200, Object.assign(me ? Accounts.userPublic(user, me) : { user: null, role: 'none' }, {
       setupRequired: !!setupCode,
       auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration, signupGoogle: Acc.googleConfigured() && await Acc.signupAllowed('google'), signupPassword: await Acc.signupAllowed('password') },
-      features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, bank: role === 'owner', saxo: role === 'owner' }
+      features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, aiOwnKey: !!(user && ((await userKeys(user)).ai || {}).key), aiServer: AI.available() && Accounts.mayAi(me), bank: !!me && role !== 'admin', saxo: !!me && role !== 'admin' }
     }));
   }
 
@@ -508,12 +542,18 @@ async function handleApi(req, res, pathname, query) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
 
+  // Eigen Anthropic API-sleutel (voor AI-classificatie)
+  if (pathname === '/api/ai/key' && req.method === 'GET') {
+    const k = (await userKeys(user)).ai;
+    return send(res, 200, { set: !!k, hint: k ? k.hint : null, server: AI.available() && Accounts.mayAi(me), sdk: true });
+  }
+  if (pathname === '/api/ai/key' && req.method === 'POST') return send(res, 200, await saveAiKey(user, await readBody(req)));
+
   if (pathname.startsWith('/api/bank/')) {
-    if (role !== 'owner') throw httpError(403, 'De bankkoppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
     try {
       if (pathname === '/api/bank/status' && req.method === 'GET') return send(res, 200, await Bank.status(req, user));
-      if (pathname === '/api/bank/config' && req.method === 'POST') return send(res, 200, await Bank.saveConfig(fetch, await readBody(req)));
-      if (pathname === '/api/bank/aspsps' && req.method === 'GET') return send(res, 200, await Bank.aspsps(fetch, query.get('country')));
+      if (pathname === '/api/bank/config' && req.method === 'POST') return send(res, 200, await Bank.saveConfig(fetch, user, await readBody(req)));
+      if (pathname === '/api/bank/aspsps' && req.method === 'GET') return send(res, 200, await Bank.aspsps(fetch, user, query.get('country')));
       if (pathname === '/api/bank/connect' && req.method === 'POST') return send(res, 200, await Bank.connect(fetch, req, user, await readBody(req)));
       if (pathname === '/api/bank/fetch' && req.method === 'POST') return send(res, 200, await Bank.fetchAccount(fetch, req, user, await readBody(req)));
       if (pathname === '/api/bank/disconnect' && req.method === 'POST') return send(res, 200, await Bank.disconnect(fetch, user, await readBody(req)));
@@ -526,10 +566,9 @@ async function handleApi(req, res, pathname, query) {
   }
 
   if (pathname.startsWith('/api/saxo/')) {
-    if (role !== 'owner') throw httpError(403, 'De Saxo-koppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
     try {
       if (pathname === '/api/saxo/status' && req.method === 'GET') return send(res, 200, await Saxo.status(req, user));
-      if (pathname === '/api/saxo/config' && req.method === 'POST') return send(res, 200, await Saxo.saveConfig(await readBody(req)));
+      if (pathname === '/api/saxo/config' && req.method === 'POST') return send(res, 200, await Saxo.saveConfig(user, await readBody(req)));
       if (pathname === '/api/saxo/connect' && req.method === 'POST') return send(res, 200, await Saxo.connect(req, user));
       if (pathname === '/api/saxo/fetch' && req.method === 'POST') return send(res, 200, await Saxo.fetchAll(fetch, req, user, await readBody(req)));
       if (pathname === '/api/saxo/disconnect' && req.method === 'POST') return send(res, 200, await Saxo.disconnect(user));
@@ -590,7 +629,7 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/lookup' && req.method === 'POST') {
     const b = await readBody(req);
     if (!aiOk) { if (b.provider === 'ai') throw httpError(400, 'AI is niet beschikbaar voor jouw account'); b.provider = 'free'; }
-    return send(res, 200, await lookupItems(b));
+    return send(res, 200, await lookupItems(b, aiKey));
   }
 
   throw httpError(404, 'Onbekend');

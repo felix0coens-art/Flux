@@ -28,14 +28,22 @@ function jwt(c) {
 }
 
 /**
- * @param store { readJson, writeJson, withLock, base, publicUrl(req) }
+ * @param store { readJson, writeJson, withLock, remove, publicUrl(req), userKeys(user), setUserKey(user, name, value), isOwner(user), bankShared() }
  */
 function create(store) {
   const base = () => (process.env.FLUX_EB_BASE_URL || 'https://api.enablebanking.com').replace(/\/+$/, '');
 
-  async function config() {
+  /**
+   * De Enable Banking-app van een gebruiker: zijn eigen app, of (voor de eigenaar, of voor iedereen als de
+   * beheerder dat toelaat) de app van deze Helder in enablebanking.json.
+   */
+  async function config(user) {
+    const own = (await store.userKeys(user)).eb;
+    if (own && own.appId && own.privateKey) return Object.assign({}, own, { own: true });
+    const owner = await store.isOwner(user);
+    if (!owner && !await store.bankShared()) return null;
     const c = await store.readJson('enablebanking.json', null);
-    return c && c.appId && c.privateKey ? c : null;
+    return c && c.appId && c.privateKey ? Object.assign({}, c, { own: owner, shared: !owner }) : null;
   }
 
   async function call(fetchFn, c, method, path, body, extraHeaders) {
@@ -56,8 +64,8 @@ function create(store) {
     throw new BankError(full, res.status >= 500 ? 502 : 400, code === 'REDIRECT_URI_NOT_ALLOWED' ? 'redirect' : 'api');
   }
 
-  async function requireEb() {
-    const c = await config();
+  async function requireEb(user) {
+    const c = await config(user);
     if (!c) throw new BankError('De bankkoppeling is nog niet ingesteld', 400, 'config');
     return c;
   }
@@ -68,12 +76,16 @@ function create(store) {
   const publicConnections = list => list.map(c => ({ id: c.id, aspsp: c.aspsp, country: c.country, validUntil: c.validUntil || null, createdAt: c.createdAt || null, accounts: c.accounts || [] }));
 
   async function status(req, user) {
-    const c = await config();
-    return { configured: !!c, appId: c ? c.appId : null, appName: c ? c.appName || null : null, redirectUrl: redirectUrl(req), connections: publicConnections((await bankData(user)).connections) };
+    const c = await config(user);
+    return { configured: !!c, shared: !!(c && c.shared), appId: c ? c.appId : null, appName: c ? c.appName || null : null, redirectUrl: redirectUrl(req), connections: publicConnections((await bankData(user)).connections) };
   }
 
-  async function saveConfig(fetchFn, b) {
-    if (b.remove) { await store.remove('enablebanking.json'); return { configured: false }; }
+  async function saveConfig(fetchFn, user, b) {
+    const owner = await store.isOwner(user);
+    if (b.remove) {
+      if (owner) await store.remove('enablebanking.json'); else await store.setUserKey(user, 'eb', null);
+      return { configured: !!await config(user) };
+    }
     const appId = String(b.appId || '').trim();
     const pem = String(b.privateKey || '').trim();
     if (!/^[a-zA-Z0-9-]{8,80}$/.test(appId)) throw new BankError('Vul de Application ID in (staat in het Control Panel van Enable Banking)', 400, 'config');
@@ -85,13 +97,13 @@ function create(store) {
     const app = await call(fetchFn, c, 'GET', '/application');
     c.appName = String(app.name || '');
     c.savedAt = new Date().toISOString();
-    await store.writeJson('enablebanking.json', c);
+    if (owner) await store.writeJson('enablebanking.json', c); else await store.setUserKey(user, 'eb', c);
     return { configured: true, appId, appName: c.appName, environment: app.environment == null ? null : app.environment, active: app.active == null ? null : app.active };
   }
 
-  async function aspsps(fetchFn, country) {
+  async function aspsps(fetchFn, user, country) {
     country = (String(country || 'BE').replace(/[^A-Za-z]/g, '') || 'BE').toUpperCase();
-    const r = await call(fetchFn, await requireEb(), 'GET', '/aspsps?country=' + encodeURIComponent(country));
+    const r = await call(fetchFn, await requireEb(user), 'GET', '/aspsps?country=' + encodeURIComponent(country));
     const out = (r.aspsps || [])
       .filter(a => !Array.isArray(a.psu_types) || a.psu_types.includes('personal'))
       .map(a => ({ name: String(a.name), country: String(a.country || country), logo: a.logo || null, maxDays: a.maximum_consent_validity != null ? Math.floor(a.maximum_consent_validity / 86400) : null }));
@@ -100,7 +112,7 @@ function create(store) {
   }
 
   async function connect(fetchFn, req, user, b) {
-    const c = await requireEb();
+    const c = await requireEb(user);
     const aspsp = String(b.aspsp || '').trim();
     const country = (String(b.country || 'BE').replace(/[^A-Za-z]/g, '') || 'BE').toUpperCase();
     if (!aspsp) throw new BankError('Kies je bank', 400, 'input');
@@ -139,7 +151,7 @@ function create(store) {
     if (!state || !pending) return { ok: false, message: 'Deze koppeling is verlopen of al gebruikt. Start opnieuw vanuit Helder.' };
     if (q.error) return { ok: false, message: 'Je bank gaf geen toestemming' + (q.error_description ? ': ' + q.error_description : '.') };
     if (!q.code) return { ok: false, message: 'Geen code ontvangen van de bank.' };
-    const s = await call(fetchFn, await requireEb(), 'POST', '/sessions', { code: String(q.code) });
+    const s = await call(fetchFn, await requireEb(pending.user), 'POST', '/sessions', { code: String(q.code) });
     if (!s.session_id) return { ok: false, message: 'Enable Banking gaf geen sessie terug.' };
     const accounts = (s.accounts || []).map(a => {
       const id = a.account_id || {};
@@ -165,7 +177,7 @@ function create(store) {
   const isoDay = ms => new Date(ms).toISOString().slice(0, 10);
 
   async function fetchAccount(fetchFn, req, user, b) {
-    const c = await requireEb();
+    const c = await requireEb(user);
     const conn = await connection(user, String(b.connectionId || ''));
     const uid = String(b.accountUid || '');
     if (!conn.accounts.some(a => a.uid === uid)) throw new BankError('Onbekende rekening', 404, 'input');
@@ -203,7 +215,7 @@ function create(store) {
 
   async function disconnect(fetchFn, user, b) {
     const id = String(b.connectionId || '');
-    const c = await config();
+    const c = await config(user);
     if (c) { try { await call(fetchFn, c, 'DELETE', '/sessions/' + encodeURIComponent(id)); } catch (e) { /* toch lokaal verwijderen */ } }
     await store.withLock('bank:' + user, async () => {
       const d = await bankData(user);

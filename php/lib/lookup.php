@@ -142,14 +142,15 @@ function cache_key_name(string $s): string {
     return implode(' ', array_slice(array_values($words), 0, 3));
 }
 
-function lookup_items(array $body, callable $fetch): array {
+function lookup_items(array $body, callable $fetch, ?string $apiKey = null): array {
+    if ($apiKey === null) $apiKey = ai_available() ? (string) cfg('ANTHROPIC_API_KEY') : '';
     $items = array_slice(is_array($body['items'] ?? null) ? $body['items'] : [], 0, 25);
     $categories = array_map(fn($c) => ['id' => (string) ($c['id'] ?? ''), 'name' => (string) ($c['name'] ?? ''), 'kind' => ($c['kind'] ?? '') === 'income' ? 'income' : 'expense'],
         array_slice(is_array($body['categories'] ?? null) ? $body['categories'] : [], 0, 200));
     $countries = substr(preg_replace('/[^a-z,]/i', '', (string) ($body['countries'] ?? 'be')), 0, 30) ?: 'be';
     $provider = in_array($body['provider'] ?? '', ['free', 'ai'], true) ? $body['provider'] : 'auto';
-    if ($provider === 'auto') $provider = ai_available() ? 'ai' : 'free';
-    if ($provider === 'ai' && !ai_available()) throw new HttpError(400, 'AI is niet ingesteld op deze server');
+    if ($provider === 'auto') $provider = $apiKey !== '' ? 'ai' : 'free';
+    if ($provider === 'ai' && $apiKey === '') throw new HttpError(400, 'AI is niet ingesteld op deze server');
 
     $cache = read_json('lookup-cache.json', []);
     $dirty = false;
@@ -171,7 +172,7 @@ function lookup_items(array $body, callable $fetch): array {
 
     $ai = [];
     if ($provider === 'ai' && $items) {
-        $ai = ai_classify(array_map(fn($it) => ['title' => $it['title'] ?? null, 'name' => $it['name'] ?? '', 'description' => $it['description'] ?? '', 'direction' => $it['direction'] ?? 'out'], $items), $categories, $countries);
+        $ai = ai_classify(array_map(fn($it) => ['title' => $it['title'] ?? null, 'name' => $it['name'] ?? '', 'description' => $it['description'] ?? '', 'direction' => $it['direction'] ?? 'out'], $items), $categories, $countries, $apiKey);
     }
     $results = [];
     foreach ($items as $i => $it) {

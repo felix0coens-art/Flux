@@ -939,7 +939,7 @@
     return head + `
       <p class="muted">Hier zie je wie Helder gebruikt en wanneer er aangemeld werd. De financiële gegevens van gebruikers zie je hier bewust niet.</p>
       <div class="grid kpis">
-        <div class="card kpi"><div class="label">Gebruikers</div><div class="value">${d.users.filter(u => u.role !== 'admin').length}</div><div class="hint">${d.users.filter(u => u.role === 'member').length} via Google</div></div>
+        <div class="card kpi"><div class="label">Gebruikers</div><div class="value">${d.users.filter(u => u.role !== 'admin').length}</div><div class="hint">${d.users.filter(u => u.email).length} via Google</div></div>
         <div class="card kpi"><div class="label">Actief (30 dagen)</div><div class="value">${active30}</div></div>
         <div class="card kpi"><div class="label">Aanmeldingen vandaag</div><div class="value">${loginsToday}</div></div>
         <div class="card kpi"><div class="label">Mislukt (24 uur)</div><div class="value ${failed24 ? 'negv' : ''}">${failed24}</div></div>
@@ -972,10 +972,16 @@
           <td class="right">${u.logins}</td>
           <td class="right">${u.transactions == null ? '—' : u.transactions}</td>
           <td class="right small">${u.dataSize ? size(u.dataSize) : '—'}</td>
-          <td class="small">${u.role === 'member' ? `<label><input type="checkbox" data-admin-ai="${esc(u.user)}" ${u.ai ? 'checked' : ''}> toegelaten</label>` : u.role === 'owner' ? 'ja' : '—'}</td>
+          <td class="small">${u.role === 'member' ? `${u.ownAi ? '<div>✓ eigen sleutel</div>' : ''}<label title="AI op kosten van de sleutel van deze server"><input type="checkbox" data-admin-ai="${esc(u.user)}" ${u.ai ? 'checked' : ''}> jouw sleutel</label>` : u.role === 'owner' ? 'ja' : '—'}</td>
           <td class="nowrap right">${u.role === 'member' ? `<button class="btn small" data-action="admin-user" data-user="${esc(u.user)}" data-op="${u.disabled ? 'enable' : 'disable'}">${u.disabled ? 'Deblokkeren' : 'Blokkeren'}</button>
             <button class="btn small danger" data-action="admin-user" data-user="${esc(u.user)}" data-op="delete">Verwijderen</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
-        <p class="small muted">AI kost geld per gebruik (jouw API-sleutel): daarom staat het voor nieuwe Google-gebruikers standaard uit. De bankkoppeling werkt enkel voor het eigenaarsaccount.</p></div>
+        <p class="small muted"><strong>AI:</strong> gebruikers kunnen in Instellingen hun eigen Anthropic API-sleutel invullen; dan betalen ze zelf. Vink “jouw sleutel” enkel aan als iemand AI mag gebruiken op jouw kosten (de sleutel van deze server).</p></div>
+      <div class="card" style="margin-bottom:16px"><h2>Bankkoppeling</h2>
+        <div class="reg-state">
+          <span class="badge ${d.site.bankShared ? 'ok' : 'muted'} reg-badge">${d.site.bankShared ? '● Gedeeld' : '● Eigen app'}</span>
+          <span class="grow">${d.site.bankShared ? 'Alle gebruikers gebruiken de Enable Banking-app van de eigenaar (enkel toegelaten met een contract bij Enable Banking). Wie een eigen app instelt, gebruikt die.' : 'Elke gebruiker stelt zijn eigen, gratis Enable Banking-app in (Bank → Bankkoppeling instellen). Zo’n app werkt enkel voor de eigen rekeningen van die gebruiker; dat is hoe Enable Banking het gratis toelaat. Saxo werkt op dezelfde manier met een eigen Saxo-app.'}</span>
+          <button class="btn small" data-action="admin-bank-shared" data-on="${d.site.bankShared ? '0' : '1'}">${d.site.bankShared ? 'Niet meer delen' : 'App van de eigenaar delen'}</button>
+        </div></div>
       <div class="card"><h2>Laatste aanmeldingen</h2>
         <div class="table-wrap"><table><thead><tr><th>Wanneer</th><th>Gebruiker</th><th>Hoe</th><th>Resultaat</th><th>IP-adres</th><th>Toestel</th></tr></thead>
         <tbody>${d.logins.slice(0, 150).map(l => { const u = d.users.find(x => x.user === l.user); return `<tr>
@@ -1271,7 +1277,8 @@
     const m = modal;
     const st = bankLink.status || {};
     return modalShell('Bankkoppeling instellen', `
-      ${st.configured ? `<div class="notice info small">✓ Ingesteld met app <strong>${esc(st.appName || st.appId)}</strong> (${esc(st.appId)}).</div>` : ''}
+      ${st.shared ? `<div class="notice info small">✓ Je gebruikt de bankapp van deze Helder (gedeeld door de beheerder). Je hoeft niets in te stellen; wil je toch je eigen app gebruiken, vul ze dan hieronder in.</div>`
+        : st.configured ? `<div class="notice info small">✓ Ingesteld met app <strong>${esc(st.appName || st.appId)}</strong> (${esc(st.appId)}).</div>` : ''}
       <p>Helder gebruikt <strong>Enable Banking</strong> om je rekeningen bij KBC, CBC, Argenta en andere banken te lezen. Je stelt dit één keer in:</p>
       <ol class="steps">
         <li>Maak een account op <a href="https://enablebanking.com" target="_blank" rel="noopener">enablebanking.com</a> en open het <strong>Control Panel</strong>.</li>
@@ -1291,7 +1298,7 @@
         <button class="btn primary" type="submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Controleren bij Enable Banking…' : 'Opslaan en testen'}</button>
       </form>
       <p class="small muted">De sleutel wordt enkel op je Helder-server bewaard (in de map helder-data, niet via het web bereikbaar) en nooit naar je toestellen gestuurd. Je bankwachtwoord gaat nooit via Helder.</p>`,
-      `${st.configured ? '<button class="btn danger" data-action="bank-remove-config">Instelling verwijderen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+      `${st.configured && !st.shared ? '<button class="btn danger" data-action="bank-remove-config">Instelling verwijderen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
   }
 
   async function bankSetupSubmit(form) {
@@ -1815,6 +1822,49 @@
 
   // ----- Instellingen -----
 
+  // Eigen Anthropic API-sleutel: de sleutel zelf staat enkel op de server
+  const aiKeyUi = { status: null, error: '', busy: false };
+  async function loadAiKey() {
+    if (!(Sync && Sync.mode === 'server') || demo) return;
+    try { aiKeyUi.status = await Sync.aiKey.status(); aiKeyUi.error = ''; } catch (e) { aiKeyUi.error = e.message; }
+    if (ui.view === 'settings' && !modal) render();
+  }
+
+  function aiKeyBlock() {
+    if (!(Sync && Sync.mode === 'server') || demo || ui.admin) return '';
+    const k = aiKeyUi.status;
+    if (!k) { if (!aiKeyUi.error) setTimeout(loadAiKey, 0); return `<div class="section ai-key"><h3>AI (Claude)</h3><p class="small muted">${esc(aiKeyUi.error || 'Laden…')}</p></div>`; }
+    if (k.set) return `<div class="section ai-key"><h3>AI (Claude) met je eigen sleutel</h3>
+      <p class="small">✓ Je eigen API-sleutel (eindigt op <code>${esc(k.hint || '')}</code>) is ingesteld. De kosten lopen via je eigen Anthropic-account.</p>
+      <button class="btn small danger" data-action="ai-key-remove">Sleutel verwijderen</button></div>`;
+    return `<div class="section ai-key"><h3>AI (Claude)</h3>
+      <p class="small muted">${k.server ? 'AI werkt nu met de sleutel van deze Helder. Je kan ook je eigen sleutel gebruiken.' : 'Wil je dat Claude je tegenpartijen indeelt? Gebruik je eigen API-sleutel van Anthropic: je betaalt dan zelf het (kleine) gebruik.'}</p>
+      <details${k.server ? '' : ' open'}><summary class="small"><strong>Hoe kom ik aan een sleutel?</strong></summary>
+        <ol class="steps small">
+          <li>Ga naar <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> en maak een account.</li>
+          <li>Zet bij <strong>Billing</strong> wat tegoed op je account (bv. € 5; dat is genoeg voor heel wat transacties).</li>
+          <li>Ga naar <strong>API Keys</strong> → <strong>Create Key</strong>, geef ze de naam <em>Helder</em> en kopieer de sleutel (begint met <code>sk-ant-</code>).</li>
+          <li>Plak ze hieronder en klik op <strong>Opslaan</strong>.</li>
+        </ol></details>
+      <form data-form="ai-key" class="input-row" autocomplete="off" style="margin-top:8px">
+        <input type="password" name="apiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" required>
+        <button class="btn primary" type="submit" ${aiKeyUi.busy ? 'disabled' : ''}>${aiKeyUi.busy ? 'Controleren…' : 'Opslaan'}</button>
+      </form>
+      ${aiKeyUi.error ? `<div class="errors">${esc(aiKeyUi.error)}</div>` : ''}
+      <p class="small muted">De sleutel wordt enkel op de Helder-server bewaard en nooit terug naar je toestellen gestuurd. Een limiet instellen kan in de Anthropic Console (Limits).</p></div>`;
+  }
+
+  async function aiKeySubmit(form) {
+    aiKeyUi.busy = true; aiKeyUi.error = ''; render();
+    try {
+      await Sync.aiKey.save(String(new FormData(form).get('apiKey') || '').trim());
+      await Sync.refreshFeatures();
+      aiKeyUi.status = await Sync.aiKey.status();
+      toast('Je eigen API-sleutel is ingesteld. AI-classificatie staat aan.');
+    } catch (e) { aiKeyUi.error = e.message; }
+    aiKeyUi.busy = false; render();
+  }
+
   function renderSettings() {
     const sy = ui.sync;
     const st = state.settings;
@@ -1889,6 +1939,7 @@
             <label class="field"><span>Landen</span><input type="text" data-setting="lookupCountries" value="${esc(st.lookupCountries || 'be')}"></label>
             <label class="field full"><span>Herkenning beleggingsrekening (naam of mededeling, regex)</span><input type="text" data-setting="investPattern" value="${esc(st.investPattern || 'degiro|flatex|saxo')}"></label>
           </div>
+          ${aiKeyBlock()}
         </div>
         <div class="card">
           <h2>Gegevens</h2>
@@ -2986,6 +3037,17 @@
       catch (e) { toast('Lukte niet: ' + e.message); }
       loadAdmin();
     },
+    'ai-key-remove': async () => {
+      if (!confirm('Je eigen API-sleutel verwijderen uit Helder?')) return;
+      try { await Sync.aiKey.remove(); await Sync.refreshFeatures(); aiKeyUi.status = await Sync.aiKey.status(); toast('Sleutel verwijderd'); } catch (e) { toast(e.message); }
+      render();
+    },
+    'admin-bank-shared': async el => {
+      const on = el.dataset.on === '1';
+      if (on && !confirm('De Enable Banking-app van de eigenaar delen met alle gebruikers?\n\nDoe dit enkel als je een contract met Enable Banking hebt om je app voor andere mensen te gebruiken. In de gratis "restricted" modus werkt de app enkel voor je eigen rekeningen.')) return;
+      try { await Sync.admin.setSite({ bankShared: on }); toast(on ? 'Bankapp gedeeld met alle gebruikers' : 'Elke gebruiker gebruikt zijn eigen bankapp'); } catch (e) { toast('Lukte niet: ' + e.message); }
+      loadAdmin();
+    },
     'admin-signup': async el => {
       const on = el.dataset.on === '1';
       const what = el.dataset.key === 'signupGoogle' ? 'met Google' : 'met gebruikersnaam en wachtwoord';
@@ -3313,6 +3375,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (form.dataset.form === 'degiro') { degiroSubmit(form); return; }
     if (form.dataset.form === 'bank-setup') { bankSetupSubmit(form); return; }
     if (form.dataset.form === 'saxo-setup') { saxoSetupSubmit(form); return; }
+    if (form.dataset.form === 'ai-key') { aiKeySubmit(form); return; }
     if (form.dataset.form === 'new-income') {
       const name = String(new FormData(form).get('name') || '').trim();
       if (!name) return;

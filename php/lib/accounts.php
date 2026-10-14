@@ -25,6 +25,8 @@ function site_settings(): array {
         // Per manier van aanmelden apart aan of uit te zetten (standaard beide aan)
         'signupGoogle' => ($s['signupGoogle'] ?? true) !== false,
         'signupPassword' => ($s['signupPassword'] ?? true) !== false,
+        // De Enable Banking-app van de eigenaar ook voor andere gebruikers (enkel met een contract bij Enable Banking)
+        'bankShared' => !empty($s['bankShared']),
     ];
 }
 
@@ -40,6 +42,7 @@ function site_changes(array $b): array {
     if (array_key_exists('registrationOpen', $b)) $c['registration'] = !empty($b['registrationOpen']) ? 'open' : 'closed';
     if (array_key_exists('signupGoogle', $b)) $c['signupGoogle'] = !empty($b['signupGoogle']);
     if (array_key_exists('signupPassword', $b)) $c['signupPassword'] = !empty($b['signupPassword']);
+    if (array_key_exists('bankShared', $b)) $c['bankShared'] = !empty($b['bankShared']);
     return $c;
 }
 
@@ -134,7 +137,7 @@ function delete_own_account(string $username): void {
         write_json('users.json', $users);
     });
     $base = preg_replace('/\.json$/', '', user_file($username));
-    foreach ([user_file($username), 'bank-' . bin2hex($username) . '.json'] as $f) @unlink(data_dir() . '/' . $f);
+    foreach ([user_file($username), 'bank-' . bin2hex($username) . '.json', 'keys-' . bin2hex($username) . '.json', 'saxo-' . bin2hex($username) . '.json'] as $f) @unlink(data_dir() . '/' . $f);
     $dir = data_dir() . '/backups';
     foreach (is_dir($dir) ? (scandir($dir) ?: []) : [] as $f) if (strpos($f, $base . '-') === 0 || strpos($f, $base . '.json') !== false) @unlink("$dir/$f");
     with_lock('sessions', function () use ($username) {
@@ -256,7 +259,7 @@ function admin_overview(): array {
         }
         $list[] = array_merge(user_public($name, $u), [
             'created' => $u['created'] ?? null, 'lastLogin' => $u['lastLogin'] ?? null, 'logins' => (int) ($u['logins'] ?? 0),
-            'disabled' => !empty($u['disabled']), 'ai' => user_may_ai($u), 'dataSize' => $size, 'transactions' => $tx, 'lastSync' => $updated,
+            'disabled' => !empty($u['disabled']), 'ai' => user_may_ai($u), 'ownAi' => isset(user_keys((string) $name)['ai']), 'dataSize' => $size, 'transactions' => $tx, 'lastSync' => $updated,
         ]);
     }
     usort($list, fn($a, $b) => strcmp((string) $b['lastLogin'], (string) $a['lastLogin']));

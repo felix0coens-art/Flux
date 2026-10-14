@@ -15,6 +15,7 @@ const Store = require('../js/store.js');
 const C = require('../js/core.js');
 
 const CLIENT_ID = 'test-client.apps.googleusercontent.com';
+const GOOD_KEY = 'sk-ant-api03-' + 'a'.repeat(40);
 
 /** Nagebootst Google-tokenendpoint: geeft een ID-token met de nonce die Helder meegaf. */
 function fakeGoogle() {
@@ -23,6 +24,8 @@ function fakeGoogle() {
     let body = '';
     req.on('data', d => { body += d; });
     req.on('end', () => {
+      // Nagebootste Anthropic-API om een eigen API-sleutel te controleren
+      if (req.url.startsWith('/v1/models')) { res.writeHead(req.headers['x-api-key'] === GOOD_KEY ? 200 : 401, { 'Content-Type': 'application/json' }); return res.end('{"data":[]}'); }
       const p = new URLSearchParams(body);
       const c = codes[p.get('code')];
       if (!c || p.get('client_id') !== CLIENT_ID || p.get('client_secret') !== 'geheim' || p.get('grant_type') !== 'authorization_code') { res.writeHead(400); return res.end('{"error":"invalid_grant"}'); }
@@ -40,7 +43,7 @@ function freePort() {
 }
 
 const ENV = tokenUrl => ({ FLUX_USERNAME: 'eigenaar', FLUX_PASSWORD: 'heel-geheim-1', FLUX_ADMIN_USERNAME: 'beheer', FLUX_ADMIN_PASSWORD: 'beheer-geheim-9',
-  FLUX_GOOGLE_CLIENT_ID: CLIENT_ID, FLUX_GOOGLE_CLIENT_SECRET: 'geheim', FLUX_GOOGLE_TOKEN_URL: tokenUrl });
+  FLUX_GOOGLE_CLIENT_ID: CLIENT_ID, FLUX_GOOGLE_CLIENT_SECRET: 'geheim', FLUX_GOOGLE_TOKEN_URL: tokenUrl, ANTHROPIC_BASE_URL: tokenUrl.replace(/\/token$/, ''), ANTHROPIC_API_KEY: '' });
 
 async function startNode(dir, tokenUrl) {
   Object.assign(process.env, ENV(tokenUrl), { FLUX_DATA_DIR: dir });
@@ -116,8 +119,32 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.equal(me.json.role, 'member');
       assert.equal(me.json.displayName, 'An Peeters');
       assert.equal(me.json.email, 'an@example.com');
-      assert.equal(me.json.features.bank, false, 'bankkoppeling enkel voor de eigenaar');
-      assert.equal((await call('GET', '/api/bank/status', null, an)).status, 403);
+      assert.equal(me.json.features.bank, true, 'bankkoppeling voor iedereen, met een eigen Enable Banking-app');
+      assert.equal(me.json.features.saxo, true);
+      assert.equal((await call('GET', '/api/bank/status', null, an)).json.configured, false);
+      // De app van de eigenaar is niet zomaar voor iedereen; enkel als de beheerder ze deelt
+      fs.writeFileSync(path.join(dir, 'enablebanking.json'), JSON.stringify({ appId: 'eigenaar-app-1234', privateKey: '-----BEGIN PRIVATE KEY-----x' }));
+      assert.equal((await call('GET', '/api/bank/status', null, an)).json.configured, false);
+      await call('POST', '/api/admin/site', { bankShared: true }, ac);
+      const shared = (await call('GET', '/api/bank/status', null, an)).json;
+      assert.deepEqual([shared.configured, shared.shared], [true, true], 'gedeelde app van deze Helder');
+      await call('POST', '/api/admin/site', { bankShared: false }, ac);
+      // Eigen Saxo-app: enkel voor An, niet voor de eigenaar
+      assert.equal((await call('POST', '/api/saxo/config', { appKey: 'b'.repeat(32), appSecret: 'c'.repeat(32), env: 'sim' }, an)).status, 200);
+      assert.equal((await call('GET', '/api/saxo/status', null, an)).json.configured, true);
+      // Eigen Anthropic API-sleutel
+      assert.equal((await call('GET', '/api/ai/key', null, an)).json.set, false);
+      assert.equal((await call('POST', '/api/ai/key', { apiKey: 'geen-sleutel' }, an)).status, 400);
+      assert.equal((await call('POST', '/api/ai/key', { apiKey: 'sk-ant-api03-' + 'z'.repeat(40) }, an)).status, 400, 'Anthropic weigert de sleutel');
+      const setKey = await call('POST', '/api/ai/key', { apiKey: GOOD_KEY }, an);
+      assert.equal(setKey.status, 200, setKey.text);
+      assert.deepEqual(setKey.json, { set: true, hint: 'aaaa' });
+      const keyStatus = await call('GET', '/api/ai/key', null, an);
+      assert.equal(keyStatus.json.set, true);
+      assert.ok(!keyStatus.text.includes(GOOD_KEY), 'de sleutel gaat nooit terug naar de browser');
+      assert.equal((await call('GET', '/api/session', null, an)).json.features.aiOwnKey, true);
+      assert.ok(fs.readFileSync(path.join(dir, 'keys-' + Buffer.from('g_1001').toString('hex') + '.json'), 'utf8').includes(GOOD_KEY));
+      assert.equal((await call('POST', '/api/ai/key', { remove: true }, an)).json.set, false);
       // An heeft een eigen, aparte boekhouding
       const st = Store.defaultState();
       st.transactions.push({ id: 'an1', accountId: 'acc_cash', date: '2026-10-01', amount: -500, counterparty: 'Bakker', splits: [], source: 'manual' });
@@ -138,7 +165,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
 
       // De beheerder zet nieuwe accounts per manier uit (en weer aan)
       const offPw = await call('POST', '/api/admin/site', { signupPassword: false }, ac);
-      assert.deepEqual(offPw.json, { registration: 'open', signupGoogle: true, signupPassword: false }, 'enkel de gevraagde instelling wijzigt');
+      assert.deepEqual(offPw.json, { registration: 'open', signupGoogle: true, signupPassword: false, bankShared: false }, 'enkel de gevraagde instelling wijzigt');
       assert.deepEqual((await call('GET', '/api/session')).json.auth, { google: true, registration: 'open', signupGoogle: true, signupPassword: false });
       assert.equal((await call('POST', '/api/register', { username: 'dirk', password: 'dirk-geheim-1' })).status, 403, 'zonder Google kan niet meer');
       await call('POST', '/api/admin/site', { signupPassword: true, signupGoogle: false }, ac);
@@ -156,7 +183,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.equal((await call('POST', '/api/register', { username: 'CARLA', password: 'nog-een-wachtwoord' })).status, 409, 'naam al in gebruik (hoofdletters tellen niet)');
       assert.equal((await call('POST', '/api/register', { username: 'g_123', password: 'nog-een-wachtwoord' })).status, 400);
       assert.equal((await call('POST', '/api/register', { username: 'kort', password: '123' })).status, 400);
-      assert.equal((await call('GET', '/api/bank/status', null, reg.cookie)).status, 403, 'ook geen bankkoppeling');
+      assert.equal((await call('GET', '/api/bank/status', null, reg.cookie)).json.configured, false, 'ook bankkoppeling, met een eigen app');
       const carla = await call('POST', '/api/login', { username: 'carla', password: 'carla-geheim-1' });
       assert.equal(carla.json.role, 'member');
       assert.equal((await call('POST', '/api/password', { current: 'carla-geheim-1', password: 'carla-nieuw-22' }, carla.cookie)).status, 200);

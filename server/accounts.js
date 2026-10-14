@@ -35,7 +35,7 @@ function create(store) {
   async function siteSettings() {
     const s = await readJson('site.json', {});
     // Per manier van aanmelden apart aan of uit te zetten (standaard beide aan)
-    return { registration: s.registration === 'open' ? 'open' : 'closed', signupGoogle: s.signupGoogle !== false, signupPassword: s.signupPassword !== false };
+    return { registration: s.registration === 'open' ? 'open' : 'closed', signupGoogle: s.signupGoogle !== false, signupPassword: s.signupPassword !== false, bankShared: !!s.bankShared };
   }
   /** Mag iemand nu een nieuw account aanmaken via 'google' of 'password'? */
   async function signupAllowed(how) {
@@ -48,6 +48,7 @@ function create(store) {
     if ('registrationOpen' in b) c.registration = b.registrationOpen ? 'open' : 'closed';
     if ('signupGoogle' in b) c.signupGoogle = !!b.signupGoogle;
     if ('signupPassword' in b) c.signupPassword = !!b.signupPassword;
+    if ('bankShared' in b) c.bankShared = !!b.bankShared;
     return c;
   }
   async function saveSite(changes) {
@@ -94,7 +95,8 @@ function create(store) {
   async function deleteOwn(req, username) {
     await withLock('users', async () => { const users = await getUsers(); delete users[username]; await writeJson('users.json', users); });
     const base = userFile(username).replace(/\.json$/, '');
-    for (const f of [userFile(username), 'bank-' + Buffer.from(username).toString('hex') + '.json']) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) { /* geen */ } }
+    const hex = Buffer.from(username).toString('hex');
+    for (const f of [userFile(username), 'bank-' + hex + '.json', 'keys-' + hex + '.json', 'saxo-' + hex + '.json']) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) { /* geen */ } }
     let files = [];
     try { files = fs.readdirSync(path.join(dataDir, 'backups')); } catch (e) { files = []; }
     for (const f of files) if (f.startsWith(base + '-') || f.includes(base + '.json')) { try { fs.unlinkSync(path.join(dataDir, 'backups', f)); } catch (e) { /* al weg */ } }
@@ -206,7 +208,7 @@ function create(store) {
       let size = 0, tx = null, updated = null;
       try { size = fs.statSync(file).size; } catch (e) { size = 0; }
       if (size) { const d = await readJson(userFile(name), null); tx = d && d.state && Array.isArray(d.state.transactions) ? d.state.transactions.length : 0; updated = d && d.updated || null; }
-      list.push(Object.assign(userPublic(name, u), { created: u.created || null, lastLogin: u.lastLogin || null, logins: u.logins || 0, disabled: !!u.disabled, ai: mayAi(u), dataSize: size, transactions: tx, lastSync: updated }));
+      list.push(Object.assign(userPublic(name, u), { created: u.created || null, lastLogin: u.lastLogin || null, logins: u.logins || 0, disabled: !!u.disabled, ai: mayAi(u), ownAi: !!((await readJson('keys-' + Buffer.from(name).toString('hex') + '.json', {})) || {}).ai, dataSize: size, transactions: tx, lastSync: updated }));
     }
     list.sort((a, b) => String(b.lastLogin || '').localeCompare(String(a.lastLogin || '')));
     const logins = (await readJson('logins.json', [])).slice().reverse().slice(0, 300);

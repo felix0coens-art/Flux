@@ -102,6 +102,21 @@ function valid_password($p): bool { return is_string($p) && strlen($p) >= 8 && s
 
 function get_users(): array { $u = read_json('users.json', []); return is_array($u) ? $u : []; }
 
+/*
+ * Eigen sleutels per gebruiker (Enable Banking-app, Saxo-app, Anthropic API-sleutel).
+ * Staan enkel op de server, in keys-<gebruiker>.json, en gaan nooit naar de browser.
+ */
+function user_keys_file(string $user): string { return 'keys-' . bin2hex($user) . '.json'; }
+function user_keys(string $user): array { $k = read_json(user_keys_file($user), []); return is_array($k) ? $k : []; }
+function set_user_key(string $user, string $name, ?array $value): void {
+    with_lock('keys:' . bin2hex($user), function () use ($user, $name, $value) {
+        $k = user_keys($user);
+        if ($value === null) unset($k[$name]); else $k[$name] = $value;
+        if ($k) write_json(user_keys_file($user), $k); else @unlink(data_dir() . '/' . user_keys_file($user));
+    });
+}
+function is_owner_user(string $user): bool { $u = get_users()[$user] ?? null; return is_array($u) && user_role($u) === 'owner'; }
+
 function verify_password(string $password, ?array $user): bool {
     if (!$user) return false;
     if (isset($user['pw'])) return password_verify($password, $user['pw']);

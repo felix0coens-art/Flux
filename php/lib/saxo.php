@@ -106,7 +106,11 @@ function saxo_normalize(array $in): array {
     return ['positions' => $positions, 'cashEur' => $cash, 'trades' => $trades, 'movements' => $movements];
 }
 
-function saxo_config(): ?array {
+/** De Saxo-app van een gebruiker: zijn eigen app, of voor de eigenaar die in saxo.json. */
+function saxo_config(string $user): ?array {
+    $own = user_keys($user)['saxo'] ?? null;
+    if (is_array($own) && !empty($own['appKey']) && !empty($own['appSecret'])) return $own;
+    if (!is_owner_user($user)) return null;
     $c = read_json('saxo.json', null);
     return is_array($c) && !empty($c['appKey']) && !empty($c['appSecret']) ? $c : null;
 }
@@ -117,14 +121,14 @@ function saxo_api_base(?array $c): string { return rtrim((string) cfg('FLUX_SAXO
 function saxo_redirect_url(): string { return public_url() . '/api/saxo/callback'; }
 function saxo_token_file(string $user): string { return 'saxo-' . bin2hex($user) . '.json'; }
 
-function require_saxo(): array {
-    $c = saxo_config();
+function require_saxo(string $user): array {
+    $c = saxo_config($user);
     if (!$c) throw new SaxoError('De Saxo-koppeling is nog niet ingesteld', 400, 'config');
     return $c;
 }
 
 function saxo_status(string $user): array {
-    $c = saxo_config();
+    $c = saxo_config($user);
     $t = read_json(saxo_token_file($user), null);
     $connected = is_array($t) && !empty($t['refreshToken']);
     return [
@@ -135,19 +139,23 @@ function saxo_status(string $user): array {
     ];
 }
 
-function saxo_save_config(array $b): array {
-    if (!empty($b['remove'])) { @unlink(data_dir() . '/saxo.json'); return ['configured' => false]; }
+function saxo_save_config(string $user, array $b): array {
+    $owner = is_owner_user($user);
+    if (!empty($b['remove'])) {
+        if ($owner) @unlink(data_dir() . '/saxo.json'); else set_user_key($user, 'saxo', null);
+        return ['configured' => false];
+    }
     $key = trim((string) ($b['appKey'] ?? ''));
     $secret = trim((string) ($b['appSecret'] ?? ''));
     if (!preg_match('/^[A-Za-z0-9-]{16,100}$/', $key)) throw new SaxoError('Vul de App Key in (staat bij je app op het Saxo Developer Portal)', 400, 'config');
     if (!preg_match('/^[A-Za-z0-9-]{16,100}$/', $secret)) throw new SaxoError('Vul de App Secret in (bij je app op het Saxo Developer Portal; klik op “show”)', 400, 'config');
     $c = ['appKey' => $key, 'appSecret' => $secret, 'env' => ($b['env'] ?? '') === 'sim' ? 'sim' : 'live', 'savedAt' => gmdate('c')];
-    write_json('saxo.json', $c);
+    if ($owner) write_json('saxo.json', $c); else set_user_key($user, 'saxo', $c);
     return ['configured' => true, 'env' => $c['env']];
 }
 
 function saxo_connect(string $user): array {
-    $c = require_saxo();
+    $c = require_saxo($user);
     $state = b64url(random_bytes(24));
     with_lock('saxo-pending', function () use ($state, $user) {
         $p = read_json('saxo-pending.json', []);
@@ -193,7 +201,7 @@ function saxo_callback(callable $fetch, array $q): array {
     if ($state === '' || !$pending) return ['ok' => false, 'message' => 'Deze koppeling is verlopen of al gebruikt. Start opnieuw vanuit Helder.'];
     if (!empty($q['error'])) return ['ok' => false, 'message' => 'Saxo gaf geen toestemming' . (!empty($q['error_description']) ? ': ' . $q['error_description'] : '.')];
     if (empty($q['code'])) return ['ok' => false, 'message' => 'Geen code ontvangen van Saxo.'];
-    $c = require_saxo();
+    $c = require_saxo($pending['user']);
     $j = saxo_token_call($fetch, $c, ['grant_type' => 'authorization_code', 'code' => (string) $q['code'], 'redirect_uri' => saxo_redirect_url()]);
     $user = $pending['user'];
     with_lock('saxo:' . bin2hex($user), fn() => write_json(saxo_token_file($user), saxo_token_record($j, null)));
@@ -241,7 +249,7 @@ function saxo_list(callable $fetch, array $c, string $token, string $path): arra
 /** Haalt portefeuille, saldo, transacties en kasbewegingen op, in het Helder-formaat. */
 function saxo_fetch_all(callable $fetch, string $user, array $b): array {
     @set_time_limit(120);
-    $c = require_saxo();
+    $c = require_saxo($user);
     $token = saxo_access_token($fetch, $c, $user);
     $today = gmdate('Y-m-d');
     $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($b['fromDate'] ?? '')) ? $b['fromDate'] : '2010-01-01';
