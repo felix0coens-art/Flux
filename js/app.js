@@ -328,6 +328,7 @@
     return `
       <div class="page-head"><h1>Overzicht</h1></div>
       ${timeline()}
+      ${(() => { const n = C.cancellationPairs(state).length; return n ? `<div class="notice info"><a href="#" data-action="goto" data-view="bank">↩ ${n} mogelijke annulering${n === 1 ? '' : 'en'} gevonden</a>: een inkomst met hetzelfde bedrag als een eerdere uitgave.</div>` : ''; })()}
       ${todo ? `<div class="notice info"><a href="#" data-action="goto" data-view="bank">📥 ${todo} transactie(s) wachten om gekoppeld te worden</a> aan een inkomst, uitgave, voorschot, belegging of eigen rekening.</div>` : ''}
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Netto inkomsten</div><div class="value pos">${money(sum.netIncome)}</div>
@@ -817,6 +818,36 @@
       ${list.length > lim ? `<p style="text-align:center"><button class="btn" data-action="more" data-key="${opts && opts.moreKey || 'list'}">Toon meer (${list.length - lim})</button></p>` : ''}`;
   }
 
+  /** Voorstellen: inkomst met exact hetzelfde bedrag als een eerdere uitgave (annulering, terugstorting). */
+  function cancelCard() {
+    const pairs = C.cancellationPairs(state);
+    if (!pairs.length) return '';
+    const name = t => t.title || t.counterparty || t.description || '—';
+    const shown = pairs.slice(0, 8);
+    return `<div class="card cancel-card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">↩ Geannuleerd of teruggestort?</h2><span class="spacer"></span>
+        ${pairs.length > 1 ? `<button class="btn small primary" data-action="cancel-link-all">Alle ${pairs.length} koppelen</button>` : ''}</div>
+      <p class="small muted">Deze inkomsten hebben exact hetzelfde bedrag als een eerdere uitgave, bv. een geannuleerde bestelling. Koppel je ze, dan heffen ze elkaar op: ze tellen niet als inkomst en niet als uitgave.</p>
+      <div class="list">${shown.map(p => `<div class="list-row cancel-pair">
+        <div class="grow"><strong>${esc(name(p.expense))}</strong>${p.sameName ? '' : ` <span class="small muted">↔ ${esc(name(p.income))}</span>`}
+          <div class="small muted">uitgave ${fmtDate(p.expense.date)} <span class="negv">${money(p.expense.amount)}</span> · terug ${fmtDate(p.income.date)} <span class="pos">${money(p.income.amount)}</span>${p.days ? ` · ${p.days} dag${p.days === 1 ? '' : 'en'} later` : ' · zelfde dag'}${state.accounts.length > 1 && p.income.accountId !== p.expense.accountId ? ' · andere rekening' : ''}</div></div>
+        <button class="btn small primary" data-action="cancel-link" data-in="${esc(p.income.id)}" data-out="${esc(p.expense.id)}">Koppelen</button>
+        <button class="btn small ghost" data-action="cancel-dismiss" data-in="${esc(p.income.id)}" data-out="${esc(p.expense.id)}" title="Dit is geen annulering">Nee</button>
+      </div>`).join('')}</div>
+      ${pairs.length > shown.length ? `<p class="small muted">… en nog ${pairs.length - shown.length}.</p>` : ''}
+    </div>`;
+  }
+
+  function linkCancellations(list) {
+    const before = list.map(p => ({ id: p.income.id, refundOf: p.income.refundOf || null }));
+    for (const p of list) p.income.refundOf = p.expense.id;
+    commit();
+    toast(list.length === 1 ? 'Gekoppeld: uitgave en terugstorting heffen elkaar op' : list.length + ' annuleringen gekoppeld', { label: 'Ongedaan maken', run: () => {
+      for (const b of before) { const t = txById(b.id); if (t) t.refundOf = b.refundOf; }
+      commit('Koppeling ongedaan gemaakt');
+    } });
+  }
+
   function renderBank() {
     const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
     const all = state.transactions.filter(bankTxFilter).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
@@ -846,6 +877,7 @@
       <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
       ${bankLinkCard()}
+      ${cancelCard()}
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
 
       <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
@@ -894,7 +926,7 @@
     const a = ui.admin;
     const d = a.data;
     const head = `<div class="page-head"><h1>🛡️ Beheer</h1><span class="spacer"></span><span class="small muted">Aangemeld als ${esc(a.me.displayName || a.me.user)}</span>
-      <button class="btn small" data-action="admin-refresh">Vernieuwen</button><button class="btn small" data-action="logout">Afmelden</button></div>`;
+      <button class="btn small" data-action="admin-refresh">Vernieuwen</button></div>`;
     if (!d) return head + `<p class="muted">${a.error ? esc(a.error) : 'Laden…'}</p>`;
     const now = Date.now();
     const day = 86400000;
@@ -916,9 +948,17 @@
         <h2>Nieuwe accounts</h2>
         <div class="reg-state">
           <span class="badge ${open ? 'ok' : 'over'} reg-badge">${open ? '● Open' : '● Gesloten'}</span>
-          <span class="grow">${open ? 'Iedereen kan een account aanmaken, met een gebruikersnaam en wachtwoord' + (d.google ? ' of met Google.' : '.') : 'Enkel bestaande gebruikers kunnen aanmelden. Nieuwe mensen krijgen de melding dat registratie gesloten is.'}</span>
+          <span class="grow">${open ? 'Nieuwe mensen kunnen een account aanmaken, op de manieren die hieronder aan staan.' : 'Enkel bestaande gebruikers kunnen aanmelden. Nieuwe mensen krijgen de melding dat registratie gesloten is.'}</span>
           <button class="btn ${open ? '' : 'primary'}" data-action="admin-reg" data-open="${open ? '0' : '1'}">${open ? 'Nieuwe accounts sluiten' : 'Nieuwe accounts toelaten'}</button>
         </div>
+        ${[['signupPassword', '👤 Met gebruikersnaam en wachtwoord', true], ['signupGoogle', 'Met Google', d.google]].map(([key, label, avail]) => {
+          const on = d.site[key] !== false;
+          return `<div class="reg-state reg-method">
+            <span class="badge ${on && avail ? 'ok' : 'over'} reg-badge">${on ? '● Aan' : '● Uit'}</span>
+            <span class="grow"><strong>${label}</strong><div class="small muted">${!avail ? 'Google staat niet ingesteld op deze server.' : on ? (open ? 'Nieuwe mensen kunnen zo een account aanmaken.' : 'Aan, maar nieuwe accounts zijn nu gesloten.') : 'Nieuwe accounts op deze manier kunnen niet. Bestaande gebruikers kunnen gewoon aanmelden.'}</div></span>
+            <button class="btn small" data-action="admin-signup" data-key="${key}" data-on="${on ? '0' : '1'}">${on ? 'Uitzetten' : 'Aanzetten'}</button>
+          </div>`;
+        }).join('')}
         ${d.google ? `<p class="small muted">Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></p>`
           : `<p class="small muted" style="margin-top:10px">Aanmelden met Google staat niet aan (optioneel): zet daarvoor <code>HELDER_GOOGLE_CLIENT_ID</code> en <code>HELDER_GOOGLE_CLIENT_SECRET</code> als secrets in GitHub. Redirect URI: <code>${esc(d.googleRedirect)}</code></p>`}
       </div>
@@ -2782,6 +2822,9 @@
     el.className = 'badge sync ' + cls;
     el.textContent = text;
     el.title = s.detail || (s.user ? 'Aangemeld als ' + s.user : '');
+    // Afmelden altijd rechtsboven, zodra je aangemeld bent
+    const out = $('#topbar-logout');
+    if (out) out.hidden = !(ui.admin || (!demo && !ui.auth && s.mode !== 'local' && s.mode !== 'auth'));
   }
 
   const GOOGLE_ICON = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-16.6z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>';
@@ -2798,17 +2841,21 @@
           <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Account aanmaken</button></form></div>`;
     }
     const g = a.auth && a.auth.google;
-    const open = a.auth && a.auth.registration === 'open';
+    const regOpen = a.auth && a.auth.registration === 'open';
+    // De beheerder kan nieuwe accounts per manier aan- of uitzetten
+    const canPw = regOpen && a.auth.signupPassword !== false;
+    const canG = regOpen && !!g && a.auth.signupGoogle !== false;
+    const open = canPw || canG;
     if (a.register && open) {
       return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div><h1>Account aanmaken</h1>
-        ${g ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Verder met Google</a><div class="or"><span>of met gebruikersnaam en wachtwoord</span></div>` : ''}
-        <form data-form="register" class="form-stack">
+        ${canG ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Verder met Google</a>${canPw ? '<div class="or"><span>of met gebruikersnaam en wachtwoord</span></div>' : ''}` : ''}
+        ${canPw ? `<form data-form="register" class="form-stack">
           <label class="field"><span>Je naam <span class="muted small">(zoals je die in Helder wil zien)</span></span><input type="text" name="displayName" autocomplete="name" maxlength="60" value="${esc(a.displayName || '')}"></label>
           <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" required minlength="2" maxlength="40" pattern="[a-zA-Z0-9._\-]{2,40}" value="${esc(a.previousUser || '')}"></label>
           <label class="field"><span>Wachtwoord (min. 8 tekens)</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
           <label class="field"><span>Herhaal wachtwoord</span><input type="password" name="password2" autocomplete="new-password" minlength="8" required></label>
           <p class="small muted">Onthoud je wachtwoord goed: zonder e-mailadres kan Helder het niet voor je herstellen. Download af en toe een back-up (Instellingen).</p>
-          <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Account aanmaken</button></form>
+          <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Account aanmaken</button></form>` : '<p class="small muted">Nieuwe accounts kunnen enkel met een Google-account.</p>'}
         <p class="small legal-links">Al een account? <a href="#" data-action="auth-login">Meld je aan</a></p>
         <p class="small muted legal-links">Door een account aan te maken ga je akkoord met de <a href="voorwaarden.html" target="_blank" rel="noopener">gebruiksvoorwaarden</a> en de <a href="privacy.html" target="_blank" rel="noopener">privacyverklaring</a>.</p></div>`;
     }
@@ -2891,6 +2938,17 @@
       closeModal();
       commit(`Import ongedaan gemaakt: ${n} transacties verwijderd`);
     },
+    'cancel-link': el => {
+      const p = C.cancellationPairs(state).find(x => x.income.id === el.dataset.in && x.expense.id === el.dataset.out);
+      if (p) linkCancellations([p]);
+    },
+    'cancel-link-all': () => { const list = C.cancellationPairs(state); if (list.length && confirm(`${list.length} inkomsten koppelen aan de uitgave met hetzelfde bedrag?`)) linkCancellations(list); },
+    'cancel-dismiss': el => {
+      const t = txById(el.dataset.in);
+      if (!t) return;
+      t.notRefundOf = (t.notRefundOf || []).concat([el.dataset.out]);
+      commit();
+    },
     'bank-filter': el => { ui.bank.account = ui.bank.account === el.dataset.id ? '' : el.dataset.id; ui.bank.status = ''; render(); },
     'bank-status': el => { ui.bank.status = el.dataset.status; ui.bank.limit = 150; render(); },
     'list-status': el => { ui.list.status = el.dataset.status; ui.list.limit = 150; render(); },
@@ -2925,6 +2983,14 @@
       const open = el.dataset.open === '1';
       el.disabled = true;
       try { await Sync.admin.setRegistration(open); toast(open ? 'Nieuwe accounts zijn nu toegelaten' : 'Nieuwe accounts zijn nu gesloten'); }
+      catch (e) { toast('Lukte niet: ' + e.message); }
+      loadAdmin();
+    },
+    'admin-signup': async el => {
+      const on = el.dataset.on === '1';
+      const what = el.dataset.key === 'signupGoogle' ? 'met Google' : 'met gebruikersnaam en wachtwoord';
+      el.disabled = true;
+      try { await Sync.admin.setSite({ [el.dataset.key]: on }); toast(`Nieuwe accounts ${what}: ${on ? 'aan' : 'uit'}`); }
       catch (e) { toast('Lukte niet: ' + e.message); }
       loadAdmin();
     },

@@ -61,7 +61,7 @@ function handle(string $method, string $path): void {
         send(200, array_merge($me ? user_public($user, $me) : ['user' => null, 'role' => 'none'], [
             'setupRequired' => $code !== null,
             'setupHint' => $code !== null ? 'De setupcode staat in het bestand SETUPCODE.txt in de map helder-data op je hosting (DirectAdmin → File Manager).' : null,
-            'auth' => ['google' => google_configured(), 'registration' => site_settings()['registration']],
+            'auth' => ['google' => google_configured(), 'registration' => site_settings()['registration'], 'signupGoogle' => google_configured() && signup_allowed('google'), 'signupPassword' => signup_allowed('password')],
             'features' => ['ai' => $aiOk, 'aiModel' => $aiOk ? ai_model() : null, 'bank' => $role === 'owner', 'saxo' => $role === 'owner'],
         ]));
         return;
@@ -172,7 +172,7 @@ function handle(string $method, string $path): void {
     if (strpos($path, '/api/admin/') === 0) {
         if ($role !== 'admin') throw new HttpError(403, 'Enkel voor de beheerder');
         if ($path === '/api/admin/overview' && $method === 'GET') { send(200, admin_overview()); return; }
-        if ($path === '/api/admin/site' && $method === 'POST') { $b = body(); send(200, save_site_settings(['registration' => !empty($b['registrationOpen']) ? 'open' : 'closed'])); return; }
+        if ($path === '/api/admin/site' && $method === 'POST') { send(200, save_site_settings(site_changes(body()))); return; }
         if ($path === '/api/admin/user' && $method === 'POST') { send(200, admin_user_action($user, body())); return; }
         throw new HttpError(404, 'Onbekend');
     }

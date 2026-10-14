@@ -32,7 +32,24 @@ function create(store) {
   const { readJson, writeJson, withLock, getUsers, hashPassword, verifyPassword, userFile, dataDir } = store;
   const googleConfigured = () => !!(process.env.FLUX_GOOGLE_CLIENT_ID && process.env.FLUX_GOOGLE_CLIENT_SECRET);
 
-  async function siteSettings() { const s = await readJson('site.json', {}); return { registration: s.registration === 'open' ? 'open' : 'closed' }; }
+  async function siteSettings() {
+    const s = await readJson('site.json', {});
+    // Per manier van aanmelden apart aan of uit te zetten (standaard beide aan)
+    return { registration: s.registration === 'open' ? 'open' : 'closed', signupGoogle: s.signupGoogle !== false, signupPassword: s.signupPassword !== false };
+  }
+  /** Mag iemand nu een nieuw account aanmaken via 'google' of 'password'? */
+  async function signupAllowed(how) {
+    const s = await siteSettings();
+    return s.registration === 'open' && (how === 'google' ? s.signupGoogle : s.signupPassword);
+  }
+  /** Enkel de meegegeven instellingen wijzigen. */
+  function siteChanges(b) {
+    const c = {};
+    if ('registrationOpen' in b) c.registration = b.registrationOpen ? 'open' : 'closed';
+    if ('signupGoogle' in b) c.signupGoogle = !!b.signupGoogle;
+    if ('signupPassword' in b) c.signupPassword = !!b.signupPassword;
+    return c;
+  }
   async function saveSite(changes) {
     return withLock('site', async () => { const s = Object.assign(await readJson('site.json', {}), changes); await writeJson('site.json', s); return siteSettings(); });
   }
@@ -91,7 +108,7 @@ function create(store) {
 
   /** Zelf een account aanmaken met gebruikersnaam en wachtwoord (enkel als nieuwe accounts open staan). */
   async function register(req, b) {
-    if ((await siteSettings()).registration !== 'open') throw store.httpError(403, 'Nieuwe accounts kunnen op dit moment niet aangemaakt worden');
+    if (!await signupAllowed('password')) throw store.httpError(403, 'Nieuwe accounts met gebruikersnaam en wachtwoord kunnen op dit moment niet aangemaakt worden');
     const name = String(b.username || '').trim(), pw = String(b.password || '');
     if (!/^[a-zA-Z0-9._-]{2,40}$/.test(name)) throw store.httpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
     if (name.startsWith('g_')) throw store.httpError(400, 'Deze gebruikersnaam is niet toegelaten');
@@ -170,7 +187,7 @@ function create(store) {
         await writeJson('users.json', users);
         return 'existing';
       }
-      if ((await siteSettings()).registration !== 'open') return 'closed';
+      if (!await signupAllowed('google')) return 'closed';
       users[username] = { created: new Date().toISOString(), google: profile, displayName: profile.name || profile.email };
       await writeJson('users.json', users);
       return 'new';
@@ -222,7 +239,7 @@ function create(store) {
     return { ok: true };
   }
 
-  return { googleConfigured, siteSettings, saveSite, logLogin, ensureAdmin, register, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
+  return { googleConfigured, siteSettings, signupAllowed, siteChanges, saveSite, logLogin, ensureAdmin, register, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
 }
 
 function authPage(r) {

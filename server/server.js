@@ -402,7 +402,7 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/session' && req.method === 'GET') {
     return send(res, 200, Object.assign(me ? Accounts.userPublic(user, me) : { user: null, role: 'none' }, {
       setupRequired: !!setupCode,
-      auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration },
+      auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration, signupGoogle: Acc.googleConfigured() && await Acc.signupAllowed('google'), signupPassword: await Acc.signupAllowed('password') },
       features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, bank: role === 'owner', saxo: role === 'owner' }
     }));
   }
@@ -494,7 +494,7 @@ async function handleApi(req, res, pathname, query) {
   if (pathname.startsWith('/api/admin/')) {
     if (role !== 'admin') throw httpError(403, 'Enkel voor de beheerder');
     if (pathname === '/api/admin/overview' && req.method === 'GET') return send(res, 200, await Acc.overview(req));
-    if (pathname === '/api/admin/site' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Acc.saveSite({ registration: b.registrationOpen ? 'open' : 'closed' })); }
+    if (pathname === '/api/admin/site' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Acc.saveSite(Acc.siteChanges(b))); }
     if (pathname === '/api/admin/user' && req.method === 'POST') return send(res, 200, await Acc.userAction(user, await readBody(req)));
     throw httpError(404, 'Onbekend');
   }

@@ -381,6 +381,7 @@
         let score = 100 - age;
         if (keyword) score += 30;
         if (txName && normalizeName(o.counterparty) === txName) score += 40;
+        if (-o.amount === tx.amount) score += 50; // exact hetzelfde bedrag: wellicht een annulering
         const ratio = tx.amount / -o.amount;
         if (ratio > 0.2 && ratio < 0.9) score += 15; // typisch "deel" van een rekening
         return { tx: o, score, openAmount };
@@ -388,6 +389,42 @@
       .filter(Boolean)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit || 8);
+  }
+
+  /**
+   * Inkomsten met exact hetzelfde bedrag als een eerdere uitgave: meestal een geannuleerde bestelling
+   * of een terugstorting. Elke uitgave en inkomst hoogstens één keer; zelfde tegenpartij eerst.
+   */
+  function cancellationPairs(state) {
+    const refunded = refundTotals(state);
+    const special = t => t.isTransfer || (t.splits && t.splits.length) || t.categoryId === SYS_ADVANCE || t.categoryId === SYS_INVEST;
+    const byAmount = new Map();
+    for (const o of state.transactions) {
+      if (o.amount >= 0 || o.refundOf || refunded[o.id] || special(o)) continue;
+      if (!byAmount.has(-o.amount)) byAmount.set(-o.amount, []);
+      byAmount.get(-o.amount).push(o);
+    }
+    const cands = [];
+    for (const t of state.transactions) {
+      if (t.amount <= 0 || t.refundOf || special(t) || (t.categoryId && t.categorySource === 'manual')) continue;
+      const name = normalizeName(t.counterparty);
+      for (const o of byAmount.get(t.amount) || []) {
+        if ((t.notRefundOf || []).includes(o.id)) continue;
+        const days = daysBetween(o.date, t.date);
+        const sameName = !!name && normalizeName(o.counterparty) === name;
+        if (days < 0 || days > (sameName ? 60 : 7)) continue;
+        cands.push({ income: t, expense: o, days, sameName, score: (sameName ? 100 : 0) + (o.accountId === t.accountId ? 10 : 0) - days });
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    const used = new Set();
+    const out = [];
+    for (const c of cands) {
+      if (used.has(c.income.id) || used.has(c.expense.id)) continue;
+      used.add(c.income.id); used.add(c.expense.id);
+      out.push({ income: c.income, expense: c.expense, days: c.days, sameName: c.sameName });
+    }
+    return out.sort((a, b) => b.income.date.localeCompare(a.income.date));
   }
 
   function looksLikeRefund(tx) {
@@ -1125,7 +1162,7 @@
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
-    detectTransfers, splitLines, validateSplits, allocations, refundTotals, suggestRefundTargets, looksLikeRefund,
+    detectTransfers, splitLines, validateSplits, allocations, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,

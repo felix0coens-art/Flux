@@ -90,7 +90,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
     };
     try {
       const s0 = await call('GET', '/api/session');
-      assert.deepEqual(s0.json.auth, { google: true, registration: 'closed' });
+      assert.deepEqual(s0.json.auth, { google: true, registration: 'closed', signupGoogle: false, signupPassword: false });
 
       assert.equal((await call('POST', '/api/register', { username: 'vroeg', password: 'vroeg-geheim-1' })).status, 403, 'registratie gesloten');
       // Registratie gesloten: een nieuwe Google-gebruiker kan niet binnen
@@ -136,6 +136,18 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       // Hergebruik van de state mag niet
       assert.equal((await call('GET', '/api/auth/google/callback?code=x&state=verzonnen')).status, 400);
 
+      // De beheerder zet nieuwe accounts per manier uit (en weer aan)
+      const offPw = await call('POST', '/api/admin/site', { signupPassword: false }, ac);
+      assert.deepEqual(offPw.json, { registration: 'open', signupGoogle: true, signupPassword: false }, 'enkel de gevraagde instelling wijzigt');
+      assert.deepEqual((await call('GET', '/api/session')).json.auth, { google: true, registration: 'open', signupGoogle: true, signupPassword: false });
+      assert.equal((await call('POST', '/api/register', { username: 'dirk', password: 'dirk-geheim-1' })).status, 403, 'zonder Google kan niet meer');
+      await call('POST', '/api/admin/site', { signupPassword: true, signupGoogle: false }, ac);
+      const noG = await googleLogin({ sub: '1004', email: 'nieuw@example.com', name: 'Nieuw' });
+      assert.equal(noG.status, 400, 'nieuwe Google-accounts staan uit');
+      assert.equal((await googleLogin({ sub: '1001', email: 'an@example.com', name: 'An Peeters' })).status, 302, 'bestaande Google-gebruikers kunnen wel nog aanmelden');
+      assert.equal((await call('POST', '/api/admin/site', { signupGoogle: true }, ac)).json.signupGoogle, true);
+      assert.equal((await call('POST', '/api/admin/site', { signupGoogle: true }, an)).status, 403, 'enkel de beheerder');
+
       // Zonder Google: zelf een account met gebruikersnaam en wachtwoord
       const reg = await call('POST', '/api/register', { username: 'carla', password: 'carla-geheim-1', displayName: 'Carla V.' });
       assert.equal(reg.status, 200, reg.text);
@@ -167,7 +179,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.equal(ov.status, 200);
       const anRow = ov.json.users.find(u => u.email === 'an@example.com');
       assert.equal(anRow.role, 'member');
-      assert.equal(anRow.logins, 2);
+      assert.equal(anRow.logins, 3);
       assert.equal(anRow.transactions, 1);
       assert.equal(anRow.ai, false, 'AI standaard uit voor Google-gebruikers');
       assert.ok(!ov.text.includes('Bakker'), 'geen transacties zichtbaar voor de beheerder');

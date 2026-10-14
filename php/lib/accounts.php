@@ -20,7 +20,27 @@ function google_configured(): bool { return cfg('FLUX_GOOGLE_CLIENT_ID', '') !==
 
 function site_settings(): array {
     $s = read_json('site.json', []);
-    return ['registration' => ($s['registration'] ?? 'closed') === 'open' ? 'open' : 'closed'];
+    return [
+        'registration' => ($s['registration'] ?? 'closed') === 'open' ? 'open' : 'closed',
+        // Per manier van aanmelden apart aan of uit te zetten (standaard beide aan)
+        'signupGoogle' => ($s['signupGoogle'] ?? true) !== false,
+        'signupPassword' => ($s['signupPassword'] ?? true) !== false,
+    ];
+}
+
+/** Mag iemand nu een nieuw account aanmaken via 'google' of 'password'? */
+function signup_allowed(string $how): bool {
+    $s = site_settings();
+    return $s['registration'] === 'open' && ($how === 'google' ? $s['signupGoogle'] : $s['signupPassword']);
+}
+
+/** Enkel de meegegeven instellingen wijzigen. */
+function site_changes(array $b): array {
+    $c = [];
+    if (array_key_exists('registrationOpen', $b)) $c['registration'] = !empty($b['registrationOpen']) ? 'open' : 'closed';
+    if (array_key_exists('signupGoogle', $b)) $c['signupGoogle'] = !empty($b['signupGoogle']);
+    if (array_key_exists('signupPassword', $b)) $c['signupPassword'] = !empty($b['signupPassword']);
+    return $c;
 }
 
 function save_site_settings(array $changes): array {
@@ -127,7 +147,7 @@ function delete_own_account(string $username): void {
 
 /** Zelf een account aanmaken met gebruikersnaam en wachtwoord (enkel als nieuwe accounts open staan). */
 function register_user(array $b): string {
-    if (site_settings()['registration'] !== 'open') throw new HttpError(403, 'Nieuwe accounts kunnen op dit moment niet aangemaakt worden');
+    if (!signup_allowed('password')) throw new HttpError(403, 'Nieuwe accounts met gebruikersnaam en wachtwoord kunnen op dit moment niet aangemaakt worden');
     $name = trim((string) ($b['username'] ?? ''));
     $pw = (string) ($b['password'] ?? '');
     if (!valid_username($name)) throw new HttpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
@@ -208,7 +228,7 @@ function google_callback(callable $fetch, array $q): array {
             write_json('users.json', $users);
             return 'existing';
         }
-        if (site_settings()['registration'] !== 'open') return 'closed';
+        if (!signup_allowed('google')) return 'closed';
         $users[$username] = ['created' => gmdate('c'), 'google' => $profile, 'displayName' => $profile['name'] ?: $profile['email']];
         write_json('users.json', $users);
         return 'new';

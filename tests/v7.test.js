@@ -1,0 +1,39 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const C = require('../js/core.js');
+const Store = require('../js/store.js');
+
+const tx = (id, date, amount, counterparty, extra) => Object.assign({ id, accountId: 'acc_cash', date, amount, counterparty, description: '', splits: [], source: 'import' }, extra || {});
+
+test('annuleringen: inkomst met hetzelfde bedrag als een eerdere uitgave wordt voorgesteld', () => {
+  const s = Store.defaultState();
+  s.transactions.push(
+    tx('o1', '2026-10-01', -4999, 'BOL.COM'),
+    tx('i1', '2026-10-06', 4999, 'bol.com'),          // annulering, zelfde winkel
+    tx('o2', '2026-09-01', -2500, 'Zalando'),
+    tx('i2', '2026-09-03', 2500, 'Jan Peeters'),      // andere naam, maar binnen 7 dagen
+    tx('o3', '2026-06-01', -1000, 'Fnac'),
+    tx('i3', '2026-08-15', 1000, 'Iemand'),           // andere naam en te lang geleden
+    tx('i4', '2026-09-20', 1000, 'Fnac'),             // vóór... nee: na de uitgave, zelfde naam maar > 60 dagen
+    tx('o5', '2026-10-10', -800, 'Shop'),
+    tx('i5', '2026-10-08', 800, 'Shop'),              // inkomst vóór de uitgave: geen annulering
+    tx('o6', '2026-10-02', -3000, 'Coolblue'),
+    tx('o7', '2026-10-03', -3000, 'Coolblue'),
+    tx('i6', '2026-10-09', 3000, 'Coolblue'),         // twee kandidaten, maar maar één keer koppelen
+    tx('i7', '2026-10-09', 3000, 'Werkgever', { categoryId: 'cat_boodschappen', categorySource: 'manual' }) // zelf ingedeeld
+  );
+  const pairs = C.cancellationPairs(s);
+  const ids = pairs.map(p => p.income.id + '>' + p.expense.id);
+  assert.deepEqual(ids, ['i6>o7', 'i1>o1', 'i2>o2']);
+  assert.equal(pairs.find(p => p.income.id === 'i1').sameName, true);
+  // Koppelen = terugbetaling: niet meer voorgesteld, en netto geen uitgave
+  s.transactions.find(t => t.id === 'i1').refundOf = 'o1';
+  C.recompute(s);
+  assert.ok(!C.cancellationPairs(s).some(p => p.income.id === 'i1'));
+  // "Nee": dit paar niet meer voorstellen
+  s.transactions.find(t => t.id === 'i6').notRefundOf = ['o7'];
+  assert.deepEqual(C.cancellationPairs(s).map(p => p.income.id + '>' + p.expense.id), ['i6>o6', 'i2>o2']);
+  // In het venster van een transactie staat de uitgave met hetzelfde bedrag bovenaan
+  assert.equal(C.suggestRefundTargets(s, s.transactions.find(t => t.id === 'i2'))[0].tx.id, 'o2');
+});

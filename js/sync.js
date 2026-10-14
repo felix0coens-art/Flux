@@ -280,6 +280,7 @@
   const admin = {
     overview: () => api('GET', '/api/admin/overview'),
     setRegistration: open => api('POST', '/api/admin/site', { registrationOpen: !!open }),
+    setSite: changes => api('POST', '/api/admin/site', changes),
     user: (username, action) => api('POST', '/api/admin/user', { username, action })
   };
 

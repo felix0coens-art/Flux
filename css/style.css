@@ -527,3 +527,7 @@ tr.is-disabled td { opacity: .55; }
 .trash[open] summary { margin-bottom: 8px; }
 #toast.has-action { white-space: nowrap; }
 @media (max-width: 420px) { #toast.has-action { white-space: normal; min-width: 280px; } }
+.reg-state.reg-method { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.reg-method .reg-badge { min-width: 56px; text-align: center; }
+.cancel-pair .btn { flex-shrink: 0; }
+.topbar #topbar-logout { flex-shrink: 0; }
