@@ -52,6 +52,7 @@ function eb_call(callable $fetch, array $c, string $method, string $path, $body 
     if (is_array($j['detail'] ?? null)) $msg = json_encode($j['detail']);
     $text = 'Enable Banking: ' . ($msg !== '' ? $msg : 'HTTP ' . $r['status']);
     if ($r['status'] === 401 && preg_match('/session|expired|consent|revoked/i', $code . ' ' . $msg)) throw new BankError('De toestemming bij je bank is verlopen of ingetrokken. Koppel je bank opnieuw.', 401, 'expired');
+    if (preg_match('/not active|inactive|not activated/i', $msg)) throw new BankError('Je Enable Banking-app is nog niet actief. Ga naar het Control Panel van Enable Banking, open je app en klik op “Activate by linking accounts”: meld je daar aan bij je bank en kies je rekeningen. Daarna werkt de koppeling in Helder.', 400, 'inactive');
     if ($r['status'] === 401 || $r['status'] === 403) throw new BankError($text . ' (klopt de app-ID en de sleutel? Is de app actief?)', 400, 'config');
     if ($r['status'] === 429) throw new BankError('Je bank laat even geen nieuwe verzoeken toe (limiet bereikt). Probeer later opnieuw.', 429, 'limit');
     throw new BankError($text, $r['status'] >= 500 ? 502 : 400, $code === 'REDIRECT_URI_NOT_ALLOWED' ? 'redirect' : 'api');

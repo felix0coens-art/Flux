@@ -1313,7 +1313,7 @@
                    ['Terms URL of the application', location.origin + '/voorwaarden']].map(([k, v]) => `<tr><td class="small muted">${esc(k)}</td><td><code>${esc(v)}</code></td><td>${v === 'je eigen e-mailadres' ? '' : `<button class="btn small" data-action="copy" data-copy="${esc(v)}">Kopieer</button>`}</td></tr>`).join('')}
               </tbody></table></li>
             <li>Klik op <strong>Register</strong>. Je browser downloadt een <code>.pem</code>-bestand (de sleutel): bewaar het goed.</li></ul></li>
-        <li>Activeer de app door <strong>je eigen rekeningen te koppelen</strong> (in het Control Panel bij de app). Zo werkt ze enkel voor jouw rekeningen ("restricted" modus).</li>
+        <li><strong>Belangrijk — activeer de app:</strong> klik in het Control Panel bij je app op <strong>Activate by linking accounts</strong>, meld je aan bij je bank en duid je rekeningen aan. Zonder deze stap krijg je de fout “Application is not active”. De app werkt daarna enkel voor de rekeningen die je daar aanduidde.</li>
         <li>Vul hieronder de <strong>Application ID</strong> in en kies het <code>.pem</code>-bestand.</li>
       </ol>
       <form data-form="bank-setup" class="form-stack" autocomplete="off">
@@ -1357,11 +1357,21 @@
       <p class="small muted">Je gaat naar je eigen bank om aan te melden (itsme, kaartlezer of bank-app) en geeft Helder leestoegang tot je rekeningen. Daarna kom je vanzelf terug.</p>
       <div class="filters"><select id="eb-country">${[['BE', 'België'], ['NL', 'Nederland'], ['LU', 'Luxemburg'], ['FR', 'Frankrijk'], ['DE', 'Duitsland']].map(([v, l]) => `<option value="${v}" ${m.country === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <input type="search" id="eb-search" placeholder="Zoek je bank…" value="${esc(m.search || '')}"></div>
-      ${m.error ? `<div class="errors">${esc(m.error)}</div>` : ''}
+      ${m.error && m.errorKind === 'inactive' ? `<div class="notice">
+          <strong>Je Enable Banking-app moet nog geactiveerd worden.</strong>
+          <ol class="steps small">
+            <li>Ga naar <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener">enablebanking.com → Control Panel → API applications</a>.</li>
+            <li>Klik bij je app <em>Helder</em> op <strong>Activate by linking accounts</strong>.</li>
+            <li>Kies je bank (bv. Belfius), meld je aan bij je bank en duid je rekeningen aan.</li>
+            <li>Kom terug naar Helder en probeer opnieuw.</li>
+          </ol>
+          <p class="small muted">Zo werkt de gratis app enkel voor de rekeningen die je daar aanduidt. Wil je later nog een bank toevoegen, koppel die dan eerst ook daar.</p>
+          <button class="btn small" data-action="bank-retry-aspsps">Opnieuw proberen</button></div>`
+        : m.error ? `<div class="errors">${esc(m.error)}</div>` : ''}
       ${!m.aspsps ? '<p class="muted">Banken laden…</p>' : `
         ${popular.length ? `<div class="bank-choices">${popular.map(btn).join('')}</div>` : ''}
         ${rest.length ? `<details ${q ? 'open' : ''}><summary class="small">Andere banken (${rest.length})</summary><div class="bank-choices">${rest.map(btn).join('')}</div></details>` : ''}
-        ${!list.length ? '<p class="muted">Geen bank gevonden.</p>' : ''}`}
+        ${!list.length && !m.error ? '<p class="muted">Geen bank gevonden.</p>' : ''}`}
       ${m.busy ? '<p><strong>Doorsturen naar je bank…</strong></p>' : ''}`,
       '<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>', true);
   }
@@ -1371,7 +1381,7 @@
     m.aspsps = null; m.error = '';
     renderModal();
     try { const r = await Sync.bank.aspsps(m.country); if (modal === m) { m.aspsps = r.aspsps; renderModal(); } }
-    catch (e) { if (modal === m) { m.aspsps = []; m.error = e.message; renderModal(); } }
+    catch (e) { if (modal === m) { m.aspsps = []; m.error = e.message; m.errorKind = e.code || ''; renderModal(); } }
   }
 
   async function startBankConnect(name, country, maxDays) {
@@ -3146,6 +3156,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       try { await Sync.bank.removeConfig(); closeModal(); toast('Instelling verwijderd'); } catch (e) { toast(e.message); }
       loadBankLink();
     },
+    'bank-retry-aspsps': () => loadAspsps(),
     'copy': el => { try { navigator.clipboard.writeText(el.dataset.copy); toast('Gekopieerd'); } catch (e) { toast('Kopiëren lukte niet: selecteer en kopieer de tekst zelf.'); } },
     'edit-tx': el => { const t = txById(el.dataset.id); if (t) openModal({ type: 'tx', tx: JSON.parse(JSON.stringify(t)) }); },
     'save-tx': saveTx,

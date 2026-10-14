@@ -59,6 +59,7 @@ function create(store) {
     if (j && j.detail && typeof j.detail === 'object') msg = JSON.stringify(j.detail);
     const full = 'Enable Banking: ' + (msg || 'HTTP ' + res.status);
     if (res.status === 401 && /session|expired|consent|revoked/i.test(code + ' ' + msg)) throw new BankError('De toestemming bij je bank is verlopen of ingetrokken. Koppel je bank opnieuw.', 401, 'expired');
+    if (/not active|inactive|not activated/i.test(msg)) throw new BankError('Je Enable Banking-app is nog niet actief. Ga naar het Control Panel van Enable Banking, open je app en klik op “Activate by linking accounts”: meld je daar aan bij je bank en kies je rekeningen. Daarna werkt de koppeling in Helder.', 400, 'inactive');
     if (res.status === 401 || res.status === 403) throw new BankError(full + ' (klopt de app-ID en de sleutel? Is de app actief?)', 400, 'config');
     if (res.status === 429) throw new BankError('Je bank laat even geen nieuwe verzoeken toe (limiet bereikt). Probeer later opnieuw.', 429, 'limit');
     throw new BankError(full, res.status >= 500 ? 502 : 400, code === 'REDIRECT_URI_NOT_ALLOWED' ? 'redirect' : 'api');
