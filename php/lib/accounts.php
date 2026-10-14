@@ -54,11 +54,14 @@ function user_may_ai(?array $u): bool { return $u && (user_role($u) === 'owner' 
 function log_login(string $username, string $method, bool $ok, string $detail = ''): void {
     with_lock('logins', function () use ($username, $method, $ok, $detail) {
         $list = read_json('logins.json', []);
+        $cut = gmdate('c', time() - 183 * 86400); // logboek: maximaal 6 maanden
+        $list = array_values(array_filter($list, fn($l) => ($l['at'] ?? '') >= $cut));
         $list[] = ['at' => gmdate('c'), 'user' => $username, 'method' => $method, 'ok' => $ok, 'detail' => $detail,
             'ip' => client_ip(), 'ua' => substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 160)];
         if (count($list) > 2000) $list = array_slice($list, -2000);
         write_json('logins.json', $list);
     });
+    purge_old_backups();
     if ($ok) {
         with_lock('users', function () use ($username) {
             $users = get_users();
@@ -84,6 +87,42 @@ function ensure_admin(string $username): void {
             write_json('users.json', $users);
         }
     });
+}
+
+/**
+ * Bewaartermijnen: gegevens van verwijderde accounts en back-ups van gebruikers die niet meer bestaan
+ * worden na 30 dagen gewist.
+ */
+function purge_old_backups(): void {
+    $dir = data_dir() . '/backups';
+    if (!is_dir($dir)) return;
+    $users = get_users();
+    $known = array_map(fn($n) => preg_replace('/\.json$/', '', user_file((string) $n)), array_keys($users));
+    $limit = time() - 30 * 86400;
+    foreach (scandir($dir) ?: [] as $f) {
+        if ($f[0] === '.' || @filemtime("$dir/$f") > $limit) continue;
+        $orphan = strpos($f, 'user-') === 0 && !array_filter($known, fn($k) => strpos($f, $k . '-') === 0);
+        if (strpos($f, 'verwijderd-') === 0 || $orphan) @unlink("$dir/$f");
+    }
+}
+
+/** Een gebruiker verwijdert zijn eigen account: alles meteen weg, ook de back-ups. */
+function delete_own_account(string $username): void {
+    with_lock('users', function () use ($username) {
+        $users = get_users();
+        unset($users[$username]);
+        write_json('users.json', $users);
+    });
+    $base = preg_replace('/\.json$/', '', user_file($username));
+    foreach ([user_file($username), 'bank-' . bin2hex($username) . '.json'] as $f) @unlink(data_dir() . '/' . $f);
+    $dir = data_dir() . '/backups';
+    foreach (is_dir($dir) ? (scandir($dir) ?: []) : [] as $f) if (strpos($f, $base . '-') === 0 || strpos($f, $base . '.json') !== false) @unlink("$dir/$f");
+    with_lock('sessions', function () use ($username) {
+        $s = read_json('sessions.json', []);
+        foreach ($s as $k => $v) if (($v['username'] ?? '') === $username) unset($s[$k]);
+        write_json('sessions.json', $s);
+    });
+    log_login($username, 'account', true, 'account verwijderd door gebruiker');
 }
 
 // ---------- Google ----------

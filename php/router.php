@@ -9,7 +9,7 @@ $path = rawurldecode((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_
 
 if (strpos($path, '/api/') === 0) { require $root . '/api.php'; return true; }
 
-$static = ['/' => 'index.html', '/index.html' => 'index.html', '/sw.js' => 'sw.js', '/manifest.webmanifest' => 'manifest.webmanifest'];
+$static = ['/' => 'index.html', '/index.html' => 'index.html', '/sw.js' => 'sw.js', '/manifest.webmanifest' => 'manifest.webmanifest', '/privacy.html' => 'privacy.html', '/voorwaarden.html' => 'voorwaarden.html'];
 $rel = $static[$path] ?? null;
 $p = ltrim($path, '/');
 if (!$rel && preg_match('#^(css|js|icons|fonts)/[a-zA-Z0-9/_.-]+$#', $p) && strpos($p, '..') === false) $rel = $p;

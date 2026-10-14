@@ -40,9 +40,12 @@ function create(store) {
   async function logLogin(req, username, method, ok, detail) {
     await withLock('logins', async () => {
       const list = await readJson('logins.json', []);
+      const cut = new Date(Date.now() - 183 * 86400000).toISOString().replace(/\.\d{3}Z$/, '+00:00'); // logboek: maximaal 6 maanden
+      for (let i = list.length - 1; i >= 0; i--) if (String(list[i].at || '') < cut) list.splice(i, 1);
       list.push({ at: new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00'), user: username, method, ok, detail: detail || '', ip: store.clientIp(req), ua: String(req.headers['user-agent'] || '').slice(0, 160) });
       await writeJson('logins.json', list.slice(-2000));
     });
+    await purgeOldBackups();
     if (ok) {
       await withLock('users', async () => {
         const users = await getUsers();
@@ -52,6 +55,38 @@ function create(store) {
         await writeJson('users.json', users);
       });
     }
+  }
+
+  /** Gegevens van verwijderde accounts en back-ups van gebruikers die niet meer bestaan: na 30 dagen gewist. */
+  async function purgeOldBackups() {
+    const dir = path.join(dataDir, 'backups');
+    let files = [];
+    try { files = fs.readdirSync(dir); } catch (e) { return; }
+    const known = Object.keys(await getUsers()).map(n => userFile(n).replace(/\.json$/, ''));
+    const limit = Date.now() - 30 * 86400000;
+    for (const f of files) {
+      let mt = Infinity;
+      try { mt = fs.statSync(path.join(dir, f)).mtimeMs; } catch (e) { continue; }
+      if (f.startsWith('.') || mt > limit) continue;
+      const orphan = f.startsWith('user-') && !known.some(k => f.startsWith(k + '-'));
+      if (f.startsWith('verwijderd-') || orphan) { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { /* al weg */ } }
+    }
+  }
+
+  /** Een gebruiker verwijdert zijn eigen account: alles meteen weg, ook de back-ups. */
+  async function deleteOwn(req, username) {
+    await withLock('users', async () => { const users = await getUsers(); delete users[username]; await writeJson('users.json', users); });
+    const base = userFile(username).replace(/\.json$/, '');
+    for (const f of [userFile(username), 'bank-' + Buffer.from(username).toString('hex') + '.json']) { try { fs.unlinkSync(path.join(dataDir, f)); } catch (e) { /* geen */ } }
+    let files = [];
+    try { files = fs.readdirSync(path.join(dataDir, 'backups')); } catch (e) { files = []; }
+    for (const f of files) if (f.startsWith(base + '-') || f.includes(base + '.json')) { try { fs.unlinkSync(path.join(dataDir, 'backups', f)); } catch (e) { /* al weg */ } }
+    await withLock('sessions', async () => {
+      const s = await readJson('sessions.json', {});
+      for (const [k, v] of Object.entries(s)) if (v.username === username) delete s[k];
+      await writeJson('sessions.json', s);
+    });
+    await logLogin(req, username, 'account', true, 'account verwijderd door gebruiker');
   }
 
   async function ensureAdmin(username) {
@@ -169,7 +204,7 @@ function create(store) {
     return { ok: true };
   }
 
-  return { googleConfigured, siteSettings, saveSite, logLogin, ensureAdmin, googleStart, googleCallback, overview, userAction };
+  return { googleConfigured, siteSettings, saveSite, logLogin, ensureAdmin, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
 }
 
 function authPage(r) {

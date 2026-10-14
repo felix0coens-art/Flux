@@ -3,7 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=8080 FLUX_DATA_DIR=/data
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY index.html manifest.webmanifest sw.js ./
+COPY index.html privacy.html voorwaarden.html manifest.webmanifest sw.js ./
 COPY css ./css
 COPY js ./js
 COPY icons ./icons

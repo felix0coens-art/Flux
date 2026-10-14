@@ -350,7 +350,7 @@ function readBody(req) {
 }
 
 const STATIC = {
-  '/': 'index.html', '/index.html': 'index.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest'
+  '/': 'index.html', '/index.html': 'index.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/privacy.html': 'privacy.html', '/voorwaarden.html': 'voorwaarden.html'
 };
 const STATIC_DIRS = ['css/', 'js/', 'icons/', 'fonts/'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
@@ -472,6 +472,14 @@ async function handleApi(req, res, pathname, query) {
     throw httpError(404, 'Onbekend');
   }
   if (role === 'admin' && pathname !== '/api/password') throw httpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
+
+  if (pathname === '/api/account/delete' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (role !== 'member') throw httpError(400, 'Dit account kan je hier niet verwijderen');
+    if (b.confirm !== 'VERWIJDER') throw httpError(400, 'Typ VERWIJDER om te bevestigen');
+    await Acc.deleteOwn(req, user);
+    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+  }
 
   if (pathname.startsWith('/api/bank/')) {
     if (role !== 'owner') throw httpError(403, 'De bankkoppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');

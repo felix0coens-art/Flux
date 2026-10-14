@@ -178,7 +178,7 @@ Andere mensen kunnen een eigen Helder-account aanmaken door zich **aan te melden
 
 1. **Google-login aanmaken** (gratis):
    - Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project, bv. *Helder*.
-   - *APIs & Services → OAuth consent screen*: kies *External*, vul de naam (Helder), je e-mailadres en het domein `helderfin.be` in, en publiceer de app.
+   - *APIs & Services → OAuth consent screen*: kies *External*, vul de naam (Helder), je e-mailadres en het domein `helderfin.be` in, en publiceer de app. Vul bij *Branding* ook in: homepage `https://helderfin.be`, privacybeleid `https://helderfin.be/privacy.html`, gebruiksvoorwaarden `https://helderfin.be/voorwaarden.html`.
    - *APIs & Services → Credentials → Create credentials → OAuth client ID*: kies *Web application*.
      - Authorized JavaScript origins: `https://helderfin.be`
      - Authorized redirect URI: `https://helderfin.be/api/auth/google/callback`
@@ -201,7 +201,8 @@ Andere mensen kunnen een eigen Helder-account aanmaken door zich **aan te melden
 
 Goed om te weten:
 - De **bankkoppeling** (Enable Banking) werkt enkel voor jouw eigen account. Je Enable Banking-app staat in "restricted" modus en kan dus enkel jouw rekeningen lezen. Andere gebruikers laden CSV-bestanden op.
-- Bewaar je financiële gegevens van anderen, dan ben je volgens de GDPR verantwoordelijk voor die gegevens. Zet een korte privacyverklaring online (wat je bewaart, waar, en hoe iemand zijn account kan laten verwijderen) voor je de registratie openzet.
+- De **privacyverklaring** (`privacy.html`) en de **gebruiksvoorwaarden** (`voorwaarden.html`) staan op de site, en zijn gelinkt vanop het aanmeldscherm en bij Instellingen. Pas ze aan als er iets verandert aan wat Helder bewaart of met wie het gedeeld wordt. Maak het adres `privacy@helderfin.be` aan in DirectAdmin (*E-Mail Accounts* of *Forwarders*).
+- Gebruikers kunnen hun account zelf verwijderen (*Instellingen → Account verwijderen*). Dan wordt alles meteen gewist, ook de back-ups. Accounts die de beheerder verwijdert, blijven nog 30 dagen als back-up bewaard. Het logboek van aanmeldingen houdt Helder 6 maanden bij.
 
 De andere manieren hieronder gebruiken de Node.js-server.
 

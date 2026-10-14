@@ -135,6 +135,19 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       // Hergebruik van de state mag niet
       assert.equal((await call('GET', '/api/auth/google/callback?code=x&state=verzonnen')).status, 400);
 
+      // Bert maakt een account en verwijdert het zelf weer: alles meteen weg
+      const bert = (await googleLogin({ sub: '1003', email: 'bert@example.com', name: 'Bert' })).cookie;
+      assert.equal((await call('POST', '/api/sync', { changes: C.extractChanges(st, keys), rev: 0, schema: Store.VERSION }, bert)).status, 200);
+      const bertFile = path.join(dir, 'user-' + Buffer.from('g_1003').toString('hex') + '.json');
+      assert.ok(fs.existsSync(bertFile));
+      assert.equal((await call('POST', '/api/account/delete', { confirm: 'ja' }, bert)).status, 400, 'bevestiging nodig');
+      assert.equal((await call('POST', '/api/account/delete', { confirm: 'VERWIJDER' }, owner.cookie)).status, 400, 'eigenaar niet via deze weg');
+      const del = await call('POST', '/api/account/delete', { confirm: 'VERWIJDER' }, bert);
+      assert.equal(del.status, 200);
+      assert.ok(!fs.existsSync(bertFile), 'gegevens gewist');
+      assert.ok(!(fs.existsSync(path.join(dir, 'backups')) ? fs.readdirSync(path.join(dir, 'backups')) : []).some(f => f.startsWith('user-' + Buffer.from('g_1003').toString('hex'))), 'ook geen back-ups meer');
+      assert.equal((await call('GET', '/api/data', null, bert)).status, 401);
+
       // Overzicht voor de beheerder: gebruikers en aanmeldingen, zonder financiële gegevens
       const ov = await call('GET', '/api/admin/overview', null, ac);
       assert.equal(ov.status, 200);
@@ -145,6 +158,8 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.equal(anRow.ai, false, 'AI standaard uit voor Google-gebruikers');
       assert.ok(!ov.text.includes('Bakker'), 'geen transacties zichtbaar voor de beheerder');
       assert.ok(ov.json.logins.some(l => l.method === 'google' && l.ok && l.detail === 'nieuw account'));
+      assert.ok(!ov.json.users.some(u => u.email === 'bert@example.com'), 'verwijderd account staat niet meer in de lijst');
+      assert.ok(ov.json.logins.some(l => l.detail === 'account verwijderd door gebruiker'));
       assert.ok(ov.json.logins.some(l => l.method === 'google' && !l.ok));
       assert.ok(ov.json.logins.some(l => l.method === 'wachtwoord' && l.user === 'eigenaar' && l.ok));
       assert.match(ov.json.logins[0].ua, /iPhone/);

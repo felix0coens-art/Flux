@@ -155,6 +155,15 @@ function handle(string $method, string $path): void {
     }
     if ($role === 'admin' && $path !== '/api/password') throw new HttpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
+    if ($path === '/api/account/delete' && $method === 'POST') {
+        $b = body();
+        if ($role !== 'member') throw new HttpError(400, 'Dit account kan je hier niet verwijderen');
+        if (($b['confirm'] ?? '') !== 'VERWIJDER') throw new HttpError(400, 'Typ VERWIJDER om te bevestigen');
+        delete_own_account($user);
+        send(200, ['ok' => true], ['Set-Cookie' => session_cookie('', 0)]);
+        return;
+    }
+
     if (strpos($path, '/api/bank/') === 0) {
         if ($role !== 'owner') throw new HttpError(403, 'De bankkoppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
         try {

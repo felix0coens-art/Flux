@@ -1763,11 +1763,15 @@
         <div class="card">
           <h2>Account & synchronisatie</h2>
           ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
-          : `<p>Aangemeld als <strong>${esc(sy.user || '')}</strong></p>
+          : `<p>Aangemeld als <strong>${esc((Sync.account && Sync.account.displayName) || sy.user || '')}</strong>${Sync.account && Sync.account.email ? ` <span class="small muted">(${esc(Sync.account.email)}, via Google)</span>` : ''}</p>
             <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
-            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button><button class="btn" data-action="change-password">Wachtwoord wijzigen</button>
+            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.role === 'member' ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
               <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
-            <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>`}
+            <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>
+            ${Sync.account && Sync.account.role === 'member' ? `<details class="danger-zone"><summary class="small">Account verwijderen</summary>
+              <p class="small">Je account en al je gegevens worden meteen en definitief gewist, ook de back-ups op de server. Download eerst een back-up als je je gegevens wil houden.</p>
+              <p class="btn-row"><button class="btn small" data-action="export-json">Back-up downloaden</button><button class="btn small danger" data-action="delete-account">Mijn account verwijderen</button></p></details>` : ''}`}
+          <p class="small muted" style="margin-top:12px"><a href="privacy.html" target="_blank" rel="noopener">Privacyverklaring</a> · <a href="voorwaarden.html" target="_blank" rel="noopener">Gebruiksvoorwaarden</a></p>
         </div>
         <div class="card">
           <h2>Rekeningen</h2>
@@ -2651,7 +2655,8 @@
       <form data-form="login" class="form-stack">
         <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" value="${esc(a.previousUser || '')}" required></label>
         <label class="field"><span>Wachtwoord</span><input type="password" name="password" autocomplete="current-password" required></label>
-        <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Aanmelden</button></form></div>`;
+        <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Aanmelden</button></form>
+      <p class="small muted legal-links">${g ? 'Door aan te melden ga je akkoord met de ' : ''}<a href="voorwaarden.html" target="_blank" rel="noopener">${g ? 'gebruiksvoorwaarden' : 'Gebruiksvoorwaarden'}</a>${g ? ' en de ' : ' · '}<a href="privacy.html" target="_blank" rel="noopener">${g ? 'privacyverklaring' : 'Privacyverklaring'}</a>.</p></div>`;
   }
 
   // ---------- Gegevens ----------
@@ -2725,6 +2730,18 @@
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
     'new-tx': el => openModal({ type: 'tx', tx: newTx(el && el.dataset.account) }),
     'bulk-delete': bulkDelete,
+    'delete-account': async () => {
+      const t = prompt('Je account en al je gegevens worden definitief gewist. Typ VERWIJDER om te bevestigen.');
+      if (t !== 'VERWIJDER') { if (t != null) toast('Niet verwijderd: typ VERWIJDER in hoofdletters.'); return; }
+      try { await Sync.deleteAccount(); } catch (e) { toast(e.message); return; }
+      Store.clear();
+      realState = Store.defaultState();
+      state = realState;
+      snap = C.snapshot(realState);
+      ui.auth = { setupRequired: false, auth: Sync.auth || {} };
+      render();
+      toast('Je account is verwijderd.');
+    },
     'admin-refresh': () => loadAdmin(),
     'admin-user': async el => {
       const u = ui.admin.data.users.find(x => x.user === el.dataset.user);

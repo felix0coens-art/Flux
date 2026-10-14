@@ -514,3 +514,6 @@ tr.is-disabled td { opacity: .55; }
 .chart-wrap text.small-label { font-size: 10.5px; }
 .import-history summary { cursor: pointer; list-style: revert; }
 .import-history[open] summary { margin-bottom: 12px; }
+.danger-zone { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.danger-zone summary { cursor: pointer; color: var(--red); }
+.legal-links { text-align: center; margin: 14px 0 0; }

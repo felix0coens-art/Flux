@@ -219,6 +219,16 @@
     return true;
   }
 
+  /** Eigen account verwijderen (enkel voor accounts via Google). */
+  async function deleteAccount() {
+    await api('POST', '/api/account/delete', { confirm: 'VERWIJDER' });
+    clearInterval(pollTimer);
+    meta = { user: null, rev: 0, dirty: {}, schema: SCHEMA };
+    saveMeta();
+    mode = 'auth';
+    account = null;
+  }
+
   async function changePassword(current, password) {
     return api('POST', '/api/password', { current, password });
   }
@@ -256,7 +266,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices, bank, admin,
+    init, syncNow, noteChanges, login, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },
