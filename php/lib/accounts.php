@@ -69,6 +69,8 @@ function user_public(string $username, array $u): array {
         'picture' => $u['google']['picture'] ?? null,
         // Bestaand account (met gebruikersnaam) dat ook met Google kan aanmelden
         'googleLinked' => $u['googleLink']['email'] ?? null,
+        // Gedeelde boekhouding: wiens gegevens deze gebruiker gebruikt
+        'dataUser' => function_exists('data_user') ? data_user($username, $u) : $username,
     ];
 }
 

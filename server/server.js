@@ -28,6 +28,7 @@ const Prices = require('./prices.js');
 const EnableBanking = require('./enablebanking.js');
 const SaxoLink = require('./saxo.js');
 const FilesLib = require('./files.js');
+const HouseholdLib = require('./household.js');
 const Accounts = require('./accounts.js');
 
 // Koerscache in het geheugen (12 uur)
@@ -119,6 +120,11 @@ const Saxo = SaxoLink.create({
 
 // Bonnetjes (httpError is een function-declaratie, dus hier al bruikbaar)
 const Files = FilesLib.create(DATA_DIR, (status, message) => httpError(status, message));
+
+// Gedeelde boekhouding (huishouden)
+const House = HouseholdLib.create({ readJson, writeJson, withLock, getUsers: () => getUsers(), httpError: (s, m) => httpError(s, m) });
+/** Accountgegevens voor de browser, met wiens boekhouding gebruikt wordt. */
+async function publicUser(name, u) { return Object.assign(Accounts.userPublic(name, u), { dataUser: House.dataUserSync(await getUsers(), name) }); }
 
 const Acc = Accounts.create({
   readJson, writeJson, withLock, getUsers: () => getUsers(), hashPassword: (p) => hashPassword(p), verifyPassword: (p, u) => verifyPassword(p, u),
@@ -438,7 +444,7 @@ async function handleApi(req, res, pathname, query) {
   const aiOk = !!aiKey;
 
   if (pathname === '/api/session' && req.method === 'GET') {
-    return send(res, 200, Object.assign(me ? Accounts.userPublic(user, me) : { user: null, role: 'none' }, {
+    return send(res, 200, Object.assign(me ? await publicUser(user, me) : { user: null, role: 'none' }, {
       setupRequired: !!setupCode,
       auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration, signupGoogle: Acc.googleConfigured() && await Acc.signupAllowed('google'), signupPassword: await Acc.signupAllowed('password') },
       features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, aiOwnKey: !!(user && ((await userKeys(user)).ai || {}).key), aiServer: AI.available() && Accounts.mayAi(me), bank: !!me && role !== 'admin', saxo: !!me && role !== 'admin' }
@@ -497,7 +503,7 @@ async function handleApi(req, res, pathname, query) {
     if (u.disabled) { await Acc.logLogin(req, b.username, 'wachtwoord', false, 'account geblokkeerd'); throw httpError(403, 'Dit account is geblokkeerd'); }
     await Acc.logLogin(req, b.username, 'wachtwoord', true);
     const token = await createSession(b.username);
-    return send(res, 200, Accounts.userPublic(b.username, u), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+    return send(res, 200, await publicUser(b.username, u), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
   }
 
   if (pathname === '/api/register' && req.method === 'POST') {
@@ -505,7 +511,7 @@ async function handleApi(req, res, pathname, query) {
     recordAttempt(req); // ook geslaagde registraties tellen mee, tegen massaal aanmaken
     const name = await Acc.register(req, await readBody(req));
     const token = await createSession(name);
-    return send(res, 200, Accounts.userPublic(name, (await getUsers())[name]), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+    return send(res, 200, await publicUser(name, (await getUsers())[name]), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
   }
 
   if (pathname === '/api/logout' && req.method === 'POST') {
@@ -545,11 +551,18 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/account/google-unlink' && req.method === 'POST') return send(res, 200, await Acc.googleUnlink(req, user));
   if (role === 'admin' && pathname !== '/api/password') throw httpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
+  // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
+  const dataUser = await House.dataUser(user);
+  if (pathname === '/api/household' && req.method === 'GET') return send(res, 200, await House.status(user));
+  if (pathname === '/api/household/invite' && req.method === 'POST') return send(res, 200, await House.invite(user));
+  if (pathname === '/api/household/join' && req.method === 'POST') return send(res, 200, await House.join(user, await readBody(req)));
+  if (pathname === '/api/household/leave' && req.method === 'POST') return send(res, 200, await House.leave(user, await readBody(req)));
+
   // Bonnetjes bij transacties
-  if (pathname === '/api/files' && req.method === 'POST') return send(res, 200, await Files.upload(user, await readBody(req)));
-  if (pathname === '/api/files/delete' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Files.remove(user, String(b.id || ''))); }
+  if (pathname === '/api/files' && req.method === 'POST') return send(res, 200, await Files.upload(dataUser, await readBody(req)));
+  if (pathname === '/api/files/delete' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Files.remove(dataUser, String(b.id || ''))); }
   const fileMatch = pathname.match(/^\/api\/files\/([A-Za-z0-9_-]{8,40})$/);
-  if (fileMatch && req.method === 'GET') return Files.send(res, user, fileMatch[1]);
+  if (fileMatch && req.method === 'GET') return Files.send(res, dataUser, fileMatch[1]);
 
   if (pathname === '/api/account/delete' && req.method === 'POST') {
     const b = await readBody(req);
@@ -601,7 +614,7 @@ async function handleApi(req, res, pathname, query) {
     const b = await readBody(req);
     // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
     if (b.schema !== Store.VERSION) throw httpError(409, 'Er is een nieuwe versie van Helder. Herlaad de pagina.');
-    return send(res, 200, await syncUser(user, b.changes || null, b.rev));
+    return send(res, 200, await syncUser(dataUser, b.changes || null, b.rev));
   }
 
   if (pathname === '/api/prices' && req.method === 'POST') {
@@ -630,7 +643,7 @@ async function handleApi(req, res, pathname, query) {
   }
 
   if (pathname === '/api/data' && req.method === 'GET') {
-    const d = await loadUserData(user);
+    const d = await loadUserData(dataUser);
     return send(res, 200, { rev: d.rev || 0, state: d.state });
   }
 

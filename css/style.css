@@ -875,3 +875,4 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .file-name { font-size: 11px; padding: 3px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-chip .chip-x { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer; }
 .file-add { cursor: pointer; }
+.invite-code { font-family: ui-monospace, monospace; font-size: 22px; font-weight: 800; letter-spacing: .08em; margin: 8px 0; display: flex; align-items: center; gap: 10px; }

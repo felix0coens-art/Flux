@@ -14,6 +14,7 @@ require __DIR__ . '/php/lib/ai.php';
 require __DIR__ . '/php/lib/enablebanking.php';
 require __DIR__ . '/php/lib/saxo.php';
 require __DIR__ . '/php/lib/files.php';
+require __DIR__ . '/php/lib/household.php';
 require __DIR__ . '/php/lib/accounts.php';
 
 @set_time_limit(300);
@@ -190,9 +191,16 @@ function handle(string $method, string $path): void {
     if ($role === 'admin' && $path !== '/api/password') throw new HttpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
     // Bonnetjes bij transacties
-    if ($path === '/api/files' && $method === 'POST') { send(200, file_upload($user, body())); return; }
-    if ($path === '/api/files/delete' && $method === 'POST') { $b = body(); send(200, file_delete($user, (string) ($b['id'] ?? ''))); return; }
-    if (preg_match('#^/api/files/([A-Za-z0-9_-]{8,40})$#', $path, $fm) && $method === 'GET') { file_send($user, $fm[1]); return; }
+    // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
+    $dataUser = data_user($user, $me);
+    if ($path === '/api/household' && $method === 'GET') { send(200, household_status($user)); return; }
+    if ($path === '/api/household/invite' && $method === 'POST') { send(200, household_invite($user)); return; }
+    if ($path === '/api/household/join' && $method === 'POST') { send(200, household_join($user, body())); return; }
+    if ($path === '/api/household/leave' && $method === 'POST') { send(200, household_leave($user, body())); return; }
+
+    if ($path === '/api/files' && $method === 'POST') { send(200, file_upload($dataUser, body())); return; }
+    if ($path === '/api/files/delete' && $method === 'POST') { $b = body(); send(200, file_delete($dataUser, (string) ($b['id'] ?? ''))); return; }
+    if (preg_match('#^/api/files/([A-Za-z0-9_-]{8,40})$#', $path, $fm) && $method === 'GET') { file_send($dataUser, $fm[1]); return; }
 
     if ($path === '/api/account/delete' && $method === 'POST') {
         $b = body();
@@ -245,12 +253,12 @@ function handle(string $method, string $path): void {
         // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
         if (($b->schema ?? null) !== HELDER_VERSION) throw new HttpError(409, 'Er is een nieuwe versie van Helder. Herlaad de pagina.');
         $rev = isset($b->rev) && is_int($b->rev) ? $b->rev : null;
-        send(200, sync_user($user, $b->changes ?? null, $rev));
+        send(200, sync_user($dataUser, $b->changes ?? null, $rev));
         return;
     }
 
     if ($path === '/api/data' && $method === 'GET') {
-        $d = load_user_data($user);
+        $d = load_user_data($dataUser);
         send(200, ['rev' => (int) ($d->rev ?? 0), 'state' => $d->state ?? null]);
         return;
     }

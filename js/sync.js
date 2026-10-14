@@ -124,12 +124,14 @@
   }
 
   /** Na aanmelden: lokale gegevens en accountgegevens in orde brengen. */
-  async function afterLogin(user) {
+  /** @param user wiens boekhouding (bij een gedeelde boekhouding: de eigenaar van het huishouden) */
+  async function afterLogin(user, login) {
     const server = await api('GET', '/api/data');
     const local = opts.getState();
     const localHasData = local.transactions.length > 0;
     const sameUser = meta.user === user;
     if (!sameUser) meta = { user, rev: 0, dirty: {}, schema: SCHEMA };
+    meta.login = login || user;
     mode = 'server';
 
     if (!server.state) {
@@ -171,11 +173,11 @@
     if (!session.user) {
       mode = 'auth';
       setStatus('idle');
-      opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user, auth: authInfo });
+      opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.login || meta.user, auth: authInfo });
       return mode;
     }
     if (session.role === 'admin') { mode = 'admin'; setStatus('idle'); opts.onAdmin(session); return mode; }
-    await afterLogin(session.user);
+    await afterLogin(session.dataUser || session.user, session.user);
     return mode;
   }
 
@@ -184,7 +186,7 @@
       const session = await api('GET', '/api/session');
       features = session.features || {};
       if (session.user) { mode = 'server'; await syncNow(); }
-      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user, auth: session.auth || {} }); }
+      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.login || meta.user, auth: session.auth || {} }); }
     } catch (e) { /* nog steeds offline */ }
   }
 
@@ -193,7 +195,7 @@
     await refreshFeatures();
     account = r;
     if (r.role === 'admin') { mode = 'admin'; opts.onAdmin(r); return r.user; }
-    await afterLogin(r.user);
+    await afterLogin(r.dataUser || r.user, r.user);
     return r.user;
   }
 
@@ -201,14 +203,14 @@
     const r = await api('POST', '/api/register', { username, password, displayName });
     await refreshFeatures();
     account = r;
-    await afterLogin(r.user);
+    await afterLogin(r.dataUser || r.user, r.user);
     return r.user;
   }
 
   async function setup(code, username, password) {
     const r = await api('POST', '/api/setup', { code, username, password });
     await refreshFeatures();
-    await afterLogin(r.user);
+    await afterLogin(r.dataUser || r.user, r.user);
     return r.user;
   }
 
@@ -266,6 +268,27 @@
     disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
   };
 
+  /** Gedeelde boekhouding (huishouden). Na deelnemen of verlaten worden de juiste gegevens geladen. */
+  const household = {
+    status: () => api('GET', '/api/household'),
+    invite: () => api('POST', '/api/household/invite', {}),
+    join: async code => { await syncNow(); const r = await api('POST', '/api/household/join', { code }); await reloadData(); return r; },
+    leave: async user => { if (!user) await syncNow(); const r = await api('POST', '/api/household/leave', user ? { user } : {}); if (!user) await reloadData(); return r; }
+  };
+
+  /** Opnieuw de gegevens van de server laden (zonder samenvoegen), bv. na het wisselen van boekhouding. */
+  async function reloadData() {
+    const s = await api('GET', '/api/session');
+    account = s.user ? s : account;
+    features = s.features || features;
+    const key = s.dataUser || s.user;
+    const server = await api('GET', '/api/data');
+    meta = { user: key, login: s.user, rev: server.rev || 0, dirty: {}, schema: SCHEMA };
+    opts.setState(server.state || opts.freshState(), server.state ? undefined : { stampAll: true });
+    saveMeta();
+    await syncNow();
+  }
+
   /** Bestaand account loskoppelen van Google (koppelen gebeurt via /api/auth/google?link=1). */
   async function unlinkGoogle() {
     await api('POST', '/api/account/google-unlink', {});
@@ -314,7 +337,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, household, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },
