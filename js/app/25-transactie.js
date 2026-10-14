@@ -163,8 +163,9 @@
     for (const sp of t.splits || []) if (sp.person) ensurePerson(sp.person);
     if (advanceOf) t.advanceOf = advanceOf; else delete t.advanceOf;
     if (newCat !== t.categoryId || splits.length || t.categorySource !== 'manual') {
+      // Leeg gemaakt = bewust "te verwerken": 'manual' zodat een regel het niet meteen opnieuw invult.
+      t.categorySource = newCat || splits.length || t.categoryId || t.categorySource === 'manual' ? 'manual' : null;
       t.categoryId = newCat;
-      t.categorySource = newCat || splits.length ? 'manual' : null;
       t.ruleId = null;
     }
     if (newCat && t.isTransfer && t.transferMode === 'auto') t.transferMode = 'no';
@@ -183,6 +184,17 @@
       date: today, amount: 0, counterparty: '', counterpartyIban: '', description: '',
       categoryId: null, categorySource: null, splits: [], source: 'manual', transferMode: 'auto', refundOf: null
     };
+  }
+
+  /**
+   * Terug naar "te verwerken". De bron blijft 'manual', anders vult een regel of de beleggingsherkenning
+   * de categorie bij de volgende herberekening meteen terug in.
+   */
+  function resetToTodo(t) {
+    t.categoryId = null; t.categorySource = 'manual'; t.ruleId = null;
+    delete t.person; delete t.personByRule; delete t.advanceOf;
+    if (t.refundOf) t.refundOf = null;
+    if (t.isTransfer || t.transferMode === 'yes') t.transferMode = 'no';
   }
 
   /** Inline koppeling vanuit een lijst. */
@@ -213,7 +225,7 @@
       return;
     }
     if (value === 'transfer') { t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; }
-    else if (value === '') { t.categoryId = null; t.categorySource = null; if (t.transferMode === 'yes') t.transferMode = 'auto'; }
+    else if (value === '') { resetToTodo(t); commit('Teruggezet naar te verwerken'); return; }
     else {
       t.categoryId = value.slice(4); t.categorySource = 'manual'; t.ruleId = null;
       if (t.isTransfer) t.transferMode = 'no';

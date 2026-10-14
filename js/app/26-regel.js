@@ -55,6 +55,8 @@
     if (idx >= 0) state.rules[idx] = r;
     else { r.priority = Math.max(0, ...state.rules.map(x => x.priority || 0)) + 10; state.rules.push(r); }
     if (r.person) ensurePerson(r.person);
+    // Een nieuwe of aangepaste regel mag ook de transacties invullen die eerder bewust leeg gemaakt werden.
+    for (const t of state.transactions) if (t.categorySource === 'manual' && !t.categoryId && C.ruleMatches(r, t)) t.categorySource = null;
     closeModal();
     commit('Regel opgeslagen');
   }

@@ -43,9 +43,9 @@
     let n = 0;
     for (const id of ids) {
       const t = txById(id);
-      if (!t || (t.splits && t.splits.length) || t.refundOf) continue;
+      if (!t || (t.splits && t.splits.length) || (t.refundOf && value !== '')) continue;
       if (value === 'transfer') { t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; }
-      else if (value === '') { t.categoryId = null; t.categorySource = null; if (t.transferMode === 'yes') t.transferMode = 'auto'; }
+      else if (value === '') resetToTodo(t);
       else { t.categoryId = value.slice(4); t.categorySource = 'manual'; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no'; }
       n++;
     }

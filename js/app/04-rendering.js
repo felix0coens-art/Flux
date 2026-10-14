@@ -4,7 +4,7 @@
     renderSyncBadge();
     $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
     const more = $('#tabbar [data-tab-more]');
-    if (more) more.classList.toggle('active', ['income', 'actions', 'invest', 'settings'].includes(ui.view));
+    if (more) more.classList.toggle('active', ['income', 'invest', 'settings'].includes(ui.view));
     const tb = $('#tabbar');
     if (tb) tb.hidden = !!(ui.auth || ui.admin);
     const ts = $('#topbar-search');
@@ -17,7 +17,7 @@
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
-    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, actions: renderActions, invest: renderInvest, settings: renderSettings };
+    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)

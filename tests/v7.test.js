@@ -174,6 +174,22 @@ test('acties: transacties bundelen, blijven gewone uitgaven, met wat nog terug m
   assert.equal(s.transactions.length, 4);
 });
 
+test('terug naar te verwerken: een regel vult de categorie niet meteen opnieuw in', () => {
+  const s = Store.defaultState();
+  s.rules.push({ id: 'r1', name: 'Eni', field: 'counterparty', operator: 'name', value: 'eni', categoryId: 'cat_boodschappen', enabled: true, priority: 10 });
+  s.transactions.push(tx('t1', '2026-10-01', -5000, 'ENI'));
+  C.recompute(s);
+  assert.equal(s.transactions[0].categoryId, 'cat_boodschappen');
+  // Zo zet de knop "Terug naar te verwerken" de transactie terug (resetToTodo in js/app/25-transactie.js)
+  Object.assign(s.transactions[0], { categoryId: null, categorySource: 'manual', ruleId: null });
+  C.recompute(s);
+  assert.equal(s.transactions[0].categoryId, null);
+  assert.equal(C.txKind(s.transactions[0], s.categories), 'todo');
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+  assert.match(src, /function resetToTodo\(t\) \{\s*t\.categoryId = null; t\.categorySource = 'manual'/);
+  assert.equal((src.match(/value === ''\) \{?\s*resetToTodo\(t\)/g) || []).length, 2, 'lijst en selectie gebruiken allebei resetToTodo');
+});
+
 test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const { build } = require('../scripts/build-app.js');
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');

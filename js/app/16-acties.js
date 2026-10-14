@@ -33,19 +33,6 @@
     </div>`;
   }
 
-  function renderActions() {
-    const list = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const open = list.filter(a => !a.closed), closed = list.filter(a => a.closed);
-    const toGet = open.reduce((t, a) => t + C.actionSummary(state, a).open, 0);
-    return `
-      <div class="page-head"><h1>Acties</h1><span class="spacer"></span><button class="btn primary" data-action="action-new">+ Nieuwe actie</button></div>
-      <p class="muted">Een actie bundelt transacties die bij elkaar horen, bv. <em>“Kleren — mama betaalt terug”</em> of <em>“Verbouwing badkamer”</em>. Anders dan een voorschot blijven het gewoon <strong>jouw uitgaven</strong> (in hun categorie); de actie toont het geheel: wat je uitgaf, wat er terugkwam en wat je nog moet terugkrijgen.</p>
-      ${open.some(a => a.expectBack) ? `<div class="adv-summary card"><div><div class="label">Nog terug te krijgen via acties</div><div class="value">${money(toGet)}</div></div><div class="small muted">${open.filter(a => a.expectBack && C.actionSummary(state, a).open > 0).length} open actie(s)</div></div>` : ''}
-      ${open.length ? `<div class="grid cards actions-grid">${open.map(a => actionCard(a)).join('')}</div>`
-        : `<div class="card empty-state"><p>Nog geen acties. Maak er een met <strong>+ Nieuwe actie</strong>, of selecteer transacties bij Bank en kies <strong>🏷 Aan actie toevoegen</strong>.</p></div>`}
-      ${closed.length ? `<details class="card" style="margin-top:16px"><summary><strong>Afgeronde acties</strong> <span class="small muted">(${closed.length})</span></summary><div class="grid cards actions-grid" style="margin-top:12px">${closed.map(a => actionCard(a)).join('')}</div></details>` : ''}`;
-  }
-
   function actionModal() {
     const m = modal;
     const a = m.edit;

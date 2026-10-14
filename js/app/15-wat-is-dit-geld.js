@@ -31,7 +31,7 @@
           <datalist id="wi-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
         ${people.length ? `<p class="small muted">Open: ${people.slice(0, 5).map(p => `${esc(p.name)} ${money(p.stats.open)}`).join(' · ')}</p>` : ''}
         <p class="btn-row"><button class="btn primary" data-action="wi-advance">Koppelen</button></p>
-        <p class="small muted">Wil je kiezen welk voorschot precies terugbetaald is? Dat kan daarna in Voorschotten → 📒 Rekening-courant.</p>`;
+        <p class="small muted">Wil je kiezen welk voorschot precies terugbetaald is? Dat kan daarna in Terug te krijgen → 📒 Rekening-courant.</p>`;
     } else if (c === 'action') {
       const acts = (state.actions || []).filter(a => !a.closed);
       detail = `<label class="field"><span>Welke actie?</span><select id="wi-action">${acts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></label>

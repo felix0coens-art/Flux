@@ -876,3 +876,29 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .file-chip .chip-x { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer; }
 .file-add { cursor: pointer; }
 .invite-code { font-family: ui-monospace, monospace; font-size: 22px; font-weight: 800; letter-spacing: .08em; margin: 8px 0; display: flex; align-items: center; gap: 10px; }
+
+/* ----- Terug te krijgen: voorschotten en acties samen ----- */
+.owed-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 4px 0 16px; }
+.owed-kind { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; font-size: 14px; border-left: 4px solid; }
+.owed-kind span { color: var(--muted); }
+.owed-kind.adv, .owed-opt.adv { background: var(--purple-soft); border-color: var(--purple); }
+.owed-kind.act, .owed-opt.act { background: var(--orange-soft); border-color: var(--orange); }
+.owed-seg { margin-left: auto; }
+.adv-item.kind-adv { border-left: 3px solid var(--purple); }
+.adv-item.kind-act { border-left: 3px solid var(--orange); }
+.kind-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 6px; margin-right: 2px; }
+.kind-tag.adv { background: var(--purple-soft); color: var(--purple); }
+.kind-tag.act { background: var(--orange-soft); color: var(--orange); }
+.owed-done { margin-top: 20px; }
+.owed-choice { display: grid; gap: 10px; }
+.owed-opt { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); border-left: 5px solid; cursor: pointer; color: var(--text); font: inherit; }
+.owed-opt strong { font-size: 16px; }
+.owed-opt span { color: var(--muted); font-size: 14px; }
+.owed-opt:hover, .owed-opt:focus-visible { filter: brightness(.97); outline: 2px solid var(--primary); outline-offset: 1px; }
+@media (max-width: 700px) {
+  .owed-seg { margin-left: 0; width: 100%; }
+  .owed-seg button { flex: 1; padding: 6px 4px; }
+}
+.owed-help { margin: 0 0 14px; }
+.owed-help summary { cursor: pointer; font-size: 14px; }
+.owed-help .owed-kinds { margin-top: 10px; }

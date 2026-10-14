@@ -24,9 +24,12 @@
   let snap = C.snapshot(realState);
 
   const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
-  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'actions', 'invest', 'settings'];
+  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'invest', 'settings'];
+  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen".
+  const viewOf = v => v === 'actions' ? 'advances' : v;
   const ui = {
-    view: VIEWS.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'dashboard',
+    view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
+    owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
     bank: { account: '', status: 'todo', search: '', limit: 150 },
     list: { status: '', limit: 150 },

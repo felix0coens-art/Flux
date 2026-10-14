@@ -24,9 +24,12 @@
   let snap = C.snapshot(realState);
 
   const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
-  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'actions', 'invest', 'settings'];
+  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'invest', 'settings'];
+  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen".
+  const viewOf = v => v === 'actions' ? 'advances' : v;
   const ui = {
-    view: VIEWS.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'dashboard',
+    view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
+    owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
     bank: { account: '', status: 'todo', search: '', limit: 150 },
     list: { status: '', limit: 150 },
@@ -280,7 +283,7 @@
     renderSyncBadge();
     $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
     const more = $('#tabbar [data-tab-more]');
-    if (more) more.classList.toggle('active', ['income', 'actions', 'invest', 'settings'].includes(ui.view));
+    if (more) more.classList.toggle('active', ['income', 'invest', 'settings'].includes(ui.view));
     const tb = $('#tabbar');
     if (tb) tb.hidden = !!(ui.auth || ui.admin);
     const ts = $('#topbar-search');
@@ -293,7 +296,7 @@
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
-    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, actions: renderActions, invest: renderInvest, settings: renderSettings };
+    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)
@@ -940,9 +943,9 @@
     let n = 0;
     for (const id of ids) {
       const t = txById(id);
-      if (!t || (t.splits && t.splits.length) || t.refundOf) continue;
+      if (!t || (t.splits && t.splits.length) || (t.refundOf && value !== '')) continue;
       if (value === 'transfer') { t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; }
-      else if (value === '') { t.categoryId = null; t.categorySource = null; if (t.transferMode === 'yes') t.transferMode = 'auto'; }
+      else if (value === '') resetToTodo(t);
       else { t.categoryId = value.slice(4); t.categorySource = 'manual'; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no'; }
       n++;
     }
@@ -1224,14 +1227,36 @@
     return ov.items.find(it => advKey(it) === key) || null;
   }
 
+  /**
+   * "Terug te krijgen": voorschotten (je betaalde voor iemand anders, telt niet als jouw uitgave) en
+   * acties (jouw eigen uitgaven gebundeld, telt wel als uitgave) op één plek. Een actie met een persoon
+   * staat mee op de kaart van die persoon, zodat je per persoon ziet wat er in totaal nog open staat.
+   */
   function renderAdvances() {
-    const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
-    const openPeople = people.filter(p => p.stats.open > 0);
-    const done = people.filter(p => p.stats.open <= 0);
-    const totalOpen = openPeople.reduce((a, p) => a + p.stats.open, 0);
-    const openItemCount = openPeople.reduce((a, p) => a + p.stats.items.filter(it => it.amount - it.repaid > 0).length, 0);
+    const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
+    const showAdv = f !== 'act', showAct = f !== 'adv';
+    const lc = s => String(s || '').trim().toLowerCase();
+    const actions = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const sumOf = new Map(actions.map(a => [a.id, C.actionSummary(state, a)]));
+    const actOpen = a => a.expectBack && !a.closed ? Math.max(0, sumOf.get(a.id).open) : 0;
+    const people = C.personList(state);
+    // Personen die enkel in een actie voorkomen, krijgen ook een kaart
+    for (const a of actions) if (a.person && !a.closed && !people.some(p => lc(p.name) === lc(a.person)))
+      people.push({ name: a.person.trim(), entity: null, stats: { person: a.person.trim(), advanced: 0, repaid: 0, forgiven: 0, open: 0, items: [], ledger: [] } });
+    const actsOf = p => f === 'all' ? actions.filter(a => !a.closed && lc(a.person) === lc(p.name)) : [];
+    const totalOf = p => (showAdv ? Math.max(0, p.stats.open) : 0) + actsOf(p).reduce((t, a) => t + actOpen(a), 0);
+    const isOpen = p => (showAdv && p.stats.open > 0) || actsOf(p).length > 0;
+    const shown = f === 'act' ? [] : people.filter(p => f === 'all' || p.stats.items.length || p.entity || p.stats.open);
+    const openPeople = shown.filter(isOpen).sort((a, b) => totalOf(b) - totalOf(a) || a.name.localeCompare(b.name));
+    const done = shown.filter(p => !isOpen(p)).sort((a, b) => a.name.localeCompare(b.name));
+    const looseActs = !showAct ? [] : actions.filter(a => !a.closed && (f === 'act' || !a.person || !shown.some(p => lc(p.name) === lc(a.person))));
+    const closedActs = showAct ? actions.filter(a => a.closed) : [];
+
+    const advTotal = people.reduce((t, p) => t + Math.max(0, p.stats.open), 0);
+    const actTotal = actions.reduce((t, a) => t + actOpen(a), 0);
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
     const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
+    const plural = (n, one, more) => n + ' ' + (n === 1 ? one : more);
     const history = (p) => {
       const st = p.stats;
       const ent = p.entity || {};
@@ -1243,71 +1268,111 @@
       return `<details class="adv-history"><summary class="small">Afgehandeld en terugbetalingen <span class="muted">(${closed.length + reps.length + forgiven.length})</span></summary>
         ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span></span><span class="amount">${money(it.amount)}</span><span class="small">${settledHow(it)}</span></div>`).join('')}</div>` : ''}
         ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span></div>`).join('')}</div>` : ''}
-        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(f => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(f.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(f.date)} → ${esc(catName(f.categoryId))}</span></span><span class="amount">${money(f.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(f.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
+        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(fg.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
+    const advLine = (p, it) => {
+      const left = it.amount - it.repaid;
+      const key = esc(advKey(it));
+      return `<div class="adv-item kind-adv">
+        <div class="adv-item-top">
+          <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
+          <strong class="adv-amt">${money(left)}</strong>
+        </div>
+        <div class="small muted adv-sub"><span class="kind-tag adv">🤝 voorschot</span> ${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
+        <div class="adv-paid"><span class="small muted">Betaald?</span>
+          <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
+          <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
+          <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+        </div>
+      </div>`;
+    };
+    const actLine = a => {
+      const s = sumOf.get(a.id);
+      const open = actOpen(a);
+      return `<div class="adv-item kind-act">
+        <div class="adv-item-top">
+          <button class="adv-title" data-action="action-view" data-id="${esc(a.id)}" title="Alle transacties van deze actie">${esc(a.name)}</button>
+          <strong class="adv-amt">${a.expectBack ? (open > 0 ? money(open) : '✓') : ''}</strong>
+        </div>
+        <div class="small muted adv-sub"><span class="kind-tag act">🏷 actie</span> eigen uitgave ${money(s.out)}${s.back ? ` · al ${money(s.back)} terug` : ''} · ${plural(s.txs.length, 'transactie', 'transacties')}</div>
+        <div class="adv-paid">
+          <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}" title="Uitgaven of terugbetalingen toevoegen">+ Transacties</button>
+          <button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>
+          <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎</button>
+        </div>
+      </div>`;
+    };
+    const personTools = p => `<div class="card-tools">
+        <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot</button>
+        ${p.stats.items.length ? `<button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>` : ''}
+        ${p.entity ? `<button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button>` : ''}</div>`;
     const openCard = p => {
       const st = p.stats;
-      const ent = p.entity || {};
-      const sugg = C.suggestRepayments(state, p.name, ent.ibans, today, 3);
-      const items = st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date));
+      const sugg = showAdv && st.open > 0 ? C.suggestRepayments(state, p.name, (p.entity || {}).ibans, today, 3) : [];
+      const items = showAdv ? st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date)) : [];
+      const acts = actsOf(p);
+      const count = [items.length ? plural(items.length, 'voorschot', 'voorschotten') : '', acts.length ? plural(acts.length, 'actie', 'acties') : ''].filter(Boolean).join(' · ');
       return `<div class="card person-card">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${items.length} open voorschot${items.length === 1 ? '' : 'ten'}</div></div>
-          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(st.open)}</strong></div></div>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${count}</div></div>
+          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(totalOf(p))}</strong></div></div>
         ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.title || x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
-        <div class="adv-items">${items.map(it => {
-          const left = it.amount - it.repaid;
-          const key = esc(advKey(it));
-          return `<div class="adv-item">
-            <div class="adv-item-top">
-              <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
-              <strong class="adv-amt">${money(left)}</strong>
-            </div>
-            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
-            <div class="adv-paid"><span class="small muted">Betaald?</span>
-              <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Met een transactie</button>
-              <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 In cash</button>
-              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
-            </div>
-          </div>`;
-        }).join('')}</div>
-        ${history(p)}
-        <div class="card-tools">
-          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
-          <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>
-          <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
+        <div class="adv-items">${items.map(it => advLine(p, it)).join('')}${acts.map(actLine).join('')}</div>
+        ${showAdv ? history(p) : ''}
+        ${personTools(p)}
       </div>`;
     };
     const doneCard = p => {
       const st = p.stats;
-      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
+      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets open</span>';
       return `<div class="card person-card done">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
           <div class="grow"><strong class="person-name">${esc(p.name)}</strong></div>${status}</div>
         ${st.open < 0 ? `<div class="notice small">${esc(p.name)} betaalde ${money(-st.open)} te veel terug. <button class="btn small" data-action="surplus-new" data-person="${esc(p.name)}">Rest inboeken als inkomst…</button></div>` : ''}
         ${history(p)}
-        <div class="card-tools">
-          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
-          <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}">📒 Rekening-courant</button>
-          <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
+        ${personTools(p)}
       </div>`;
     };
+    const seg = (k, label) => `<button class="${f === k ? 'active' : ''}" data-action="owed-filter" data-f="${k}">${label}</button>`;
+    const total = (showAdv ? advTotal : 0) + (showAct ? actTotal : 0);
+    const nothing = !openPeople.length && !looseActs.length;
     return `
-      <div class="page-head"><h1>Voorschotten</h1><span class="spacer"></span>
-        <button class="btn" data-action="person-new">+ Persoon</button>
-        <button class="btn primary" data-action="adv-pick" data-dir="out">+ Voorschot toevoegen</button></div>
-      <p class="muted">Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Dan is dat een <strong>voorschot</strong>, geen uitgave. Hier zie je wat je nog terug moet krijgen. Is het betaald, duid dan aan hoe: met een transactie, in cash, of kwijtgescholden.</p>
+      <div class="page-head"><h1>Terug te krijgen</h1><span class="spacer"></span>
+        <button class="btn primary" data-action="owed-new">+ Toevoegen</button></div>
+      <details class="owed-help" data-keep="owedHelp" ${(ui.keepOpen.owedHelp != null ? ui.keepOpen.owedHelp : !people.length && !actions.length) ? 'open' : ''}>
+        <summary><span class="kind-tag adv">🤝 voorschot</span> of <span class="kind-tag act">🏷 actie</span>? <span class="small muted">Wat is het verschil</span></summary>
+        <div class="owed-kinds">
+          <div class="owed-kind adv"><strong>🤝 Voorschot</strong><span>Je betaalde voor iemand anders. Het is <b>niet jouw uitgave</b> en telt nergens mee.</span></div>
+          <div class="owed-kind act"><strong>🏷 Actie</strong><span>Je eigen uitgaven, gebundeld (bv. <em>kleren voor mama</em>). Ze <b>tellen wel als uitgave</b>; wat terugkomt, maakt ze kleiner.</span></div>
+        </div>
+      </details>
       <div class="adv-summary card">
-        <div><div class="label">Nog terug te krijgen</div><div class="value">${money(totalOpen)}</div></div>
-        <div class="small muted">${openItemCount} open voorschot${openItemCount === 1 ? '' : 'ten'} bij ${openPeople.length} ${openPeople.length === 1 ? 'persoon' : 'personen'}</div>
-        <div class="small muted adv-tip">Tip: typ bij een transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.</div>
+        <div><div class="label">Nog terug te krijgen</div><div class="value">${money(total)}</div></div>
+        <div class="small muted">${f === 'all' && advTotal && actTotal ? `${money(advTotal)} aan voorschotten · ${money(actTotal)} via acties` : f === 'act' ? 'via acties' : f === 'adv' ? 'aan voorschotten' : ''}</div>
+        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('adv', '🤝 Voorschotten')}${seg('act', '🏷 Acties')}</div>
       </div>
-      ${openPeople.length ? `<h2 class="section-title">Nog open</h2><div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
-        : people.length ? '<div class="card empty-state"><p>🎉 Niemand is je nog iets schuldig.</p></div>' : ''}
-      ${done.length ? `<h2 class="section-title">Alles in orde</h2><div class="grid cards people">${done.map(doneCard).join('')}</div>` : ''}
-      ${!people.length ? `<div class="card empty-state"><p>Nog geen voorschotten. Klik op <strong>+ Voorschot toevoegen</strong> en kies de betaling die je voor iemand deed.</p></div>` : ''}`;
+      ${openPeople.length ? `<h2 class="section-title">Per persoon</h2><div class="grid cards people">${openPeople.map(openCard).join('')}</div>` : ''}
+      ${looseActs.length ? `<h2 class="section-title">${f === 'act' ? 'Open acties' : 'Acties zonder persoon'}</h2><div class="grid cards actions-grid">${looseActs.map(a => actionCard(a)).join('')}</div>` : ''}
+      ${nothing ? `<div class="card empty-state"><p>${people.length || actions.length ? '🎉 Niets meer open.' : 'Nog niets. Klik op <strong>+ Toevoegen</strong>, of typ bij een transactie in <em>Gekoppeld aan</em> een naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>` : ''}
+      ${done.length || closedActs.length ? `<details class="card owed-done" ${ui.keepOpen.owedDone ? 'open' : ''} data-keep="owedDone"><summary><strong>Afgehandeld</strong> <span class="small muted">(${[done.length ? plural(done.length, 'persoon', 'personen') : '', closedActs.length ? plural(closedActs.length, 'afgeronde actie', 'afgeronde acties') : ''].filter(Boolean).join(' · ')})</span></summary>
+        ${done.length ? `<div class="grid cards people" style="margin-top:12px">${done.map(doneCard).join('')}</div>` : ''}
+        ${closedActs.length ? `<div class="grid cards actions-grid" style="margin-top:12px">${closedActs.map(a => actionCard(a)).join('')}</div>` : ''}
+      </details>` : ''}`;
+  }
+
+  /** Eén knop "+ Toevoegen": eerst kiezen wat het is, met het verschil erbij. */
+  function owedNewModal() {
+    return modalShell('Wat wil je toevoegen?', `
+      <div class="owed-choice">
+        <button class="owed-opt adv" data-action="adv-pick" data-dir="out"><strong>🤝 Voorschot</strong>
+          <span>Ik betaalde (een deel) <b>voor iemand anders</b>, bv. de hele restaurantrekening. Dat deel is niet mijn uitgave.</span></button>
+        <button class="owed-opt act" data-action="action-new"><strong>🏷 Actie</strong>
+          <span>Een <b>eigen uitgave</b> (of meerdere) die ik wil bundelen en eventueel (deels) terugkrijg, bv. <em>kleren — mama betaalt terug</em>.</span></button>
+      </div>
+      <p class="small muted">Twijfel? Moet de uitgave meetellen in je eigen uitgaven? Kies dan <strong>actie</strong>. Anders <strong>voorschot</strong>.</p>`,
+      `<button class="btn ghost" data-action="person-new">+ Enkel een persoon</button><span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>`);
   }
 
   /**
@@ -1575,7 +1640,7 @@
           <datalist id="wi-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
         ${people.length ? `<p class="small muted">Open: ${people.slice(0, 5).map(p => `${esc(p.name)} ${money(p.stats.open)}`).join(' · ')}</p>` : ''}
         <p class="btn-row"><button class="btn primary" data-action="wi-advance">Koppelen</button></p>
-        <p class="small muted">Wil je kiezen welk voorschot precies terugbetaald is? Dat kan daarna in Voorschotten → 📒 Rekening-courant.</p>`;
+        <p class="small muted">Wil je kiezen welk voorschot precies terugbetaald is? Dat kan daarna in Terug te krijgen → 📒 Rekening-courant.</p>`;
     } else if (c === 'action') {
       const acts = (state.actions || []).filter(a => !a.closed);
       detail = `<label class="field"><span>Welke actie?</span><select id="wi-action">${acts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></label>
@@ -1625,19 +1690,6 @@
         <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎ Bewerk</button>
       </div>
     </div>`;
-  }
-
-  function renderActions() {
-    const list = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const open = list.filter(a => !a.closed), closed = list.filter(a => a.closed);
-    const toGet = open.reduce((t, a) => t + C.actionSummary(state, a).open, 0);
-    return `
-      <div class="page-head"><h1>Acties</h1><span class="spacer"></span><button class="btn primary" data-action="action-new">+ Nieuwe actie</button></div>
-      <p class="muted">Een actie bundelt transacties die bij elkaar horen, bv. <em>“Kleren — mama betaalt terug”</em> of <em>“Verbouwing badkamer”</em>. Anders dan een voorschot blijven het gewoon <strong>jouw uitgaven</strong> (in hun categorie); de actie toont het geheel: wat je uitgaf, wat er terugkwam en wat je nog moet terugkrijgen.</p>
-      ${open.some(a => a.expectBack) ? `<div class="adv-summary card"><div><div class="label">Nog terug te krijgen via acties</div><div class="value">${money(toGet)}</div></div><div class="small muted">${open.filter(a => a.expectBack && C.actionSummary(state, a).open > 0).length} open actie(s)</div></div>` : ''}
-      ${open.length ? `<div class="grid cards actions-grid">${open.map(a => actionCard(a)).join('')}</div>`
-        : `<div class="card empty-state"><p>Nog geen acties. Maak er een met <strong>+ Nieuwe actie</strong>, of selecteer transacties bij Bank en kies <strong>🏷 Aan actie toevoegen</strong>.</p></div>`}
-      ${closed.length ? `<details class="card" style="margin-top:16px"><summary><strong>Afgeronde acties</strong> <span class="small muted">(${closed.length})</span></summary><div class="grid cards actions-grid" style="margin-top:12px">${closed.map(a => actionCard(a)).join('')}</div></details>` : ''}`;
   }
 
   function actionModal() {
@@ -2891,7 +2943,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { owedNew: owedNewModal, taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3070,8 +3122,9 @@
     for (const sp of t.splits || []) if (sp.person) ensurePerson(sp.person);
     if (advanceOf) t.advanceOf = advanceOf; else delete t.advanceOf;
     if (newCat !== t.categoryId || splits.length || t.categorySource !== 'manual') {
+      // Leeg gemaakt = bewust "te verwerken": 'manual' zodat een regel het niet meteen opnieuw invult.
+      t.categorySource = newCat || splits.length || t.categoryId || t.categorySource === 'manual' ? 'manual' : null;
       t.categoryId = newCat;
-      t.categorySource = newCat || splits.length ? 'manual' : null;
       t.ruleId = null;
     }
     if (newCat && t.isTransfer && t.transferMode === 'auto') t.transferMode = 'no';
@@ -3090,6 +3143,17 @@
       date: today, amount: 0, counterparty: '', counterpartyIban: '', description: '',
       categoryId: null, categorySource: null, splits: [], source: 'manual', transferMode: 'auto', refundOf: null
     };
+  }
+
+  /**
+   * Terug naar "te verwerken". De bron blijft 'manual', anders vult een regel of de beleggingsherkenning
+   * de categorie bij de volgende herberekening meteen terug in.
+   */
+  function resetToTodo(t) {
+    t.categoryId = null; t.categorySource = 'manual'; t.ruleId = null;
+    delete t.person; delete t.personByRule; delete t.advanceOf;
+    if (t.refundOf) t.refundOf = null;
+    if (t.isTransfer || t.transferMode === 'yes') t.transferMode = 'no';
   }
 
   /** Inline koppeling vanuit een lijst. */
@@ -3120,7 +3184,7 @@
       return;
     }
     if (value === 'transfer') { t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; }
-    else if (value === '') { t.categoryId = null; t.categorySource = null; if (t.transferMode === 'yes') t.transferMode = 'auto'; }
+    else if (value === '') { resetToTodo(t); commit('Teruggezet naar te verwerken'); return; }
     else {
       t.categoryId = value.slice(4); t.categorySource = 'manual'; t.ruleId = null;
       if (t.isTransfer) t.transferMode = 'no';
@@ -3202,6 +3266,8 @@
     if (idx >= 0) state.rules[idx] = r;
     else { r.priority = Math.max(0, ...state.rules.map(x => x.priority || 0)) + 10; state.rules.push(r); }
     if (r.person) ensurePerson(r.person);
+    // Een nieuwe of aangepaste regel mag ook de transacties invullen die eerder bewust leeg gemaakt werden.
+    for (const t of state.transactions) if (t.categorySource === 'manual' && !t.categoryId && C.ruleMatches(r, t)) t.categorySource = null;
     closeModal();
     commit('Regel opgeslagen');
   }
@@ -4132,6 +4198,8 @@
       loadAdmin();
     },
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
+    'owed-filter': el => { ui.owed = el.dataset.f; render(); },
+    'owed-new': () => openModal({ type: 'owedNew' }),
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
     'person-save': savePerson,
     'person-delete': () => { state.people = (state.people || []).filter(p => p.name.toLowerCase() !== modal.original.toLowerCase()); closeModal(); commit('Persoon verwijderd'); },
@@ -4450,6 +4518,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   };
 
   function go(view, silent) {
+    if (view === 'actions') ui.owed = 'act';
+    view = viewOf(view);
     ui.view = VIEWS.includes(view) ? view : 'dashboard';
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
@@ -4618,7 +4688,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
   window.addEventListener('resize', () => { if (picker.input) renderPicker(); });
   window.addEventListener('scroll', () => { if (picker.input) renderPicker(); }, { passive: true });
-  window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
+  window.addEventListener('hashchange', () => { const v = viewOf(location.hash.slice(1)); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
 
   document.addEventListener('submit', async ev => {
     const form = ev.target.closest('[data-form]');

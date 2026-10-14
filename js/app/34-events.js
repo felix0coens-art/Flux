@@ -92,6 +92,8 @@
       loadAdmin();
     },
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
+    'owed-filter': el => { ui.owed = el.dataset.f; render(); },
+    'owed-new': () => openModal({ type: 'owedNew' }),
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
     'person-save': savePerson,
     'person-delete': () => { state.people = (state.people || []).filter(p => p.name.toLowerCase() !== modal.original.toLowerCase()); closeModal(); commit('Persoon verwijderd'); },
@@ -410,6 +412,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   };
 
   function go(view, silent) {
+    if (view === 'actions') ui.owed = 'act';
+    view = viewOf(view);
     ui.view = VIEWS.includes(view) ? view : 'dashboard';
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
@@ -578,7 +582,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
   window.addEventListener('resize', () => { if (picker.input) renderPicker(); });
   window.addEventListener('scroll', () => { if (picker.input) renderPicker(); }, { passive: true });
-  window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
+  window.addEventListener('hashchange', () => { const v = viewOf(location.hash.slice(1)); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
 
   document.addEventListener('submit', async ev => {
     const form = ev.target.closest('[data-form]');
