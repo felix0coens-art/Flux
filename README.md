@@ -366,13 +366,17 @@ js/banks.js                bankimport: profielen KBC/Argenta, dubbels, imports o
 js/invest.js               Degiro-exports, portefeuille, TWR/MWR, rendement per jaar
 js/store.js                lokale opslag, standaardcategorieën, demodata
 js/sync.js                 synchronisatie met de server (offline first)
-js/app.js                  gebruikersinterface
+js/app.js                  gebruikersinterface, samengevoegd uit js/app/*.js (npm run build:app na een wijziging)
+js/app/                    de gebruikersinterface in stukken per onderdeel (Overzicht, Bank, Voorschotten, …)
 server/server.js           HTTP-server: app, login, synchronisatie, opzoeken (met cache)
 server/ai.js               optionele classificatie via Claude
 server/degiro.js           rechtstreekse Degiro-koppeling
 server/prices.js           historische koersen (Yahoo Finance) voor de reconstructie
 server/enablebanking.js    bankkoppeling via Enable Banking (PSD2); in PHP: php/lib/enablebanking.php
 server/accounts.js         aanmelden met Google, beheerder, logboek; in PHP: php/lib/accounts.php
+server/saxo.js             Saxo Bank (OpenAPI); in PHP: php/lib/saxo.php
+server/files.js            bonnetjes bij transacties; in PHP: php/lib/files.php
+server/household.js        gedeelde boekhouding (huishouden); in PHP: php/lib/household.php
 api.php, php/lib/          dezelfde server in PHP, voor gewone webhosting (Vimexx, DirectAdmin, ...)
 php/router.php             om de PHP-versie lokaal te draaien: php -S localhost:8080 php/router.php
 .htaccess, .user.ini       Apache- en PHP-instellingen voor de webhosting

@@ -173,3 +173,9 @@ test('acties: transacties bundelen, blijven gewone uitgaven, met wat nog terug m
   assert.equal(s.transactions.find(t => t.id === 'k1').actions, undefined);
   assert.equal(s.transactions.length, 4);
 });
+
+test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
+  const { build } = require('../scripts/build-app.js');
+  const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+  assert.equal(build() === app, true, 'voer "npm run build:app" uit na het wijzigen van een stuk in js/app/');
+});
