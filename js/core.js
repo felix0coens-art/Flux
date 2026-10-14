@@ -739,6 +739,36 @@
     return { fresh, duplicates };
   }
 
+  // ---------- Symbolen per categorie ----------
+
+  const CATEGORY_ICONS = {
+    cat_boodschappen: '🛒', cat_huishouden: '🧺', cat_wonen: '🏠', cat_nuts: '💡', cat_abonnementen: '📺', cat_telecom: '📱',
+    cat_uitgaan: '🍽️', cat_vervoer: '🚗', cat_gezondheid: '🩺', cat_kleding: '👕', cat_vrijetijd: '🎨', cat_verzekering: '🛡️',
+    cat_belasting: '🏛️', cat_cadeaus: '🎁', cat_onderwijs: '🎓', cat_overig: '📦', sys_voorschot: '🤝', sys_belegging: '📈',
+    cat_loon: '💼', cat_bijberoep: '🧾', cat_inkomsten: '💶', cat_kost_bijberoep: '🧰'
+  };
+  const ICON_WORDS = [
+    [/huisdier|dieren|hond|kat\b|dierenarts/, '🐾'], [/sport|fitness|gym/, '🏋️'], [/reis|vakantie|hotel/, '✈️'], [/sparen|spaar/, '🐷'],
+    [/boodschap|supermarkt|voeding|eten\b/, '🛒'], [/verhuur|huurinkomst/, '🔑'], [/huur|wonen|huis|lening|hypothe|renovatie/, '🏠'],
+    [/loon|salaris|wedde|werkgever/, '💼'], [/bijberoep|freelance|factuur|zelfstandig/, '🧾'], [/dividend|rente|beleg|aandel/, '📈'],
+    [/brandstof|tank|auto|wagen|parkeer/, '🚗'], [/trein|bus|tram|openbaar vervoer|fiets/, '🚆'], [/kind|school|opvang|onderwijs|studie/, '🎓'],
+    [/gezond|dokter|apothe|tandarts|zieken/, '🩺'], [/kleding|kleren|schoen/, '👕'], [/abonnement|streaming|netflix/, '📺'],
+    [/cadeau|gift|goede doel/, '🎁'], [/restaurant|uitgaan|cafe|café|bar\b|horeca|koffie/, '🍽️'], [/energie|elektri|gas\b|water|nuts/, '💡'],
+    [/telefoon|internet|gsm|telecom/, '📱'], [/verzeker/, '🛡️'], [/belasting|overheid|boete/, '🏛️'], [/hobby|vrije tijd|ontspanning|muziek/, '🎨'],
+    [/huishoud|meubel|tuin/, '🧺'], [/kapper|verzorging|beauty/, '💇'], [/boek|lezen/, '📚'], [/game|gaming/, '🎮'], [/kost/, '🧰']
+  ];
+  /** Symbool van een categorie: zelf gekozen, standaard, of geraden uit de naam. */
+  function categoryIcon(c) {
+    if (!c) return '❔';
+    if (c.icon) return c.icon;
+    if (CATEGORY_ICONS[c.id]) return CATEGORY_ICONS[c.id];
+    const n = String(c.name || '').toLowerCase();
+    for (const [re, icon] of ICON_WORDS) if (re.test(n)) return icon;
+    return c.kind === 'income' ? '💶' : '🏷️';
+  }
+  const ICON_CHOICES = ['🛒', '🧺', '🏠', '🔑', '💡', '📺', '📱', '🍽️', '☕', '🚗', '🚆', '⛽', '✈️', '🩺', '💊', '👕', '🎨', '🎮', '📚', '🏋️', '🐾', '🛡️', '🏛️', '🎁',
+    '🎓', '👶', '💇', '🐷', '📦', '🏷️', '💼', '🧾', '💶', '📈', '🧰', '🤝', '🎵', '🍺', '🌱', '🔧'];
+
   // ---------- Volledige herberekening ----------
 
   /** Na elke wijziging: transfers herkennen, ongeldige koppelingen opruimen en regels toepassen. */
@@ -851,6 +881,33 @@
     return { items, people: list, totalOpen: sum(list.map(p => p.open)) };
   }
 
+  /** Alle personen: wie je aanmaakte (state.people) plus namen die in voorschotten voorkomen. */
+  function personList(state) {
+    const out = new Map();
+    for (const p of state.people || []) if (p.name) out.set(p.name.trim().toLowerCase(), { name: p.name.trim(), entity: p });
+    const ov = advancesOverview(state);
+    for (const p of ov.people) { const k = p.person.toLowerCase(); if (!out.has(k)) out.set(k, { name: p.person, entity: null }); }
+    return Array.from(out.values()).map(x => Object.assign(x, { stats: ov.people.find(p => p.person.toLowerCase() === x.name.toLowerCase()) || { person: x.name, advanced: 0, repaid: 0, open: 0, items: [] } }));
+  }
+
+  /**
+   * Inkomende betalingen die waarschijnlijk een terugbetaling van deze persoon zijn: de naam van de
+   * tegenpartij bevat (een deel van) de naam van de persoon, of de IBAN is gekend.
+   */
+  function suggestRepayments(state, name, ibans, today, limit) {
+    const words = String(name || '').toLowerCase().split(/[^a-zà-ÿ]+/).filter(w => w.length >= 3);
+    const known = new Set((ibans || []).map(normalizeIban).filter(Boolean));
+    const from = addDays(today || todayStr(), -365);
+    return state.transactions.filter(t => t.amount > 0 && t.date >= from && !t.isTransfer && !t.refundOf && !(t.splits && t.splits.length)
+      && t.categoryId !== SYS_ADVANCE && (!t.categoryId || t.categorySource !== 'manual'))
+      .map(t => {
+        const cp = String(t.counterparty || '').toLowerCase();
+        const byIban = t.counterpartyIban && known.has(normalizeIban(t.counterpartyIban));
+        const byName = words.length && words.some(w => new RegExp('(^|[^a-zà-ÿ])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-zà-ÿ]|$)').test(cp));
+        return byIban || byName ? { tx: t, why: byIban ? 'gekende IBAN' : 'naam' } : null;
+      }).filter(Boolean).sort((a, b) => b.tx.date.localeCompare(a.tx.date)).slice(0, limit || 5);
+  }
+
   /**
    * Saldo van een rekening: vertrekt van een gekend saldo (bv. de saldokolom van een KBC-export
    * of manueel ingegeven) en telt de latere transacties erbij.
@@ -896,7 +953,7 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people'];
   const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 
@@ -1073,6 +1130,7 @@
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
     recompute, detectInvestments, txKind, advancesOverview, accountBalance, balanceAt, accountStart, SYS_ADVANCE, SYS_INVEST,
+    categoryIcon, ICON_CHOICES, personList, suggestRepayments,
     SYNC_COLLECTIONS, SYNC_SINGLETONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
     categoryTags, matchCategory, lookupCandidates
   };

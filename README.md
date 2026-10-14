@@ -172,6 +172,37 @@ Goed om te weten:
 - De dagelijkse back-ups staan in `helder-data/backups/`. Wil je extra zekerheid, zet dan ook de back-ups van Vimexx aan, of download af en toe een back-up via *Instellingen*.
 - Lokaal de PHP-versie uitproberen: `php -S localhost:8080 php/router.php`.
 
+### Helder publiek maken: aanmelden met Google en een beheerder
+
+Andere mensen kunnen een eigen Helder-account aanmaken door zich **aan te melden met Google**. Elk account heeft een eigen, aparte boekhouding. Jij krijgt een apart **beheerdersaccount**, los van je gewone account. Daarmee zie je wie er een account heeft en wanneer er aangemeld werd, maar niemands financiële gegevens.
+
+1. **Google-login aanmaken** (gratis):
+   - Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project, bv. *Helder*.
+   - *APIs & Services → OAuth consent screen*: kies *External*, vul de naam (Helder), je e-mailadres en het domein `helderfin.be` in, en publiceer de app.
+   - *APIs & Services → Credentials → Create credentials → OAuth client ID*: kies *Web application*.
+     - Authorized JavaScript origins: `https://helderfin.be`
+     - Authorized redirect URI: `https://helderfin.be/api/auth/google/callback`
+   - Je krijgt een **Client ID** en een **Client secret**.
+2. **In GitHub** (*Settings → Secrets and variables → Actions*) voeg je toe:
+
+   | Naam | Waarde |
+   |---|---|
+   | `HELDER_GOOGLE_CLIENT_ID` | de Client ID |
+   | `HELDER_GOOGLE_CLIENT_SECRET` | het Client secret |
+   | `HELDER_ADMIN_USERNAME` | een naam voor de beheerder, bv. `beheer` (niet dezelfde als je gewone account) |
+   | `HELDER_ADMIN_PASSWORD` | een sterk wachtwoord (minstens 8 tekens) |
+
+3. Start de workflow opnieuw (*Actions → Testen en uitrollen → Run workflow*).
+4. Meld je op helderfin.be aan met de beheerdersnaam en het wachtwoord. Je komt op het **beheerscherm**:
+   - **Nieuwe accounts open/gesloten**: standaard gesloten. Zet het open als anderen mogen aansluiten.
+   - **Gebruikers**: wanneer aangemaakt, laatst aangemeld, aantal aanmeldingen, aantal transacties en opslag. Je kan iemand blokkeren of verwijderen, en de AI-functie per gebruiker toelaten (die gebruikt jouw API-sleutel en kost dus geld).
+   - **Laatste aanmeldingen**: wie, wanneer, hoe (Google of wachtwoord), gelukt of mislukt, IP-adres en toestel.
+   - Het wachtwoord van de beheerder wijzig je via het secret `HELDER_ADMIN_PASSWORD`.
+
+Goed om te weten:
+- De **bankkoppeling** (Enable Banking) werkt enkel voor jouw eigen account. Je Enable Banking-app staat in "restricted" modus en kan dus enkel jouw rekeningen lezen. Andere gebruikers laden CSV-bestanden op.
+- Bewaar je financiële gegevens van anderen, dan ben je volgens de GDPR verantwoordelijk voor die gegevens. Zet een korte privacyverklaring online (wat je bewaart, waar, en hoe iemand zijn account kan laten verwijderen) voor je de registratie openzet.
+
 De andere manieren hieronder gebruiken de Node.js-server.
 
 ### Optie A — Thuis, privé en gratis, met Tailscale (aanbevolen om te starten)
@@ -312,6 +343,7 @@ server/ai.js               optionele classificatie via Claude
 server/degiro.js           rechtstreekse Degiro-koppeling
 server/prices.js           historische koersen (Yahoo Finance) voor de reconstructie
 server/enablebanking.js    bankkoppeling via Enable Banking (PSD2); in PHP: php/lib/enablebanking.php
+server/accounts.js         aanmelden met Google, beheerder, logboek; in PHP: php/lib/accounts.php
 api.php, php/lib/          dezelfde server in PHP, voor gewone webhosting (Vimexx, DirectAdmin, ...)
 php/router.php             om de PHP-versie lokaal te draaien: php -S localhost:8080 php/router.php
 .htaccess, .user.ini       Apache- en PHP-instellingen voor de webhosting

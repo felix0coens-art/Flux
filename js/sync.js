@@ -19,6 +19,8 @@
   let status = 'idle'; // idle | syncing | ok | error | offline
   let lastSync = meta.lastSync || null;
   let features = {};
+  let authInfo = {};
+  let account = null;
   let pushTimer = null, pollTimer = null, inFlight = null, seq = 0;
 
   function loadMeta() {
@@ -164,12 +166,15 @@
       return mode;
     }
     features = session.features || {};
+    authInfo = session.auth || {};
+    account = session.user ? session : null;
     if (!session.user) {
       mode = 'auth';
       setStatus('idle');
-      opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user });
+      opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user, auth: authInfo });
       return mode;
     }
+    if (session.role === 'admin') { mode = 'admin'; setStatus('idle'); opts.onAdmin(session); return mode; }
     await afterLogin(session.user);
     return mode;
   }
@@ -179,13 +184,15 @@
       const session = await api('GET', '/api/session');
       features = session.features || {};
       if (session.user) { mode = 'server'; await syncNow(); }
-      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user }); }
+      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user, auth: session.auth || {} }); }
     } catch (e) { /* nog steeds offline */ }
   }
 
   async function login(username, password) {
     const r = await api('POST', '/api/login', { username, password });
     await refreshFeatures();
+    account = r;
+    if (r.role === 'admin') { mode = 'admin'; opts.onAdmin(r); return r.user; }
     await afterLogin(r.user);
     return r.user;
   }
@@ -198,7 +205,7 @@
   }
 
   async function refreshFeatures() {
-    try { features = (await api('GET', '/api/session')).features || {}; } catch (e) { /* later */ }
+    try { const s = await api('GET', '/api/session'); features = s.features || {}; authInfo = s.auth || {}; account = s.user ? s : account; } catch (e) { /* later */ }
   }
 
   async function logout(everywhere) {
@@ -241,8 +248,17 @@
     disconnect: connectionId => api('POST', '/api/bank/disconnect', { connectionId })
   };
 
+  /** Beheer (enkel voor het beheerdersaccount). */
+  const admin = {
+    overview: () => api('GET', '/api/admin/overview'),
+    setRegistration: open => api('POST', '/api/admin/site', { registrationOpen: !!open }),
+    user: (username, action) => api('POST', '/api/admin/user', { username, action })
+  };
+
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices, bank,
+    init, syncNow, noteChanges, login, setup, logout, changePassword, lookup, degiro, prices, bank, admin,
+    get auth() { return authInfo; },
+    get account() { return account; },
     get mode() { return mode; },
     get user() { return meta.user; },
     get features() { return features; },

@@ -486,7 +486,45 @@
     };
   }
 
-  const api = { snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  /**
+   * Gerealiseerde winst/verlies per product, uit je aan- en verkopen (methode: gemiddelde aankoopprijs,
+   * kosten inbegrepen). Verkochte (of deels verkochte) producten, met dividenden die ze opbrachten.
+   */
+  function realized(inv) {
+    const by = {};
+    const trades = (inv && inv.trades || []).slice().sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+    for (const t of trades) {
+      const k = keyOf(t);
+      const p = by[k] || (by[k] = { key: k, isin: t.isin || '', name: t.name || k, qty: 0, cost: 0, bought: 0, boughtQty: 0, soldQty: 0, proceeds: 0, costSold: 0, result: 0, fees: 0, firstBuy: null, lastSell: null, sells: [] });
+      p.fees += Math.abs(t.feesEur || 0);
+      if (t.quantity > 0) {
+        const paid = Math.abs(t.totalEur || 0);
+        p.qty += t.quantity; p.cost += paid; p.bought += paid; p.boughtQty += t.quantity;
+        if (!p.firstBuy) p.firstBuy = t.date;
+      } else if (t.quantity < 0) {
+        const q = Math.min(-t.quantity, p.qty > 0 ? p.qty : -t.quantity);
+        const avg = p.qty > 0 ? p.cost / p.qty : 0;
+        const costSold = Math.round(avg * q);
+        const got = Math.abs(t.totalEur || 0);
+        p.qty = Math.max(0, p.qty + t.quantity); p.cost = p.qty > 1e-9 ? p.cost - costSold : 0;
+        p.soldQty += -t.quantity; p.proceeds += got; p.costSold += costSold; p.result += got - costSold; p.lastSell = t.date;
+        p.sells.push({ date: t.date, quantity: -t.quantity, proceeds: got, cost: costSold, result: got - costSold });
+      }
+    }
+    const div = {};
+    for (const m of (inv && inv.movements) || []) if ((m.type === 'dividend' || m.type === 'dividend_tax') && m.isin) div[m.isin] = (div[m.isin] || 0) + m.amountEur;
+    const list = Object.values(by).filter(p => p.soldQty > 0).map(p => Object.assign(p, {
+      closed: p.qty < 1e-6, dividends: div[p.isin] || 0,
+      pct: p.costSold ? p.result / p.costSold : null
+    })).sort((a, b) => (b.lastSell || '').localeCompare(a.lastSell || ''));
+    return {
+      positions: list,
+      total: list.reduce((s, p) => s + p.result, 0),
+      totalDividends: list.reduce((s, p) => s + p.dividends, 0)
+    };
+  }
+
+  const api = { realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

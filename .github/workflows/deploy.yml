@@ -38,6 +38,10 @@ jobs:
       SSH_KEY: ${{ secrets.HELDER_SSH_KEY }}
       DEPLOY_PATH: ${{ secrets.HELDER_DEPLOY_PATH }}
       ANTHROPIC_API_KEY: ${{ secrets.HELDER_ANTHROPIC_API_KEY }}
+      GOOGLE_CLIENT_ID: ${{ secrets.HELDER_GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.HELDER_GOOGLE_CLIENT_SECRET }}
+      ADMIN_USERNAME: ${{ secrets.HELDER_ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.HELDER_ADMIN_PASSWORD }}
       SITE_URL: ${{ vars.HELDER_URL }}
     steps:
       - name: Instellingen controleren
@@ -78,9 +82,9 @@ jobs:
           rsync -rlz --delete --chmod=D755,F644 \
             --exclude '.well-known' --exclude 'cgi-bin' \
             -e "$SSH" dist/public_html/ "$SSH_USER@$SSH_HOST:${DEPLOY_PATH%/}/"
-          # Optioneel: API-sleutel voor de AI-functie, in een bestand naast (niet in) public_html
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            php -r 'echo "<?php\n// Aangemaakt door GitHub (HELDER_ANTHROPIC_API_KEY)\nreturn " . var_export(["ANTHROPIC_API_KEY" => getenv("ANTHROPIC_API_KEY")], true) . ";\n";' \
+          # Optioneel: geheime instellingen (AI-sleutel, Google-login, beheerder) in een bestand naast (niet in) public_html
+          if [ -n "$ANTHROPIC_API_KEY$GOOGLE_CLIENT_ID$ADMIN_USERNAME" ]; then
+            php -r '$c = array_filter(["ANTHROPIC_API_KEY" => getenv("ANTHROPIC_API_KEY"), "FLUX_GOOGLE_CLIENT_ID" => getenv("GOOGLE_CLIENT_ID"), "FLUX_GOOGLE_CLIENT_SECRET" => getenv("GOOGLE_CLIENT_SECRET"), "FLUX_ADMIN_USERNAME" => getenv("ADMIN_USERNAME"), "FLUX_ADMIN_PASSWORD" => getenv("ADMIN_PASSWORD")]); echo "<?php\n// Aangemaakt door GitHub (secrets HELDER_...)\nreturn " . var_export($c, true) . ";\n";' \
               | $SSH "$SSH_USER@$SSH_HOST" "umask 077 && cat > '$(dirname "${DEPLOY_PATH%/}")/helder-config.php'"
           fi
           echo "Helder is bijgewerkt (versie ${GITHUB_SHA::7})."

@@ -26,6 +26,7 @@ const AI = require('./ai.js');
 const Degiro = require('./degiro.js');
 const Prices = require('./prices.js');
 const EnableBanking = require('./enablebanking.js');
+const Accounts = require('./accounts.js');
 
 // Koerscache in het geheugen (12 uur)
 const priceCache = {
@@ -72,6 +73,12 @@ function userFile(username) { return 'user-' + Buffer.from(username).toString('h
 const Bank = EnableBanking.create({
   readJson, writeJson, withLock,
   remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}),
+  publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
+});
+
+const Acc = Accounts.create({
+  readJson, writeJson, withLock, getUsers: () => getUsers(), hashPassword: (p) => hashPassword(p), verifyPassword: (p, u) => verifyPassword(p, u),
+  userFile: n => userFile(n), dataDir: DATA_DIR, clientIp: req => clientIp(req), httpError: (st, m) => httpError(st, m),
   publicUrl: req => (process.env.FLUX_PUBLIC_URL || ((isSecure(req) ? 'https' : 'http') + '://' + String(req.headers.host || 'localhost').replace(/[^a-zA-Z0-9.:[\]-]/g, ''))).replace(/\/+$/, '')
 });
 
@@ -183,7 +190,8 @@ function recordAttempt(req) { const ip = clientIp(req); attempts.set(ip, (attemp
 let setupCode = null;
 async function initSetup() {
   const users = await getUsers();
-  if (Object.keys(users).length) return;
+  // Enkel zolang er geen eigen account is (de beheerder en Google-gebruikers tellen niet mee)
+  if (Object.values(users).some(u => Accounts.userRole(u) === 'owner')) return;
   if (process.env.FLUX_USERNAME && process.env.FLUX_PASSWORD) {
     if (!validUsername(process.env.FLUX_USERNAME) || !validPassword(process.env.FLUX_PASSWORD)) {
       console.error('FLUX_USERNAME/FLUX_PASSWORD ongeldig (wachtwoord min. 8 tekens).');
@@ -376,8 +384,35 @@ async function handleApi(req, res, pathname, query) {
   if (req.method !== 'GET' && req.headers['x-flux'] !== '1') throw httpError(403, 'Verboden');
   const user = await sessionUser(req);
 
+  const users = await getUsers();
+  const me = user ? users[user] || null : null;
+  const role = Accounts.userRole(me);
+  const aiOk = AI.available() && Accounts.mayAi(me);
+
   if (pathname === '/api/session' && req.method === 'GET') {
-    return send(res, 200, { user, setupRequired: !!setupCode, features: { ai: AI.available(), aiModel: AI.available() ? AI.MODEL : null } });
+    return send(res, 200, Object.assign(me ? Accounts.userPublic(user, me) : { user: null, role: 'none' }, {
+      setupRequired: !!setupCode,
+      auth: { google: Acc.googleConfigured(), registration: (await Acc.siteSettings()).registration },
+      features: { ai: aiOk, aiModel: aiOk ? AI.MODEL : null, bank: role === 'owner' }
+    }));
+  }
+
+  if (pathname === '/api/auth/google' && req.method === 'GET') {
+    if (!Acc.googleConfigured()) throw httpError(400, 'Aanmelden met Google is niet ingesteld');
+    res.writeHead(302, { Location: await Acc.googleStart(req), 'Cache-Control': 'no-store' });
+    return res.end();
+  }
+  if (pathname === '/api/auth/google/callback' && req.method === 'GET') {
+    let r;
+    try { r = await Acc.googleCallback(fetch, req, Object.fromEntries(query)); }
+    catch (e) { console.error('Google:', e.message); r = { ok: false, message: 'Google is niet bereikbaar. Probeer later opnieuw.' }; }
+    if (r.ok) {
+      const token = await createSession(r.user);
+      res.writeHead(302, Object.assign({ Location: '/' + (r.new ? '?welkom=1' : ''), 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400), 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
+      return res.end();
+    }
+    res.writeHead(400, Object.assign({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, SECURITY_HEADERS));
+    return res.end(Accounts.authPage(r));
   }
 
   if (pathname === '/api/setup' && req.method === 'POST') {
@@ -397,14 +432,18 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/login' && req.method === 'POST') {
     const b = await readBody(req);
     if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
-    const users = await getUsers();
-    const u = validUsername(b.username) && users[b.username];
-    if (!u || !verifyPassword(b.password || '', u)) {
+    if (validUsername(b.username)) await Acc.ensureAdmin(b.username);
+    const all = await getUsers();
+    const u = validUsername(b.username) && all[b.username];
+    if (!u || !u.hash || !verifyPassword(b.password || '', u)) {
       recordAttempt(req);
+      if (u) await Acc.logLogin(req, b.username, 'wachtwoord', false, 'fout wachtwoord');
       throw httpError(401, 'Gebruikersnaam of wachtwoord klopt niet');
     }
+    if (u.disabled) { await Acc.logLogin(req, b.username, 'wachtwoord', false, 'account geblokkeerd'); throw httpError(403, 'Dit account is geblokkeerd'); }
+    await Acc.logLogin(req, b.username, 'wachtwoord', true);
     const token = await createSession(b.username);
-    return send(res, 200, { user: b.username }, { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+    return send(res, 200, Accounts.userPublic(b.username, u), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
   }
 
   if (pathname === '/api/logout' && req.method === 'POST') {
@@ -422,9 +461,20 @@ async function handleApi(req, res, pathname, query) {
     return res.end(EnableBanking.callbackPage(r));
   }
 
-  if (!user) throw httpError(401, 'Niet aangemeld');
+  if (!user || !me || me.disabled) throw httpError(401, 'Niet aangemeld');
+
+  // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
+  if (pathname.startsWith('/api/admin/')) {
+    if (role !== 'admin') throw httpError(403, 'Enkel voor de beheerder');
+    if (pathname === '/api/admin/overview' && req.method === 'GET') return send(res, 200, await Acc.overview(req));
+    if (pathname === '/api/admin/site' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await Acc.saveSite({ registration: b.registrationOpen ? 'open' : 'closed' })); }
+    if (pathname === '/api/admin/user' && req.method === 'POST') return send(res, 200, await Acc.userAction(user, await readBody(req)));
+    throw httpError(404, 'Onbekend');
+  }
+  if (role === 'admin' && pathname !== '/api/password') throw httpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
   if (pathname.startsWith('/api/bank/')) {
+    if (role !== 'owner') throw httpError(403, 'De bankkoppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
     try {
       if (pathname === '/api/bank/status' && req.method === 'GET') return send(res, 200, await Bank.status(req, user));
       if (pathname === '/api/bank/config' && req.method === 'POST') return send(res, 200, await Bank.saveConfig(fetch, await readBody(req)));
@@ -488,6 +538,7 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/lookup' && req.method === 'POST') {
     const b = await readBody(req);
+    if (!aiOk) { if (b.provider === 'ai') throw httpError(400, 'AI is niet beschikbaar voor jouw account'); b.provider = 'free'; }
     return send(res, 200, await lookupItems(b));
   }
 

@@ -17,7 +17,7 @@ const HELDER_VERSION = 3; // = Store.VERSION in js/store.js
 const SESSION_DAYS = 120;
 const MAX_BODY = 30 * 1024 * 1024;
 const TOMBSTONE_TTL = 400 * 86400000;
-const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted'];
+const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people'];
 const SYNC_SINGLETONS = ['settings', 'investments'];
 const USER_AGENT = 'Helder-persoonlijke-boekhouding/2.0 (self-hosted)';
 
@@ -202,7 +202,8 @@ function record_attempt(): void {
  * (te bekijken via DirectAdmin → File Manager). Of: FLUX_USERNAME + FLUX_PASSWORD instellen.
  */
 function setup_code(): ?string {
-    if (get_users()) return null;
+    // Enkel zolang er geen eigen account is (de beheerder en Google-gebruikers tellen niet mee)
+    foreach (get_users() as $u) if (($u['role'] ?? '') !== 'admin' && !isset($u['google'])) return null;
     $u = cfg('FLUX_USERNAME');
     $p = cfg('FLUX_PASSWORD');
     if ($u && $p && valid_username($u) && valid_password($p)) {

@@ -12,6 +12,7 @@ require __DIR__ . '/php/lib/prices.php';
 require __DIR__ . '/php/lib/degiro.php';
 require __DIR__ . '/php/lib/ai.php';
 require __DIR__ . '/php/lib/enablebanking.php';
+require __DIR__ . '/php/lib/accounts.php';
 
 @set_time_limit(300);
 ini_set('display_errors', '0');
@@ -48,16 +49,43 @@ function handle(string $method, string $path): void {
     // CSRF-bescherming: wijzigende verzoeken moeten van de app zelf komen
     if ($method !== 'GET' && ($_SERVER['HTTP_X_FLUX'] ?? '') !== '1') throw new HttpError(403, 'Verboden');
     $user = session_user();
+    $users = get_users();
+    $me = $user ? ($users[$user] ?? null) : null;
+    $role = user_role($me);
     $cookieAge = SESSION_DAYS * 86400;
+    $aiOk = ai_available() && user_may_ai($me);
 
     if ($path === '/api/session' && $method === 'GET') {
         $code = setup_code();
-        send(200, [
-            'user' => $user,
+        send(200, array_merge($me ? user_public($user, $me) : ['user' => null, 'role' => 'none'], [
             'setupRequired' => $code !== null,
             'setupHint' => $code !== null ? 'De setupcode staat in het bestand SETUPCODE.txt in de map helder-data op je hosting (DirectAdmin → File Manager).' : null,
-            'features' => ['ai' => ai_available(), 'aiModel' => ai_available() ? ai_model() : null],
-        ]);
+            'auth' => ['google' => google_configured(), 'registration' => site_settings()['registration']],
+            'features' => ['ai' => $aiOk, 'aiModel' => $aiOk ? ai_model() : null, 'bank' => $role === 'owner'],
+        ]));
+        return;
+    }
+
+    // Aanmelden met Google
+    if ($path === '/api/auth/google' && $method === 'GET') {
+        header('Location: ' . google_start(), true, 302);
+        header('Cache-Control: no-store');
+        return;
+    }
+    if ($path === '/api/auth/google/callback' && $method === 'GET') {
+        try { $r = google_callback('http_fetch', $_GET); }
+        catch (RuntimeException $e) { $r = ['ok' => false, 'message' => 'Google is niet bereikbaar. Probeer later opnieuw.']; }
+        header('Cache-Control: no-store');
+        foreach (SECURITY_HEADERS as $k => $v) header("$k: $v");
+        if ($r['ok']) {
+            $token = create_session($r['user']);
+            header('Set-Cookie: ' . session_cookie($token, $cookieAge));
+            header('Location: /' . (!empty($r['new']) ? '?welkom=1' : ''), true, 302);
+            return;
+        }
+        http_response_code(400);
+        header('Content-Type: text/html; charset=utf-8');
+        echo auth_page($r);
         return;
     }
 
@@ -80,15 +108,19 @@ function handle(string $method, string $path): void {
     if ($path === '/api/login' && $method === 'POST') {
         $b = body();
         if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
-        $users = get_users();
         $name = $b['username'] ?? null;
+        if (valid_username($name)) ensure_admin($name);
+        $users = get_users();
         $u = valid_username($name) ? ($users[$name] ?? null) : null;
         if (!$u || !verify_password((string) ($b['password'] ?? ''), $u)) {
             record_attempt();
+            if ($u) log_login($name, 'wachtwoord', false, 'fout wachtwoord');
             throw new HttpError(401, 'Gebruikersnaam of wachtwoord klopt niet');
         }
+        if (!empty($u['disabled'])) { log_login($name, 'wachtwoord', false, 'account geblokkeerd'); throw new HttpError(403, 'Dit account is geblokkeerd'); }
+        log_login($name, 'wachtwoord', true);
         $token = create_session($name);
-        send(200, ['user' => $name], ['Set-Cookie' => session_cookie($token, $cookieAge)]);
+        send(200, user_public($name, $u), ['Set-Cookie' => session_cookie($token, $cookieAge)]);
         return;
     }
 
@@ -111,9 +143,20 @@ function handle(string $method, string $path): void {
         return;
     }
 
-    if (!$user) throw new HttpError(401, 'Niet aangemeld');
+    if (!$user || !$me || !empty($me['disabled'])) throw new HttpError(401, 'Niet aangemeld');
+
+    // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
+    if (strpos($path, '/api/admin/') === 0) {
+        if ($role !== 'admin') throw new HttpError(403, 'Enkel voor de beheerder');
+        if ($path === '/api/admin/overview' && $method === 'GET') { send(200, admin_overview()); return; }
+        if ($path === '/api/admin/site' && $method === 'POST') { $b = body(); send(200, save_site_settings(['registration' => !empty($b['registrationOpen']) ? 'open' : 'closed'])); return; }
+        if ($path === '/api/admin/user' && $method === 'POST') { send(200, admin_user_action($user, body())); return; }
+        throw new HttpError(404, 'Onbekend');
+    }
+    if ($role === 'admin' && $path !== '/api/password') throw new HttpError(403, 'Het beheerdersaccount heeft geen eigen boekhouding');
 
     if (strpos($path, '/api/bank/') === 0) {
+        if ($role !== 'owner') throw new HttpError(403, 'De bankkoppeling is enkel beschikbaar voor de eigenaar van deze Helder', 'owner');
         try {
             if ($path === '/api/bank/status' && $method === 'GET') { send(200, bank_status($user)); return; }
             if ($path === '/api/bank/config' && $method === 'POST') { send(200, bank_save_config('http_fetch', body())); return; }
@@ -153,7 +196,10 @@ function handle(string $method, string $path): void {
     }
 
     if ($path === '/api/lookup' && $method === 'POST') {
-        send(200, lookup_items(body(), 'http_fetch'));
+        $b = body();
+        if (!$aiOk && ($b['provider'] ?? '') !== 'free') $b['provider'] = ($b['provider'] ?? '') === 'ai' ? 'none-ai' : 'free';
+        if ($b['provider'] === 'none-ai') throw new HttpError(400, 'AI is niet beschikbaar voor jouw account');
+        send(200, lookup_items($b, 'http_fetch'));
         return;
     }
 

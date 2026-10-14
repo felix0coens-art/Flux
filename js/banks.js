@@ -193,7 +193,10 @@
     const usedLinked = new Set();
     const seen = new Set();
     const fresh = [], duplicates = [];
+    const from = (state.settings && state.settings.dataFrom) || '';
+    const tooOld = [];
     for (const t of parsed.transactions) {
+      if (from && t.date < from) { tooOld.push(t); continue; }
       const key = rowKey(t);
       const fp = 'fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' }));
       const dup = existing.get(key) || goneKeys.get(key) || (t.bankRef || t.balanceAfter != null ? null : loose.get(fp))
@@ -203,7 +206,7 @@
     }
     const fromImports = {};
     for (const d of duplicates) if (d.existing && d.existing.importId) fromImports[d.existing.importId] = (fromImports[d.existing.importId] || 0) + 1;
-    return { fileHash, fileName, sameFile: sameFile || null, fresh, duplicates, fromImports };
+    return { fileHash, fileName, sameFile: sameFile || null, fresh, duplicates, fromImports, tooOld };
   }
 
   /** Voert een geplande import uit: maakt het importrecord en de transacties aan. */
@@ -312,14 +315,17 @@
     const pool = inAcc.filter(t => !isLinkedRef(t.bankRef));
     const used = new Set(), seen = new Set();
     const fresh = [], duplicates = [];
+    const from = (state.settings && state.settings.dataFrom) || '';
+    const tooOld = [];
     for (const t of rows.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+      if (from && t.date < from) { tooOld.push(t); continue; }
       if (t.bankRef && (byRef.has(t.bankRef) || seen.has(t.bankRef))) { const x = byRef.get(t.bankRef) || null; duplicates.push({ tx: t, existing: x && !x.deletedAt ? x : null, deleted: !!(x && x.deletedAt) }); continue; }
       const m = closestMatch(pool, t, used);
       if (m) { duplicates.push({ tx: t, existing: m.deletedAt ? null : m, deleted: !!m.deletedAt }); continue; }
       if (t.bankRef) seen.add(t.bankRef);
       fresh.push(t);
     }
-    return { fresh, duplicates };
+    return { fresh, duplicates, tooOld };
   }
 
   /** Voegt opgehaalde transacties toe als één import (zichtbaar en ongedaan te maken zoals een bestand). */
@@ -364,6 +370,20 @@
     state.deleted = (state.deleted || []).filter(d => d.id !== id);
   }
 
+  /** Eerste datum met transacties per rekening (enkel rekeningen met transacties). */
+  function accountStarts(state) {
+    const out = {};
+    for (const t of state.transactions) if (t.source === 'import' && (!out[t.accountId] || t.date < out[t.accountId])) out[t.accountId] = t.date;
+    return out;
+  }
+
+  /** Transacties van vóór de startdatum weghalen (zonder ze te onthouden: zet je de datum vroeger, dan komen ze bij een import terug). */
+  function trimBefore(state, from) {
+    const before = state.transactions.length;
+    state.transactions = state.transactions.filter(t => t.source !== 'import' || t.date >= from);
+    return before - state.transactions.length;
+  }
+
   /** Een KBC-export kan meerdere rekeningen bevatten: splits per IBAN. */
   function splitByAccount(parsed) {
     const ibans = parsed.accountIbans.length ? parsed.accountIbans : [null];
@@ -379,7 +399,7 @@
   }
 
   const api = { PROFILES, merchantFromDescription, detect, parse, plan, apply, undo, hashText, rowKey, endBalance, splitByAccount,
-    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef, removeTransactions, forgetDeleted };
+    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef, removeTransactions, forgetDeleted, accountStarts, trimBefore };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxBanks = api;
 })(typeof window !== 'undefined' ? window : globalThis);
