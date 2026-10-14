@@ -712,3 +712,40 @@ button.ml-row:hover { background: var(--surface-2); }
 .ex-ok { margin-left: auto; color: var(--green); font-size: 12px; font-weight: 600; white-space: nowrap; }
 @media (max-width: 960px) { .example-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .example-grid { grid-template-columns: 1fr; } }
+/* Klikbare categorieën → transacties van die categorie */
+.cat-link { cursor: pointer; }
+.badge.cat-link:hover, span.cat-link:hover { text-decoration: underline; }
+.catbar.cat-link:hover, .ive-row.cat-link:hover, .donut-legend li[data-action]:hover { background: var(--surface-2); border-radius: 6px; }
+.donut-seg[data-action] { cursor: pointer; }
+.cat-modal-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.cat-total { font-size: 26px; font-weight: 800; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--surface-2); }
+/* Rekening-courant (voorschotten) */
+.lg-head { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 10px; }
+.lg-head p { flex: 1; min-width: 240px; margin: 0; }
+table.ledger td { vertical-align: top; }
+table.ledger .lg-bal { font-weight: 600; color: var(--muted); }
+table.ledger tr.lg-adv td:first-child { border-left: 3px solid var(--series-2); }
+table.ledger tr.lg-rep td:first-child { border-left: 3px solid var(--series-1); }
+table.ledger tr.lg-surplus td:first-child { border-left: 3px solid var(--green); }
+.lg-settle { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.settle-select { font-size: 13px; padding: 3px 6px; max-width: 100%; }
+.adv-title-sm { font-size: 14px; }
+/* Tijdslijn: elke maand een label, het jaar eronder */
+.tl-months { display: flex; gap: 2px; margin: 4px 12px 0; font-size: 11px; color: var(--muted); }
+.tl-months span { flex: 1; min-width: 0; text-align: center; overflow: hidden; white-space: nowrap; }
+.tl-months span.in { color: var(--text); font-weight: 600; }
+.tl-axis { margin-top: 0; height: 16px; font-weight: 600; }
+.tl-axis span { transform: none; padding-left: 3px; border-left: 1px solid var(--border); }
+/* Sparen */
+.sv-head { display: flex; align-items: center; gap: 8px; }
+.sv-head h2 { margin: 0; }
+.sv-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: center; margin: 10px 0; }
+.sv-amount { font-size: 32px; font-weight: 800; color: var(--green); }
+.sv-track { position: relative; height: 14px; background: var(--surface-2); border-radius: 7px; margin: 6px 0; overflow: visible; }
+.sv-fill { display: block; height: 100%; background: var(--green); border-radius: 7px; }
+.sv-pace { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); opacity: .5; }
+.sv-form { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.sv-form .field { margin: 0; }
+@media (max-width: 700px) { .sv-main { grid-template-columns: 1fr; gap: 12px; } }

@@ -123,3 +123,30 @@ test('voorschotten: titel, en per voorschot afhandelen (transactie, kwijtschelde
   assert.deepEqual([ticket.repaid, ticket.forgiven], [1000, 1000], 'deel van het ticket kwijtgescholden');
   assert.equal(C.advancesOverview(s).people[0].open, 2000);
 });
+
+test('voorschotten als rekening-courant: zelf kiezen wat vereffend is, en een overschot als inkomst', () => {
+  const s = Store.defaultState();
+  s.categories.push({ id: 'cat_ander_inkomen', name: 'Andere inkomsten', kind: 'income', color: '#888' });
+  s.transactions.push(
+    tx('a1', '2026-09-01', -3000, 'Ticket', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan', title: 'Oud' }),
+    tx('a2', '2026-09-20', -2000, 'Resto', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan', title: 'Nieuw' }),
+    // Jan betaalt het nieuwe voorschot terug, plus 500 te veel
+    tx('r1', '2026-09-25', 2500, 'Jan', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan', advanceOf: 'a2' }));
+  C.recompute(s);
+  let ov = C.advancesOverview(s);
+  const oud = ov.items.find(i => i.txId === 'a1'), nieuw = ov.items.find(i => i.txId === 'a2');
+  assert.equal(nieuw.repaid, 2000, 'het nieuwe voorschot is vereffend');
+  assert.equal(oud.repaid, 500, 'de rest gaat naar het oudste open voorschot');
+  assert.deepEqual(nieuw.settledBy.map(b => b.ref), ['r1']);
+  const jan = ov.people.find(p => p.person === 'Jan');
+  assert.deepEqual(jan.ledger.map(r => [r.kind, r.balance]), [['advance', 3000], ['advance', 5000], ['repayment', 2500]]);
+  // Te veel terugbetaald → rest als inkomst
+  s.transactions.push(tx('r2', '2026-10-01', 3000, 'Jan', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan' }));
+  C.recompute(s);
+  assert.equal(C.advancesOverview(s).people[0].open, -500, '500 te veel terug');
+  s.people.push({ id: 'p1', name: 'Jan', ibans: [], surplus: [{ id: 'x1', date: '2026-10-02', amount: 500, categoryId: 'cat_ander_inkomen' }] });
+  ov = C.advancesOverview(s);
+  assert.equal(ov.people[0].open, 0, 'na het inboeken staat alles op nul');
+  const oct = C.summarize(s, { start: '2026-10-01', end: '2026-10-31' });
+  assert.equal(oct.income, 500, 'het overschot is een inkomst');
+});

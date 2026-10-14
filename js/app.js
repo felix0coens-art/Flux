@@ -72,7 +72,7 @@
   function catBadge(id, suffix) {
     const extra = suffix ? ' ' + esc(suffix) : '';
     if (!id) return `<span class="badge none">Niet gekoppeld${extra}</span>`;
-    return `<span class="badge"><span class="dot" style="background:${esc(catColor(id))}"></span>${esc(catLabel(id))}${extra}</span>`;
+    return `<span class="badge cat-link" data-action="cat-view" data-cat="${esc(id)}" title="Transacties in ${esc(catName(id))}"><span class="dot" style="background:${esc(catColor(id))}"></span>${esc(catLabel(id))}${extra}</span>`;
   }
 
   const KIND_LABEL = {
@@ -247,7 +247,13 @@
         <input type="range" class="tl-range" data-tl="from" min="0" max="${n - 1}" step="1" value="${i0}" aria-label="Begin van de periode">
         <input type="range" class="tl-range" data-tl="to" min="0" max="${n - 1}" step="1" value="${i1}" aria-label="Einde van de periode">
       </div>
-      <div class="tl-axis">${months.map((m, i) => m.slice(5) === '01' || i === 0 ? `<span style="left:${((i + 0.5) / n * 100).toFixed(2)}%">${m.slice(5) === '01' ? m.slice(0, 4) : shortMonth(m)}</span>` : '').join('')}</div>
+      <div class="tl-months">${months.map((m, i) => {
+        // Elke maand een label: voluit als er plaats is, anders de beginletter (bij veel maanden enkel per kwartaal)
+        const mm = Number(m.slice(5));
+        const txt = n <= 18 ? MONTHS_SHORT[mm - 1] : n <= 40 ? MONTHS_SHORT[mm - 1].slice(0, 1).toUpperCase() : (mm % 3 === 1 ? MONTHS_SHORT[mm - 1].slice(0, 1).toUpperCase() : '');
+        return `<span class="${i >= i0 && i <= i1 ? 'in' : ''}">${txt}</span>`;
+      }).join('')}</div>
+      <div class="tl-axis">${months.map((m, i) => m.slice(5) === '01' || i === 0 ? `<span style="left:${(i / n * 100).toFixed(2)}%">${m.slice(0, 4)}</span>` : '').join('')}</div>
       <p class="small muted tl-hint">Sleep de twee bolletjes om het begin en het einde van de periode te kiezen. De balkjes tonen je uitgaven per maand.</p>
     </div>`;
   }
@@ -265,6 +271,7 @@
     sel.style.left = (a / months.length * 100).toFixed(2) + '%';
     sel.style.width = ((b - a + 1) / months.length * 100).toFixed(2) + '%';
     $$('.tl-bars span', tl).forEach((sp, i) => sp.classList.toggle('in', i >= a && i <= b));
+    $$('.tl-months span', tl).forEach((sp, i) => sp.classList.toggle('in', i >= a && i <= b));
   }
 
   // ---------- Rendering ----------
@@ -358,6 +365,7 @@
           <div class="hint">${sum.net < 0 ? 'meer uitgegeven dan verdiend' : sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : ''}</div></div>
         <div class="card kpi"><div class="label">Belegd</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
       </div>
+      ${savingsCard(lines)}
       ${incomeVsExpenses(sum, lines, range, multi)}
       <div class="card" style="margin-bottom:16px"><h2>Vermogen door de tijd</h2>${netWorthChart(range)}</div>
       <div class="grid two">
@@ -387,6 +395,36 @@
       </div>`;
   }
 
+  /** Gespaard dit jaar (beleggingsrekening + spaarrekeningen), met een doel dat je zelf kiest. */
+  function savingsCard(lines) {
+    const y = today.slice(0, 4);
+    const sv = C.savingsIn(state, { start: y + '-01-01', end: y + '-12-31' }, lines);
+    const prev = C.savingsIn(state, { start: (y - 1) + '-01-01', end: (y - 1) + '-' + today.slice(5) }, lines);
+    const goal = Number(state.settings.savingsGoal) || 0;
+    const dayOfYear = C.daysBetween(y + '-01-01', today) + 1;
+    const yearDays = C.daysBetween(y + '-01-01', y + '-12-31') + 1;
+    const expected = goal ? Math.round(goal * dayOfYear / yearDays) : 0;
+    const pct = goal ? Math.max(0, Math.min(1, sv.total / goal)) : 0;
+    const editing = ui.editGoal || !goal;
+    const parts = [sv.invested ? `${money(sv.invested)} naar je beleggingsrekening` : '', sv.toSavings ? `${money(sv.toSavings)} naar je spaarrekening${state.accounts.filter(a => a.type === 'spaar').length > 1 ? 'en' : ''}` : ''].filter(Boolean);
+    const pace = !goal ? '' : sv.total >= goal ? '🎉 Doel gehaald!' : sv.total >= expected ? `✓ Je ligt op schema (verwacht tegen vandaag: ${money(expected)}).` : `Je ligt ${money(expected - sv.total)} achter op schema.`;
+    return `<div class="card savings" style="margin-bottom:16px">
+      <div class="sv-head"><h2>💰 Gespaard in ${y}</h2><span class="spacer"></span>${goal && !ui.editGoal ? '<button class="btn small ghost" data-action="goal-edit">Doel wijzigen</button>' : ''}</div>
+      <div class="sv-main">
+        <div><div class="sv-amount ${sv.total >= 0 ? '' : 'negv'}">${money(sv.total)}</div>
+          <div class="small muted">${parts.length ? parts.join(' + ') : 'Nog niets naar je beleggings- of spaarrekening dit jaar.'}${prev.total ? ` · vorig jaar rond deze tijd: ${money(prev.total)}` : ''}</div></div>
+        ${goal ? `<div class="sv-goal"><div class="small muted">Doel: <strong>${money(goal)}</strong> per jaar · ${Math.round(pct * 100)}%</div>
+          <div class="sv-track"><span class="sv-fill" style="width:${(pct * 100).toFixed(1)}%"></span><span class="sv-pace" style="left:${(Math.min(1, dayOfYear / yearDays) * 100).toFixed(1)}%" title="Waar je vandaag zou moeten staan"></span></div>
+          <div class="small">${pace}${sv.total < goal ? ` Nog ${money(goal - sv.total)} te gaan.` : ''}</div></div>` : ''}
+      </div>
+      ${editing ? `<form data-form="savings-goal" class="sv-form">
+        <label class="field"><span>${goal ? 'Nieuw spaardoel' : 'Stel een spaardoel in'} <span class="muted small">(per jaar)</span></span><input type="text" name="goal" inputmode="decimal" placeholder="bv. 6.000" value="${goal ? esc((goal / 100).toFixed(0)) : ''}"></label>
+        <button class="btn primary" type="submit">Opslaan</button>${goal ? '<button class="btn ghost" type="button" data-action="goal-cancel">Annuleren</button>' : ''}
+      </form>` : ''}
+      <p class="small muted">Telt als gespaard: stortingen op je beleggingsrekening (min opnames) en overschrijvingen naar je eigen spaarrekeningen (min wat je er weer afhaalt).</p>
+    </div>`;
+  }
+
   /**
    * Inkomsten tegenover uitgaven: één schaal voor beide kanten, zodat je meteen ziet wat er binnenkwam,
    * waar het naartoe ging en wat er overbleef. Daaronder het verloop per maand.
@@ -412,7 +450,7 @@
     const max = Math.max(1, inc, out);
     const pct = (v, t) => t > 0 ? Math.round(v / t * 100) + '%' : '';
     const name = id => id === '__none__' ? 'Nog niet gekoppeld' : id === '__rest__' ? 'Andere' : catLabel(id);
-    const row = (r, cls, total) => `<div class="ive-row" title="${esc(name(r.id))}: ${money(r.v)} (${pct(r.v, total)})${r.costs ? ' — bruto ' + money(r.gross) + ', kosten ' + money(r.costs) : ''}">
+    const row = (r, cls, total) => `<div class="ive-row ${r.id !== '__rest__' ? 'cat-link' : ''}" ${r.id !== '__rest__' ? `data-action="cat-view" data-cat="${esc(r.id)}"` : ''} title="${esc(name(r.id))}: ${money(r.v)} (${pct(r.v, total)})${r.costs ? ' — bruto ' + money(r.gross) + ', kosten ' + money(r.costs) : ''}">
         <span class="ive-name">${r.id === '__rest__' ? `Andere <span class="muted small">(${r.n})</span>` : esc(name(r.id))}</span>
         <span class="ive-track"><span class="ive-fill ${cls}" style="width:${(r.v / max * 100).toFixed(2)}%"></span></span>
         <span class="ive-amt">${money(r.v)}<span class="muted small"> ${pct(r.v, total)}</span></span></div>`;
@@ -1026,10 +1064,7 @@
         <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
       <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
-      ${bankLinkCard()}
       ${cancelCard()}
-      <div class="grid cards" style="margin-bottom:16px">${cards}</div>
-
       <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
       <div class="filters">
         <div class="seg">
@@ -1039,6 +1074,9 @@
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
+      <h2 style="margin-top:28px">Rekeningen en bankkoppeling</h2>
+      <div class="grid cards" style="margin-bottom:16px">${cards}</div>
+      ${bankLinkCard()}
       ${rulesCard()}
       ${trashCard()}
       <details class="card import-history" style="margin-top:24px" data-keep="imports" ${ui.keepOpen.imports ? 'open' : ''}>
@@ -1225,6 +1263,7 @@
         ${history(p)}
         <div class="card-tools">
           <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
+          <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}" title="Alle voorschotten en terugbetalingen, en wat welke terugbetaling vereffent">📒 Rekening-courant</button>
           <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
       </div>`;
     };
@@ -1234,9 +1273,11 @@
       return `<div class="card person-card done">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
           <div class="grow"><strong class="person-name">${esc(p.name)}</strong></div>${status}</div>
+        ${st.open < 0 ? `<div class="notice small">${esc(p.name)} betaalde ${money(-st.open)} te veel terug. <button class="btn small" data-action="surplus-new" data-person="${esc(p.name)}">Rest inboeken als inkomst…</button></div>` : ''}
         ${history(p)}
         <div class="card-tools">
           <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
+          <button class="btn small" data-action="adv-ledger" data-person="${esc(p.name)}">📒 Rekening-courant</button>
           <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
       </div>`;
     };
@@ -1254,6 +1295,164 @@
         : people.length ? '<div class="card empty-state"><p>🎉 Niemand is je nog iets schuldig.</p></div>' : ''}
       ${done.length ? `<h2 class="section-title">Alles in orde</h2><div class="grid cards people">${done.map(doneCard).join('')}</div>` : ''}
       ${!people.length ? `<div class="card empty-state"><p>Nog geen voorschotten. Klik op <strong>+ Voorschot toevoegen</strong> en kies de betaling die je voor iemand deed.</p></div>` : ''}`;
+  }
+
+  /**
+   * Alle transacties in één categorie (klik op een categorie, eender waar). Standaard de gekozen periode,
+   * met een knop voor alles. Telt zoals de rest van Helder: terugbetalingen en kwijtscheldingen inbegrepen.
+   */
+  function catTxModal() {
+    const m = modal;
+    const none = m.cat === '__none__';
+    const range = m.all ? null : currentRange();
+    const lines = C.allocations(state).filter(l => (none ? !l.categoryId : l.categoryId === m.cat) && (!range || C.inRange(l.date, range)));
+    const groups = new Map();
+    for (const l of lines) {
+      const k = l.txId || ('fg:' + l.forgiveId);
+      const g = groups.get(k) || { key: k, txId: l.txId, date: l.date, amount: 0, refund: l.refund, forgiven: l.forgiven, person: l.person };
+      g.amount += l.amount;
+      groups.set(k, g);
+    }
+    const rows = Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
+    const total = rows.reduce((a, r) => a + r.amount, 0);
+    const c = none ? null : cat(m.cat);
+    const label = none ? 'Nog niet gekoppeld' : catLabel(m.cat);
+    const row = r => {
+      const t = r.txId ? txById(r.txId) : null;
+      const what = r.forgiven ? `🎁 Kwijtgescholden aan ${esc(r.person || '')}` : t ? esc(t.title || t.counterparty || t.description || '—') : '—';
+      const sub = r.forgiven ? 'voorschot dat een uitgave werd' : t ? esc([r.refund ? '↩ terugbetaling' : '', t.title ? t.counterparty : '', accName(t.accountId)].filter(Boolean).join(' · ')) : '';
+      return `<tr ${t ? `class="clickable" data-action="edit-tx" data-id="${esc(t.id)}"` : ''}>
+        <td class="nowrap">${fmtDate(r.date)}</td><td>${what}<div class="desc">${sub}</div></td>
+        <td class="amount ${amountClass(r.amount)}">${money(r.amount)}</td></tr>`;
+    };
+    return modalShell(label, `
+      <div class="cat-modal-head">
+        <div><div class="small muted">${m.all ? 'Altijd' : rangeLabel()}${c && c.kind === 'income' ? ' · inkomsten' : ''}</div><div class="cat-total">${money(Math.abs(total))}</div><div class="small muted">${rows.length} transactie${rows.length === 1 ? '' : 's'}</div></div>
+        <div class="seg"><button class="${m.all ? '' : 'active'}" data-action="cat-range" data-all="0">Gekozen periode</button><button class="${m.all ? 'active' : ''}" data-action="cat-range" data-all="1">Altijd</button></div>
+      </div>
+      ${rows.length ? `<div class="table-wrap"><table class="tx-table"><tbody>${rows.slice(0, 500).map(row).join('')}</tbody></table></div>${rows.length > 500 ? `<p class="small muted">De eerste 500 van ${rows.length}.</p>` : ''}`
+        : '<p class="muted">Geen transacties in deze periode.</p>'}`,
+      `${c && !c.id.startsWith('sys_') ? `<button class="btn" data-action="edit-category" data-id="${esc(c.id)}">Categorie bewerken</button>` : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+  }
+
+  /**
+   * Rekening-courant van één persoon: alle voorschotten en terugbetalingen op datum, met het lopend saldo.
+   * Per terugbetaling kies je zelf welk voorschot ze vereffent (of automatisch: het oudste eerst).
+   */
+  function advLedgerModal() {
+    const m = modal;
+    const pl = C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase());
+    const st = pl ? pl.stats : { ledger: [], open: 0, items: [] };
+    const rows = (st.ledger || []).slice().reverse();
+    const items = st.items || [];
+    const itemName = it => (it.title || it.counterparty || 'Voorschot') + ' · ' + fmtDate(it.date) + ' · ' + money(it.amount);
+    const settleSelect = r => {
+      const target = r.advanceOf || '';
+      return `<select class="settle-select" data-settle="${esc(r.ref)}" aria-label="Welk voorschot vereffent dit?">
+        <option value="">Automatisch (oudste open voorschot)</option>
+        ${items.map(it => `<option value="${esc(it.key)}" ${target === it.key || (target && target === it.txId && it.split == null) ? 'selected' : ''}>${esc(itemName(it))}${it.amount - it.repaid > 0 ? ' — nog ' + money(it.amount - it.repaid) + ' open' : ''}</option>`).join('')}
+      </select>`;
+    };
+    const line = row => {
+      if (row.kind === 'advance') {
+        const it = row.item;
+        const left = it.amount - it.repaid;
+        return `<tr class="lg-adv">
+          <td class="nowrap">${fmtDate(row.date)}</td>
+          <td><button class="linklike adv-title-sm" data-action="adv-title" data-key="${esc(it.key)}"><strong>${esc(it.title || it.counterparty || 'Voorschot')}</strong>${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
+            <div class="small muted">${left <= 0 ? (it.forgiven >= it.amount ? '🎁 kwijtgescholden' : '✓ vereffend') : left < it.amount ? `deels vereffend · nog ${money(left)} open` : '<span class="warn-text">nog open</span>'}${it.settledBy.length ? ' · door ' + it.settledBy.map(b => esc((b.kind === 'forgiven' ? '🎁 ' : '') + (b.title || 'terugbetaling')) + ' (' + money(b.amount) + ')').join(', ') : ''}</div></td>
+          <td class="amount">${money(it.amount)}</td><td></td>
+          <td class="amount lg-bal">${money(row.balance)}</td></tr>`;
+      }
+      if (row.kind === 'surplus') {
+        const x = row.surplus;
+        return `<tr class="lg-surplus"><td class="nowrap">${fmtDate(row.date)}</td>
+          <td><strong>Rest ingeboekt als inkomst</strong> → ${catBadge(x.categoryId)}${x.note ? ` <span class="small muted">${esc(x.note)}</span>` : ''}</td>
+          <td class="amount">${money(x.amount)}</td><td></td><td class="amount lg-bal">${money(row.balance)}</td>
+          <td><button class="btn small ghost" data-action="surplus-undo" data-person="${esc(m.person)}" data-id="${esc(x.id)}" title="Ongedaan maken">✕</button></td></tr>`;
+      }
+      const r = row.repayment;
+      const t = r.txId ? txById(r.txId) : null;
+      const label = r.kind === 'forgiven' ? '🎁 Kwijtgescholden' + (r.title ? ': ' + r.title : '') : (r.title || r.counterparty || 'Terugbetaling');
+      return `<tr class="lg-rep">
+        <td class="nowrap">${fmtDate(row.date)}</td>
+        <td>${t ? `<a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(label)}</a>` : esc(label)}
+          <div class="lg-settle"><span class="small muted">vereffent:</span> ${settleSelect(r)}</div>
+          ${r.surplus ? `<div class="small warn-text">${money(r.surplus)} meer dan er open stond</div>` : ''}</td>
+        <td></td><td class="amount pos">${money(r.amount)}</td>
+        <td class="amount lg-bal">${money(row.balance)}</td></tr>`;
+    };
+    const over = st.open < 0 ? -st.open : 0;
+    return modalShell(`Rekening-courant — ${m.person}`, `
+      <div class="lg-head">
+        <div><div class="small muted">${st.open > 0 ? m.person + ' is je nog schuldig' : st.open < 0 ? 'Te veel terugbetaald' : 'Saldo'}</div><div class="cat-total ${st.open < 0 ? 'pos' : ''}">${money(Math.abs(st.open))}</div></div>
+        <p class="small muted">Zoals een rekening: een voorschot zet geld op de rekening van ${esc(m.person)}, een terugbetaling haalt het eraf. Kies bij elke terugbetaling welk voorschot ze vereffent; laat je “Automatisch” staan, dan gaat ze naar het oudste open voorschot.</p>
+      </div>
+      ${over ? `<div class="notice small">${esc(m.person)} betaalde <strong>${money(over)}</strong> meer terug dan er open stond. Hoort dat bij een voorschot dat nog niet in Helder staat? Voeg het dan toe. Anders kan je de rest inboeken als inkomst.
+        <div style="margin-top:6px"><button class="btn small primary" data-action="surplus-new" data-person="${esc(m.person)}">Rest inboeken als inkomst…</button></div></div>` : ''}
+      ${rows.length ? `<div class="table-wrap"><table class="ledger"><thead><tr><th>Datum</th><th>Omschrijving</th><th class="right">Voorschot</th><th class="right">Terug</th><th class="right">Saldo</th><th></th></tr></thead><tbody>${rows.map(line).join('')}</tbody></table></div>`
+        : '<p class="muted">Nog geen bewegingen.</p>'}`,
+      `<button class="btn" data-action="adv-pick" data-person="${esc(m.person)}" data-dir="out">+ Voorschot</button><button class="btn" data-action="adv-pick" data-person="${esc(m.person)}" data-dir="in">+ Terugbetaling</button><span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+  }
+
+  /** Te veel terugbetaald: de rest inboeken als (andere) inkomst. */
+  function surplusModal() {
+    const m = modal;
+    const pl = C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase());
+    const over = pl && pl.stats.open < 0 ? -pl.stats.open : 0;
+    return modalShell('Rest inboeken als inkomst — ' + m.person, `
+      <p class="small muted">${esc(m.person)} betaalde ${money(over)} meer terug dan er open stond. Dat deel telt dan als inkomst in de categorie die je kiest, en de rekening van ${esc(m.person)} staat weer op nul.</p>
+      <div class="form-grid">
+        <label class="field"><span>Bedrag</span><input type="text" id="sp-amount" inputmode="decimal" value="${esc((over / 100).toFixed(2).replace('.', ','))}"></label>
+        <label class="field"><span>Datum</span><input type="date" id="sp-date" value="${esc(today)}" max="${today}"></label>
+        <label class="field full"><span>Telt als inkomst in</span><select id="sp-category">${categoryOptions(null, { kind: 'income' })}</select></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="sp-note" maxlength="80" placeholder="bv. fooi, rente, extra bijdrage"></label>
+      </div>
+      <div class="errors" id="sp-errors"></div>`,
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="surplus-save">Inboeken</button>`);
+  }
+
+  function saveSurplus() {
+    const m = modal;
+    const pl = C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase());
+    const over = pl && pl.stats.open < 0 ? -pl.stats.open : 0;
+    const amount = C.parseAmount($('#sp-amount').value);
+    const date = $('#sp-date').value;
+    const categoryId = $('#sp-category').value || null;
+    const errors = [];
+    if (isNaN(amount) || amount <= 0) errors.push('Geef een bedrag groter dan 0.');
+    else if (amount > over) errors.push('Dat is meer dan het overschot (' + money(over) + ').');
+    if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
+    if (!categoryId || !cat(categoryId) || cat(categoryId).kind !== 'income') errors.push('Kies een inkomstencategorie (maak er eventueel een bij Instellingen → Categorieën).');
+    if (errors.length) { $('#sp-errors').innerHTML = errors.map(esc).join('<br>'); return; }
+    const p = ensurePerson(m.person);
+    if (!p) return;
+    const entry = { id: C.uid('sp'), date, amount, categoryId, note: $('#sp-note').value.trim() };
+    p.surplus = (p.surplus || []).concat([entry]);
+    openModal({ type: 'advLedger', person: p.name });
+    commit();
+    toast(`${money(amount)} ingeboekt als ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeSurplus(p.name, entry.id) });
+  }
+
+  function removeSurplus(person, id) {
+    const p = personEntity(person);
+    if (!p) return;
+    p.surplus = (p.surplus || []).filter(x => x.id !== id);
+    commit('Inboeking ongedaan gemaakt');
+  }
+
+  /** Terugbetaling (of kwijtschelding) aan een ander voorschot koppelen, vanuit de rekening-courant. */
+  function setSettle(ref, key) {
+    if (ref.startsWith('fg:')) {
+      const id = ref.slice(3);
+      for (const p of state.people || []) for (const f of p.forgiven || []) if (f.id === id) { if (key) f.advanceOf = key; else delete f.advanceOf; }
+    } else {
+      const t = txById(ref);
+      if (!t) return;
+      if (key) t.advanceOf = key; else delete t.advanceOf;
+    }
+    commit();
+    if (modal && modal.type === 'advLedger') renderModal();
   }
 
   /** Titel van één voorschot (bij een gesplitste betaling: de notitie van die splitsing). */
@@ -1703,7 +1902,7 @@
       const exp = expected.filter(r => r.categoryId === id && r.daysUntil >= -5).slice(0, 2);
       const linked = costCats.filter(c => c.incomeId === id);
       return `<div class="card">
-        <div class="budget-card"><div class="top"><span class="name"><span class="dot-lg" style="background:${esc(catColor(id === '__none__' ? null : id))}"></span> ${esc(id === '__none__' ? 'Nog niet gekoppeld' : catLabel(id))}</span>
+        <div class="budget-card"><div class="top"><span class="name cat-link" data-action="cat-view" data-cat="${esc(id)}"><span class="dot-lg" style="background:${esc(catColor(id === '__none__' ? null : id))}"></span> ${esc(id === '__none__' ? 'Nog niet gekoppeld' : catLabel(id))}</span>
           <span class="amount pos">${money(v.net)}</span></div></div>
         ${id !== '__none__' ? `<div class="card-tools"><button class="btn small ghost" data-action="edit-category" data-id="${esc(id)}">✎ Naam / bewerken</button><button class="btn small ghost danger" data-action="delete-category" data-id="${esc(id)}">Verwijderen</button></div>` : ''}
         <table class="mini">
@@ -1754,7 +1953,7 @@
     if (!total) return '';
     const top = items.slice(0, 5);
     const rest = items.slice(5).reduce((a, x) => a + x.v, 0);
-    const segs = top.map(x => ({ label: x.id ? catLabel(x.id) : '❔ Nog niet gekoppeld', color: catColor(x.id), v: x.v }));
+    const segs = top.map(x => ({ id: x.id || '__none__', label: x.id ? catLabel(x.id) : '❔ Nog niet gekoppeld', color: catColor(x.id), v: x.v }));
     if (rest > 0) segs.push({ label: '⋯ Andere (' + (items.length - 5) + ')', color: 'var(--muted-mark)', v: rest });
     const R = 80, r = 52, cx = 90, cy = 90;
     let a0 = -Math.PI / 2;
@@ -1769,14 +1968,14 @@
         ? `M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx - 0.01} ${cy - R} L ${cx - 0.01} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
         : `M ${pt(R, s0)} A ${R} ${R} 0 ${large} 1 ${pt(R, s1)} L ${pt(r, s1)} A ${r} ${r} 0 ${large} 0 ${pt(r, s0)} Z`;
       a0 = a1;
-      return `<path d="${d}" fill="${esc(sg.color)}" data-donut="${i}" class="donut-seg"><title>${esc(sg.label)}: ${money(sg.v)} (${(frac * 100).toFixed(0)}%)</title></path>`;
+      return `<path d="${d}" fill="${esc(sg.color)}" data-donut="${i}" class="donut-seg" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''}><title>${esc(sg.label)}: ${money(sg.v)} (${(frac * 100).toFixed(0)}%)</title></path>`;
     }).join('');
     const pctTxt = v => (v / total * 100).toFixed(v / total < 0.1 ? 1 : 0).replace('.', ',') + '%';
     return `<div class="donut" data-total="${esc(money(total))}" data-total-label="${esc(opts.totalLabel || 'Totaal')}">
       <svg viewBox="0 0 180 180" role="img" aria-label="Verdeling per categorie">${arcs}
         <text x="90" y="84" text-anchor="middle" class="donut-label" id="donut-label">${esc(opts.totalLabel || 'Totaal')}</text>
         <text x="90" y="104" text-anchor="middle" class="donut-value" id="donut-value">${esc(money(total))}</text></svg>
-      <ul class="donut-legend">${segs.map((sg, i) => `<li data-donut="${i}" data-label="${esc(sg.label.replace(/\s*\(\d+\)$/, ''))}" data-value="${esc(money(sg.v) + ' · ' + pctTxt(sg.v))}"><span class="sw" style="background:${esc(sg.color)}"></span><span class="name">${esc(sg.label)}</span><span class="pct">${pctTxt(sg.v)}</span><span class="amt">${money(sg.v)}</span></li>`).join('')}</ul></div>`;
+ <ul class="donut-legend">${segs.map((sg, i) => `<li data-donut="${i}" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''} data-label="${esc(sg.label.replace(/\s*\(\d+\)$/, ''))}" data-value="${esc(money(sg.v) + ' · ' + pctTxt(sg.v))}"><span class="sw" style="background:${esc(sg.color)}"></span><span class="name">${esc(sg.label)}</span><span class="pct">${pctTxt(sg.v)}</span><span class="amt">${money(sg.v)}</span></li>`).join('')}</ul></div>`;
   }
 
   function onDonutHover(ev) {
@@ -1822,7 +2021,7 @@
         <div class="card">
           <h2>Per categorie</h2>
           ${donutChart(cats, { totalLabel: 'Uitgaven' })}
-          ${cats.length ? cats.map(c => `<div class="catbar"><span class="name">${esc(c.id ? catLabel(c.id) : 'Nog niet gekoppeld')}</span>
+          ${cats.length ? cats.map(c => `<div class="catbar cat-link" data-action="cat-view" data-cat="${esc(c.id || '__none__')}" title="Bekijk de transacties"><span class="name">${esc(c.id ? catLabel(c.id) : 'Nog niet gekoppeld')}</span>
             <span class="track"><span class="fill" style="display:block;width:${(c.v / maxCat * 100).toFixed(1)}%;background:${esc(catColor(c.id))}"></span></span>
             <span class="amount">${money(c.v)}</span></div>`).join('') : '<p class="muted">Geen uitgaven in deze periode.</p>'}
         </div>
@@ -1830,7 +2029,7 @@
           <div class="card-head"><h2>Budgetten</h2><button class="btn small" data-action="new-budget">+ Budget</button></div>
           ${budgets.length ? budgets.map(st => {
             const p = Math.min(st.pct, 1) * 100;
-            return `<div class="budget-line"><div class="row"><span>${esc(catLabel(st.budget.categoryId))} <span class="small muted">${st.budget.period === 'yearly' ? 'jaar' : 'maand'}</span></span>
+            return `<div class="budget-line"><div class="row"><span class="cat-link" data-action="cat-view" data-cat="${esc(st.budget.categoryId)}">${esc(catLabel(st.budget.categoryId))} <span class="small muted">${st.budget.period === 'yearly' ? 'jaar' : 'maand'}</span></span>
               <span class="small"><strong>${money(st.spent)}</strong> / ${money(st.limit)} <span class="badge ${st.status}">${st.status === 'ok' ? 'ok' : st.status === 'warn' ? 'bijna op' : 'over'}</span></span></div>
               <div class="progress"><div class="bar ${st.status}" style="width:${p.toFixed(1)}%"></div><div class="pace" style="left:${(st.elapsed * 100).toFixed(1)}%"></div></div>
               <div class="small muted row"><span>${st.remaining >= 0 ? 'nog ' + money(st.remaining) + (st.daysLeft > 0 ? ` · ${money(st.perDayLeft)}/dag` : '') : money(-st.remaining) + ' te veel'}</span>
@@ -1924,7 +2123,6 @@
           <div class="hint">Jouw persoonlijke rendement (XIRR): houdt rekening met het moment en de grootte van elke storting.</div></div>
       </div>
       ${perf.missingYearEnds.length ? `<div class="notice">Voor een rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>, en er zijn geen transacties om ze uit te reconstrueren.</div>` : ''}
-      ${perf.estimatedYears.length ? `<div class="notice info">Begin- en eindwaarden van ${perf.estimatedYears.join(', ')} zijn <strong>gereconstrueerd uit je transacties</strong>${iv.market && iv.market.series ? ' met historische marktkoersen' : ' met je aankoopkoersen (historische marktkoersen worden gebruikt zodra Helder ze kan ophalen)'}. Je hoeft daarvoor geen maandelijkse export op te laden.</div>` : ''}
       ${perf.ignoredFlows.length ? `<div class="notice info">${perf.ignoredFlows.length} storting(en) na ${fmtDate(perf.end)} tellen nog niet mee, omdat er nog geen recentere waardering is.</div>` : ''}
       <div class="card" style="margin-bottom:16px">
         <h2>Portefeuille door de jaren</h2>
@@ -2309,7 +2507,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3628,6 +3826,14 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'goal-edit': () => { ui.editGoal = true; render(); },
+    'goal-cancel': () => { ui.editGoal = false; render(); },
+    'adv-ledger': el => openModal({ type: 'advLedger', person: el.dataset.person }),
+    'surplus-new': el => openModal({ type: 'surplus', person: el.dataset.person }),
+    'surplus-save': saveSurplus,
+    'surplus-undo': el => { if (confirm('Deze inboeking ongedaan maken? Het overschot staat dan weer open.')) { removeSurplus(el.dataset.person, el.dataset.id); if (modal && modal.type === 'advLedger') renderModal(); } },
+    'cat-view': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); if (el.dataset.cat) openModal({ type: 'catTx', cat: el.dataset.cat, all: false }); },
+    'cat-range': el => { if (modal && modal.type === 'catTx') { modal.all = el.dataset.all === '1'; renderModal(); } },
     'month-select': el => { ui.range = { from: el.dataset.m, to: el.dataset.m }; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
     'landing-top': () => { window.scrollTo({ top: 0, behavior: 'smooth' }); const c = $('.landing-card .google-btn') || $('.landing-card input'); if (c) setTimeout(() => c.focus(), 300); },
     'google-unlink': async () => {
@@ -3813,6 +4019,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
+    if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
@@ -3904,6 +4111,13 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (form.dataset.form === 'bank-setup') { bankSetupSubmit(form); return; }
     if (form.dataset.form === 'saxo-setup') { saxoSetupSubmit(form); return; }
     if (form.dataset.form === 'ai-key') { aiKeySubmit(form); return; }
+    if (form.dataset.form === 'savings-goal') {
+      const v = C.parseAmount(String(new FormData(form).get('goal') || ''));
+      ui.editGoal = false;
+      state.settings = Object.assign({}, state.settings, { savingsGoal: isNaN(v) || v <= 0 ? 0 : v });
+      commit(isNaN(v) || v <= 0 ? 'Spaardoel verwijderd' : 'Spaardoel: ' + money(v) + ' per jaar');
+      return;
+    }
     if (form.dataset.form === 'new-income') {
       const name = String(new FormData(form).get('name') || '').trim();
       if (!name) return;

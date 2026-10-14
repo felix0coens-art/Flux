@@ -358,6 +358,11 @@
       }
     }
     // Kwijtgescholden voorschotten: het voorschot is "terugbetaald" door een uitgave in de gekozen categorie
+    // Te veel terugbetaald: dat deel wordt een inkomst in de gekozen categorie
+    for (const x of surplusList(state)) {
+      lines.push({ txId: null, surplusId: x.id, date: x.date, categoryId: SYS_ADVANCE, amount: -x.amount, refund: false, person: x.person, surplus: true });
+      lines.push({ txId: null, surplusId: x.id, date: x.date, categoryId: x.categoryId || null, amount: x.amount, refund: false, person: x.person, surplus: true });
+    }
     for (const f of forgivenList(state)) {
       lines.push({ txId: null, forgiveId: f.id, date: f.date, categoryId: SYS_ADVANCE, amount: f.amount, refund: false, person: f.person, forgiven: true });
       lines.push({ txId: null, forgiveId: f.id, date: f.date, categoryId: f.categoryId || null, amount: -f.amount, refund: false, person: f.person, forgiven: true });
@@ -902,6 +907,7 @@
   function advancesOverview(state) {
     const items = [];
     const repayments = [];
+    const keyOf = it => it.txId + (it.split != null ? ':' + it.split : '');
     for (const tx of state.transactions) {
       if (tx.isTransfer) continue;
       splitLines(tx).forEach((l, splitIndex) => {
@@ -910,19 +916,29 @@
         const split = !!(tx.splits && tx.splits.length) && splitIndex < tx.splits.length ? splitIndex : null;
         // Titel: wat je zelf gaf (titel van de transactie of notitie van de splitsing)
         const title = (split != null ? (l.note || '') : (tx.title || '')).trim();
-        if (l.amount < 0) items.push({ txId: tx.id, split, date: tx.date, person, amount: -l.amount, repaid: 0, forgiven: 0, title, note: l.note || tx.description || tx.counterparty || '', counterparty: tx.counterparty || '' });
-        else repayments.push({ txId: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null });
+        if (l.amount < 0) {
+          const it = { txId: tx.id, split, date: tx.date, person, amount: -l.amount, repaid: 0, forgiven: 0, title, note: l.note || tx.description || tx.counterparty || '', counterparty: tx.counterparty || '', settledBy: [] };
+          it.key = keyOf(it);
+          items.push(it);
+        } else repayments.push({ kind: 'repayment', txId: tx.id, ref: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null, title: (tx.title || '').trim(), counterparty: tx.counterparty || '', settles: [] });
       });
     }
-    // Kwijtschelden telt als terugbetaling (zonder geld), oudste voorschot eerst
+    // Kwijtschelden telt als terugbetaling (zonder geld)
     const forgivenBy = {};
     for (const f of forgivenList(state)) {
-      repayments.push({ txId: null, date: f.date, person: f.person, amount: f.amount, advanceOf: f.advanceOf || null, forgiven: true });
+      repayments.push({ kind: 'forgiven', txId: null, ref: 'fg:' + f.id, forgiveId: f.id, date: f.date, person: f.person, amount: f.amount, advanceOf: f.advanceOf || null, forgiven: true, title: f.note || '', categoryId: f.categoryId, settles: [] });
       const k = f.person.toLowerCase();
       forgivenBy[k] = (forgivenBy[k] || 0) + f.amount;
     }
     items.sort((a, b) => a.date.localeCompare(b.date));
-    // Eerst gekoppelde terugbetalingen, dan de rest per persoon (oudste eerst)
+    repayments.sort((a, b) => a.date.localeCompare(b.date));
+    const settle = (r, it, take) => {
+      it.repaid += take;
+      if (r.forgiven) it.forgiven += take;
+      it.settledBy.push({ ref: r.ref, kind: r.kind, date: r.date, amount: take, title: r.title || r.counterparty || '' });
+      r.settles.push({ key: it.key, amount: take, title: it.title || it.counterparty || '' });
+    };
+    // Eerst wat je zelf koppelde aan een voorschot, dan de rest per persoon (oudste voorschot eerst)
     const unassigned = [];
     for (const r of repayments) {
       let left = r.amount;
@@ -931,39 +947,77 @@
         const [id, sp] = String(r.advanceOf).split(':');
         for (const it of items.filter(i => i.txId === id && (sp == null || String(i.split) === sp))) {
           const take = Math.min(left, it.amount - it.repaid);
-          it.repaid += take; left -= take;
-          if (r.forgiven && take > 0) it.forgiven += take;
+          if (take > 0) { settle(r, it, take); left -= take; }
         }
       }
-      if (left > 0) unassigned.push(Object.assign({}, r, { amount: left }));
+      if (left > 0) unassigned.push({ r, left });
     }
     const credit = {};
-    for (const r of unassigned) {
-      let left = r.amount;
-      for (const it of items.filter(i => i.person.toLowerCase() === r.person.toLowerCase())) {
+    for (const u of unassigned) {
+      let left = u.left;
+      for (const it of items.filter(i => i.person.toLowerCase() === u.r.person.toLowerCase())) {
         if (left <= 0) break;
         const take = Math.min(left, it.amount - it.repaid);
-        it.repaid += take; left -= take;
-        if (r.forgiven && take > 0) it.forgiven += take;
+        if (take > 0) { settle(u.r, it, take); left -= take; }
       }
-      if (left > 0) credit[r.person] = (credit[r.person] || 0) + left; // meer terug dan voorgeschoten
+      if (left > 0) { u.r.surplus = left; credit[u.r.person] = (credit[u.r.person] || 0) + left; } // meer terug dan voorgeschoten
     }
     const people = {};
+    const personOf = name => {
+      const k = Object.keys(people).find(n => n.toLowerCase() === name.toLowerCase()) || name;
+      return people[k] = people[k] || { person: k, advanced: 0, repaid: 0, open: 0, items: [], booked: 0 };
+    };
     for (const it of items) {
-      const p = people[it.person] = people[it.person] || { person: it.person, advanced: 0, repaid: 0, open: 0, items: [] };
+      const p = personOf(it.person);
       p.advanced += it.amount; p.repaid += it.repaid; p.open += it.amount - it.repaid; p.items.push(it);
     }
     for (const [person, amount] of Object.entries(credit)) {
-      const p = people[person] = people[person] || { person, advanced: 0, repaid: 0, open: 0, items: [] };
+      const p = personOf(person);
       p.repaid += amount; p.open -= amount;
     }
+    // Te veel terugbetaald en als inkomst ingeboekt: staat niet meer open
+    for (const x of surplusList(state)) { const p = personOf(x.person); p.booked += x.amount; p.open += x.amount; }
     // "terugbetaald" = echt geld terug; wat je kwijtschold staat apart
     for (const p of Object.values(people)) {
       p.forgiven = forgivenBy[p.person.toLowerCase()] || 0;
       p.repaid -= p.forgiven;
+      // Rekening-courant: alle bewegingen op datum, met lopend saldo (wat de persoon je nog schuldig is)
+      const lc = p.person.toLowerCase();
+      const rows = p.items.map(it => ({ kind: 'advance', date: it.date, amount: it.amount, item: it }))
+        .concat(repayments.filter(r => r.person.toLowerCase() === lc).map(r => ({ kind: r.kind, date: r.date, amount: -r.amount, repayment: r })))
+        .concat(surplusList(state).filter(x => x.person.toLowerCase() === lc).map(x => ({ kind: 'surplus', date: x.date, amount: x.amount, surplus: x })))
+        .sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'advance' ? -1 : 1));
+      let bal = 0;
+      for (const row of rows) { bal += row.amount; row.balance = bal; }
+      p.ledger = rows;
     }
     const list = Object.values(people).sort((a, b) => b.open - a.open);
-    return { items, people: list, totalOpen: sum(list.map(p => p.open)) };
+    return { items, repayments, people: list, totalOpen: sum(list.map(p => Math.max(0, p.open))) };
+  }
+
+  /**
+   * Gespaard in een periode: wat naar je beleggingsrekening ging (stortingen − opnames) plus wat netto
+   * van je eigen rekeningen naar je spaarrekeningen ging.
+   */
+  function savingsIn(state, range, lines) {
+    lines = lines || allocations(state);
+    let invested = 0;
+    for (const l of lines) if (l.categoryId === SYS_INVEST && inRange(l.date, range)) invested -= l.amount;
+    const spaar = new Set(state.accounts.filter(a => a.type === 'spaar').map(a => a.id));
+    let toSavings = 0;
+    for (const t of state.transactions) {
+      if (t.isTransfer && spaar.has(t.accountId) && inRange(t.date, range)) toSavings += t.amount;
+    }
+    return { invested, toSavings, total: invested + toSavings };
+  }
+
+  /** Te veel terugbetaald en ingeboekt als (andere) inkomst: [{ id, person, date, amount (+), categoryId, note }] */
+  function surplusList(state) {
+    const out = [];
+    for (const p of state.people || []) {
+      for (const x of p.surplus || []) if (x && x.amount > 0 && parseDate(x.date)) out.push(Object.assign({}, x, { person: p.name }));
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /** Alle personen: wie je aanmaakte (state.people) plus namen die in voorschotten voorkomen. */
@@ -1210,7 +1264,7 @@
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
-    detectTransfers, splitLines, validateSplits, allocations, forgivenList, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
+    detectTransfers, splitLines, validateSplits, allocations, forgivenList, surplusList, savingsIn, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
