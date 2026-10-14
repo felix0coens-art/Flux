@@ -846,7 +846,6 @@
       <p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC en Argenta worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>
       ${bankLinkCard()}
-      ${dataFromRow()}
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
 
       <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
@@ -1101,8 +1100,9 @@
     const spread = list.length > 1 && C.daysBetween(list[0].d, list[list.length - 1].d) > 31;
     const suggestion = list.length ? list[list.length - 1].d.slice(0, 8) + '01' : '';
     return `<div class="card data-from">
-      <div class="data-from-head"><label>📅 <strong>Gegevens vanaf</strong> <input type="date" id="data-from" value="${esc(from)}" max="${today}"></label>
-        <span class="small muted">Geldt voor alle banken: bestanden en de bankkoppeling slaan oudere transacties over.</span></div>
+      <h2>📅 Startdatum van je gegevens</h2>
+      <div class="data-from-head"><label>Gegevens vanaf <input type="date" id="data-from" value="${esc(from)}" max="${today}"></label></div>
+      <p class="small muted">Geldt voor al je banken: bankbestanden en de bankkoppeling slaan transacties van vóór deze datum over. Zo lopen je rekeningen gelijk. Leeg = alles.</p>
       ${older ? `<div class="notice small">Er zitten nog ${older} transacties van vóór ${fmtDate(from)} in Helder. <button class="btn small" data-action="trim-before">Die weghalen</button></div>` : ''}
       ${!from && spread ? `<div class="notice small">Je rekeningen beginnen niet op dezelfde datum: ${list.map(x => `${esc(accName(x.id))} vanaf ${fmtDate(x.d)}`).join(', ')}.
         <button class="btn small" data-action="align-start" data-date="${esc(suggestion)}">Allemaal vanaf ${fmtDate(suggestion)}</button></div>` : ''}
@@ -1799,6 +1799,7 @@
           </div>
           <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
         </div>
+        ${dataFromRow()}
         <div class="card">
           <h2>Account & synchronisatie</h2>
           ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
