@@ -2688,20 +2688,22 @@
     return modalShell('Saxo-koppeling instellen', `
       ${st.configured ? `<div class="notice info small">✓ Ingesteld (${st.env === 'sim' ? 'simulatie' : 'echte rekening'}). Vul opnieuw in om te wijzigen.</div>` : ''}
       <p>Helder gebruikt de officiële <strong>Saxo OpenAPI</strong>. Je stelt dit één keer in:</p>
+      <div class="notice small">Let op: de ontwikkelaarssite van Saxo werkt <strong>eerst met een apart, gratis test-account</strong> (simulatie), niet met je gewone Saxo-login. Met je gewone login zie je daar meestal niets.</div>
       <ol class="steps">
-        <li>Ga naar <a href="https://www.developer.saxo" target="_blank" rel="noopener">developer.saxo</a> en meld je aan met je <strong>Saxo-account</strong>.</li>
-        <li>Vraag toegang voor je <strong>echte rekening</strong> (live, persoonlijk gebruik). Saxo vraagt dat je rekening actief is (er staat geld op). Wil je eerst proberen? Kies dan hieronder <em>Simulatie</em> en gebruik een gratis simulatie-account.</li>
-        <li>Maak bij <strong>Application management</strong> een nieuwe app:
+        <li><strong>Gratis test-account maken:</strong> ga naar <a href="https://www.developer.saxo/accounts/sim/signup" target="_blank" rel="noopener">developer.saxo → simulatie-account aanmaken</a>. Je krijgt per e-mail een <strong>gebruikersnummer</strong> en wachtwoord.</li>
+        <li>Meld je met <strong>dat gebruikersnummer</strong> aan op <a href="https://www.developer.saxo" target="_blank" rel="noopener">developer.saxo</a> en open <strong>Application management</strong> (of <em>Apps</em>). Maak een nieuwe app:
           <ul><li>Naam: <em>Helder</em></li>
             <li>Redirect URL: <code>${esc(redirect)}</code> <button class="btn small" data-action="copy" data-copy="${esc(redirect)}">Kopieer</button></li>
             <li>Grant type: <strong>Code</strong> (Authorization Code)</li>
             <li>Trading toelaten: <strong>nee</strong> — Helder leest enkel.</li></ul></li>
-        <li>Open de app en kopieer de <strong>App Key</strong> en de <strong>App Secret</strong> hieronder.</li>
+        <li>Kopieer de <strong>App Key</strong> en <strong>App Secret</strong>, kies hieronder <strong>Simulatie</strong> en sla op. Test met <em>Ophalen uit Saxo</em> (je meldt je dan aan met je test-account; je ziet verzonnen gegevens).</li>
+        <li><strong>Voor je echte rekening:</strong> pas als je een simulatie-app hebt, kan je op dezelfde site een <strong>live</strong>-app aanvragen voor persoonlijk gebruik (je echte rekening moet geld bevatten). Saxo keurt dat meestal automatisch goed. Maak de live-app met dezelfde gegevens, vul hier de nieuwe App Key en Secret in en kies <strong>Echte rekening</strong>.</li>
       </ol>
+      <p class="small muted">Lukt de live-aanvraag niet (dat kan per land of per Saxo-dochter verschillen, bv. een rekening bij Saxo Bank België via SaxoInvestor), vraag het dan aan <a href="mailto:openapisupport@saxobank.com">openapisupport@saxobank.com</a>: “Ik wil als particuliere klant een OpenAPI-app voor persoonlijk gebruik op mijn eigen rekening.”</p>
       <form data-form="saxo-setup" class="form-stack" autocomplete="off">
         <label class="field"><span>Omgeving</span><select name="env">
-          <option value="live" ${m.env !== 'sim' ? 'selected' : ''}>Echte rekening (live)</option>
-          <option value="sim" ${m.env === 'sim' ? 'selected' : ''}>Simulatie (om te testen)</option></select></label>
+          <option value="sim" ${m.env !== 'live' ? 'selected' : ''}>Simulatie (test-account, om te testen)</option>
+          <option value="live" ${m.env === 'live' ? 'selected' : ''}>Echte rekening (live)</option></select></label>
         <label class="field"><span>App Key</span><input type="text" name="appKey" autocapitalize="none" spellcheck="false" required></label>
         <label class="field"><span>App Secret</span><input type="password" name="appSecret" autocomplete="off" required></label>
         <div class="errors">${esc(m.error || '')}</div>
@@ -3318,7 +3320,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       state.investments = Invest.removeBroker(state.investments, b.id);
       commit(`Gegevens van ${b.name} gewist`);
     },
-    'saxo-setup': () => openModal({ type: 'saxoSetup', env: (saxoLink.status && saxoLink.status.env) || 'live' }),
+    'saxo-setup': () => openModal({ type: 'saxoSetup', env: (saxoLink.status && saxoLink.status.env) || 'sim' }),
     'saxo-remove-config': async () => {
       if (!confirm('De Saxo-instelling (App Key en Secret) verwijderen? Je beleggingsgegevens blijven.')) return;
       try { await Sync.saxo.removeConfig(); await loadSaxo(); closeModal(); render(); } catch (e) { toast(e.message); }
