@@ -32,7 +32,8 @@
     list: { status: '', limit: 150 },
     ruleHint: null, // { txId, categoryId } na een inline koppeling: "altijd zo?"
     auth: null,
-    sync: { mode: 'local', status: 'idle' }
+    sync: { mode: 'local', status: 'idle' },
+    keepOpen: {} // uitklapbare blokken die open moeten blijven bij het verversen
   };
   let modal = null;
 
@@ -118,12 +119,30 @@
   function amountClass(c) { return c > 0 ? 'pos' : 'neg'; }
 
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, action) {
     const el = $('#toast');
     el.textContent = msg;
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'toast-action'; b.textContent = action.label;
+      b.addEventListener('click', () => { el.classList.remove('show'); action.run(); });
+      el.appendChild(b);
+    }
+    el.classList.toggle('has-action', !!action);
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+    toastTimer = setTimeout(() => el.classList.remove('show'), action ? 9000 : 3500);
+  }
+
+  /** Verwijderen met een knop om het meteen terug te draaien. */
+  function deleteWithUndo(ids) {
+    const r = Banks.removeTransactions(state, ids);
+    ui.selected.clear();
+    commit();
+    toast(r.count === 1 ? '1 transactie verwijderd' : r.count + ' transacties verwijderd', { label: 'Ongedaan maken', run: () => {
+      const n = Banks.restoreDeleted(state, r.ids);
+      commit(n === 1 ? '1 transactie teruggezet' : n + ' transacties teruggezet');
+    } });
   }
 
   // ---------- Staat bewaren ----------
@@ -762,10 +781,8 @@
     const total = list.reduce((sum, t) => sum + t.amount, 0);
     if (!confirm(`${list.length} transactie${list.length === 1 ? '' : 's'} verwijderen (samen ${C.formatMoney(total)})?`
       + (fromFile ? `\n\n${fromFile} ervan kwam${fromFile === 1 ? '' : 'en'} uit een bankbestand of de bankkoppeling. Helder onthoudt ze, zodat ze bij een volgende import niet terugkomen.` : '')
-      + '\n\nDit kan je niet ongedaan maken.')) return;
-    const n = Banks.removeTransactions(state, list.map(t => t.id));
-    ui.selected.clear();
-    commit(n === 1 ? '1 transactie verwijderd' : n + ' transacties verwijderd');
+      + '\n\nJe kan ze altijd terugzetten via de prullenbak (onderaan in het tabblad Bank).')) return;
+    deleteWithUndo(list.map(t => t.id));
   }
 
   function txRow(t, opts) {
@@ -841,7 +858,8 @@
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
-      <details class="card import-history" style="margin-top:24px">
+      ${trashCard()}
+      <details class="card import-history" style="margin-top:24px" data-keep="imports" ${ui.keepOpen.imports ? 'open' : ''}>
         <summary><strong>Geschiedenis van imports</strong> <span class="small muted">· ${imports.length} keer gegevens binnengehaald (bestanden en bankkoppeling) — hier kan je een import bekijken of ongedaan maken</span></summary>
         ${imports.length ? `<div class="table-wrap"><table>
           <thead><tr><th>Bestand</th><th>Rekening</th><th>Periode</th><th class="right">Toegevoegd</th><th class="right">Overgeslagen</th><th>Opgeladen</th><th></th></tr></thead>
@@ -884,7 +902,7 @@
     const active30 = d.users.filter(u => u.lastLogin && now - Date.parse(u.lastLogin) < 30 * day).length;
     const loginsToday = d.logins.filter(l => l.ok && l.at.slice(0, 10) === today).length;
     const failed24 = d.logins.filter(l => !l.ok && now - Date.parse(l.at) < day).length;
-    const kind = u => u.role === 'admin' ? '🛡️ beheerder' : u.role === 'owner' ? '🔑 eigenaar' : 'Google';
+    const kind = u => u.role === 'admin' ? '🛡️ beheerder' : u.role === 'owner' ? '🔑 eigenaar' : u.email ? 'Google' : '👤 gebruikersnaam';
     const size = b => b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' kB';
     const open = d.site.registration === 'open';
     return head + `
@@ -899,11 +917,11 @@
         <h2>Nieuwe accounts</h2>
         <div class="reg-state">
           <span class="badge ${open ? 'ok' : 'over'} reg-badge">${open ? '● Open' : '● Gesloten'}</span>
-          <span class="grow">${open ? 'Iedereen kan een account aanmaken door zich aan te melden met Google.' : 'Enkel bestaande gebruikers kunnen aanmelden. Nieuwe mensen krijgen de melding dat registratie gesloten is.'}</span>
+          <span class="grow">${open ? 'Iedereen kan een account aanmaken, met een gebruikersnaam en wachtwoord' + (d.google ? ' of met Google.' : '.') : 'Enkel bestaande gebruikers kunnen aanmelden. Nieuwe mensen krijgen de melding dat registratie gesloten is.'}</span>
           <button class="btn ${open ? '' : 'primary'}" data-action="admin-reg" data-open="${open ? '0' : '1'}">${open ? 'Nieuwe accounts sluiten' : 'Nieuwe accounts toelaten'}</button>
         </div>
         ${d.google ? `<p class="small muted">Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></p>`
-          : `<div class="notice small" style="margin-top:10px">Let op: aanmelden met Google is op de server nog niet ingesteld, dus nieuwe mensen kunnen nog geen account aanmaken. Zet <code>HELDER_GOOGLE_CLIENT_ID</code> en <code>HELDER_GOOGLE_CLIENT_SECRET</code> als secrets in GitHub en start de workflow opnieuw. Redirect URI in Google Cloud: <code>${esc(d.googleRedirect)}</code></div>`}
+          : `<p class="small muted" style="margin-top:10px">Aanmelden met Google staat niet aan (optioneel): zet daarvoor <code>HELDER_GOOGLE_CLIENT_ID</code> en <code>HELDER_GOOGLE_CLIENT_SECRET</code> als secrets in GitHub. Redirect URI: <code>${esc(d.googleRedirect)}</code></p>`}
       </div>
       <div class="card" style="margin-bottom:16px"><h2>Gebruikers</h2>
         <div class="table-wrap"><table><thead><tr><th>Gebruiker</th><th>Soort</th><th>Aangemaakt</th><th>Laatst aangemeld</th><th class="right">Aanmeldingen</th><th class="right">Transacties</th><th class="right">Opslag</th><th>AI</th><th></th></tr></thead>
@@ -1048,6 +1066,23 @@
         <td class="nowrap">${fmtDate(t.date)}</td><td>${sugg.has(t.id) ? '💡 ' : ''}${esc(t.title || t.counterparty || '—')}<div class="desc">${esc(t.description)}</div></td>
         <td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td><td class="small muted">${esc(t.categoryId ? catLabel(t.categoryId) : 'te verwerken')}</td></tr>`).join('') || '<tr><td class="muted">Geen betalingen gevonden in de laatste 6 maanden.</td></tr>'}</tbody></table></div>`,
       `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="adv-pick-apply" ${m.chosen.size ? '' : 'disabled'}>${m.chosen.size} koppelen</button>`, true);
+  }
+
+  // ----- Prullenbak -----
+
+  function trashCard() {
+    const list = (state.deleted || []).filter(d => !d.hidden).slice().sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+    if (!list.length) return '';
+    return `<details class="card trash" style="margin-top:24px" data-keep="trash" ${ui.keepOpen.trash ? 'open' : ''}>
+      <summary><strong>🗑 Prullenbak</strong> <span class="small muted">· ${list.length} verwijderde transactie${list.length === 1 ? '' : 's'} — terug te zetten wanneer je wil</span></summary>
+      <p class="small muted">Verwijderde transacties uit een bankbestand of de bankkoppeling worden bij een nieuwe import overgeslagen zolang ze hier staan. Zet je ze terug, dan staan ze weer gewoon in Helder.</p>
+      <p class="btn-row"><button class="btn small" data-action="trash-restore-all">Alles terugzetten</button><button class="btn small ghost danger" data-action="trash-empty">Prullenbak leegmaken</button></p>
+      <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th class="right">Bedrag</th><th>Verwijderd</th><th></th></tr></thead><tbody>
+      ${list.slice(0, 300).map(d => `<tr><td class="nowrap">${fmtDate(d.date)}<div class="small muted">${esc(accName(d.accountId))}</div></td>
+        <td>${esc((d.tx && d.tx.title) || d.counterparty || '—')}<div class="desc">${esc(d.description)}${d.tx ? '' : ' <span class="muted">(zonder koppeling teruggezet)</span>'}</div></td>
+        <td class="amount ${amountClass(d.amount)}">${money(d.amount)}</td><td class="small nowrap">${esc(fmtDateTime(d.deletedAt))}</td>
+        <td class="right"><button class="btn small" data-action="trash-restore" data-id="${esc(d.id)}">↩ Terugzetten</button></td></tr>`).join('')}
+      </tbody></table></div></details>`;
   }
 
   // ----- Gemeenschappelijke startdatum -----
@@ -1769,7 +1804,7 @@
           ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
           : `<p>Aangemeld als <strong>${esc((Sync.account && Sync.account.displayName) || sy.user || '')}</strong>${Sync.account && Sync.account.email ? ` <span class="small muted">(${esc(Sync.account.email)}, via Google)</span>` : ''}</p>
             <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
-            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.role === 'member' ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
+            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.email ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
               <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
             <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>
             ${Sync.account && Sync.account.role === 'member' ? `<details class="danger-zone"><summary class="small">Account verwijderen</summary>
@@ -2637,6 +2672,8 @@
     el.title = s.detail || (s.user ? 'Aangemeld als ' + s.user : '');
   }
 
+  const GOOGLE_ICON = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-16.6z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>';
+
   function renderAuth() {
     const a = ui.auth;
     if (a.setupRequired) {
@@ -2650,8 +2687,20 @@
     }
     const g = a.auth && a.auth.google;
     const open = a.auth && a.auth.registration === 'open';
-    const google = g ? `<a class="btn google-btn" href="/api/auth/google"><svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-16.6z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Aanmelden met Google</a>
-      <p class="small muted" style="text-align:center">${open ? 'Nog geen account? Meld je aan met Google, dan wordt er meteen een voor je aangemaakt.' : 'Nieuwe accounts zijn momenteel gesloten.'}</p>
+    if (a.register && open) {
+      return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div><h1>Account aanmaken</h1>
+        ${g ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Verder met Google</a><div class="or"><span>of met gebruikersnaam en wachtwoord</span></div>` : ''}
+        <form data-form="register" class="form-stack">
+          <label class="field"><span>Je naam <span class="muted small">(zoals je die in Helder wil zien)</span></span><input type="text" name="displayName" autocomplete="name" maxlength="60" value="${esc(a.displayName || '')}"></label>
+          <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" required minlength="2" maxlength="40" pattern="[a-zA-Z0-9._\-]{2,40}" value="${esc(a.previousUser || '')}"></label>
+          <label class="field"><span>Wachtwoord (min. 8 tekens)</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+          <label class="field"><span>Herhaal wachtwoord</span><input type="password" name="password2" autocomplete="new-password" minlength="8" required></label>
+          <p class="small muted">Onthoud je wachtwoord goed: zonder e-mailadres kan Helder het niet voor je herstellen. Download af en toe een back-up (Instellingen).</p>
+          <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Account aanmaken</button></form>
+        <p class="small legal-links">Al een account? <a href="#" data-action="auth-login">Meld je aan</a></p>
+        <p class="small muted legal-links">Door een account aan te maken ga je akkoord met de <a href="voorwaarden.html" target="_blank" rel="noopener">gebruiksvoorwaarden</a> en de <a href="privacy.html" target="_blank" rel="noopener">privacyverklaring</a>.</p></div>`;
+    }
+    const google = g ? `<a class="btn google-btn" href="/api/auth/google">${GOOGLE_ICON}Aanmelden met Google</a>
       <div class="or"><span>of met gebruikersnaam</span></div>` : '';
     return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div>
       <p class="muted">${a.expired ? 'Je sessie is verlopen. Meld je opnieuw aan.' : 'Meld je aan.'}</p>
@@ -2660,6 +2709,7 @@
         <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" value="${esc(a.previousUser || '')}" required></label>
         <label class="field"><span>Wachtwoord</span><input type="password" name="password" autocomplete="current-password" required></label>
         <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Aanmelden</button></form>
+      ${open ? '<p class="small legal-links">Nog geen account? <a href="#" data-action="auth-register"><strong>Maak er een aan</strong></a></p>' : a.auth && a.auth.registration ? '<p class="small muted legal-links">Nieuwe accounts zijn momenteel gesloten.</p>' : ''}
       <p class="small muted app-about">Helder is een gratis app voor je persoonlijke boekhouding: je bankuitgaven en inkomsten overzichtelijk ingedeeld, voorschotten aan vrienden opvolgen en je beleggingen en vermogen door de tijd volgen. Elk account heeft een eigen, afgeschermde boekhouding.</p>
       <p class="small muted legal-links">${g ? 'Door aan te melden ga je akkoord met de ' : ''}<a href="voorwaarden.html" target="_blank" rel="noopener">${g ? 'gebruiksvoorwaarden' : 'Gebruiksvoorwaarden'}</a>${g ? ' en de ' : ' · '}<a href="privacy.html" target="_blank" rel="noopener">${g ? 'privacyverklaring' : 'Privacyverklaring'}</a>.</p></div>`;
   }
@@ -2735,6 +2785,17 @@
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
     'new-tx': el => openModal({ type: 'tx', tx: newTx(el && el.dataset.account) }),
     'bulk-delete': bulkDelete,
+    'auth-register': () => { ui.auth = Object.assign({}, ui.auth, { register: true, error: '' }); render(); },
+    'auth-login': () => { ui.auth = Object.assign({}, ui.auth, { register: false, error: '' }); render(); },
+    'trash-restore': el => { const n = Banks.restoreDeleted(state, [el.dataset.id]); commit(n ? 'Transactie teruggezet' : 'Niets teruggezet'); },
+    'trash-restore-all': () => { const ids = (state.deleted || []).filter(d => !d.hidden).map(d => d.id); const n = Banks.restoreDeleted(state, ids); commit(n + ' transacties teruggezet'); },
+    'trash-empty': () => {
+      const n = (state.deleted || []).filter(d => !d.hidden).length;
+      if (!confirm(`Prullenbak leegmaken?\n\nDe ${n} transacties kan je daarna niet meer terugzetten. Wat uit een bankbestand kwam, blijft wel overgeslagen bij een nieuwe import.`)) return;
+      // De herkenning blijft (zodat ze niet terugkomen), enkel de kopie verdwijnt
+      state.deleted = (state.deleted || []).filter(d => !d.manual).map(d => { const c = Object.assign({}, d, { hidden: true }); delete c.tx; return c; });
+      commit('Prullenbak leeggemaakt');
+    },
     'delete-account': async () => {
       const t = prompt('Je account en al je gegevens worden definitief gewist. Typ VERWIJDER om te bevestigen.');
       if (t !== 'VERWIJDER') { if (t != null) toast('Niet verwijderd: typ VERWIJDER in hoofdletters.'); return; }
@@ -2828,11 +2889,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'delete-tx': () => {
       const t = txById(modal.tx.id);
       if (!t) return;
-      const msg = t.source === 'import' ? 'Deze transactie verwijderen?\n\nLet op: laad je later een bestand op dat deze transactie bevat, dan komt ze terug. Om een volledig bestand te verwijderen gebruik je “Ongedaan maken” bij de import (tabblad Bank).' : 'Deze transactie verwijderen?';
-      if (!confirm(msg)) return;
-      state.transactions = state.transactions.filter(x => x.id !== t.id);
       closeModal();
-      commit('Transactie verwijderd');
+      deleteWithUndo([t.id]);
     },
     'add-split': () => {
       const container = $('#splits');
@@ -3036,6 +3094,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     }
     if (ev.key === 'Escape' && modal) closeModal();
   });
+  document.addEventListener('toggle', ev => { const d = ev.target; if (d.dataset && d.dataset.keep) ui.keepOpen[d.dataset.keep] = d.open; }, true);
   document.addEventListener('focusin', ev => {
     const el = ev.target;
     if (el.dataset && el.dataset.assignInput) { el.select(); openPicker(el, false); }
@@ -3070,14 +3129,17 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     const btn = $('button[type=submit]', form);
     btn.disabled = true;
     try {
-      if (form.dataset.form === 'login') await Sync.login(String(f.get('username')).trim(), String(f.get('password')));
+      if (form.dataset.form === 'register') {
+        if (String(f.get('password')) !== String(f.get('password2'))) throw new Error('De twee wachtwoorden zijn niet gelijk.');
+        await Sync.register(String(f.get('username')).trim(), String(f.get('password')), String(f.get('displayName') || '').trim());
+      } else if (form.dataset.form === 'login') await Sync.login(String(f.get('username')).trim(), String(f.get('password')));
       else await Sync.setup(String(f.get('code')).trim(), String(f.get('username')).trim(), String(f.get('password')));
       ui.auth = null;
       render();
       toast('Aangemeld');
       if (!ui.admin) loadBankLink({ auto: true });
     } catch (e) {
-      ui.auth = Object.assign({}, ui.auth, { error: e.message, previousUser: String(f.get('username') || '').trim() || ui.auth.previousUser });
+      ui.auth = Object.assign({}, ui.auth, { error: e.message, previousUser: String(f.get('username') || '').trim() || ui.auth.previousUser, displayName: String(f.get('displayName') || '') });
       render();
     }
   });

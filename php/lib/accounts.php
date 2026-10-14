@@ -34,7 +34,7 @@ function save_site_settings(array $changes): array {
 function user_role(?array $u): string {
     if (!$u) return 'none';
     if (($u['role'] ?? '') === 'admin') return 'admin';
-    return isset($u['google']) ? 'member' : 'owner';
+    return isset($u['google']) || ($u['role'] ?? '') === 'member' ? 'member' : 'owner';
 }
 
 function user_public(string $username, array $u): array {
@@ -123,6 +123,25 @@ function delete_own_account(string $username): void {
         write_json('sessions.json', $s);
     });
     log_login($username, 'account', true, 'account verwijderd door gebruiker');
+}
+
+/** Zelf een account aanmaken met gebruikersnaam en wachtwoord (enkel als nieuwe accounts open staan). */
+function register_user(array $b): string {
+    if (site_settings()['registration'] !== 'open') throw new HttpError(403, 'Nieuwe accounts kunnen op dit moment niet aangemaakt worden');
+    $name = trim((string) ($b['username'] ?? ''));
+    $pw = (string) ($b['password'] ?? '');
+    if (!valid_username($name)) throw new HttpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
+    if (strpos($name, 'g_') === 0) throw new HttpError(400, 'Deze gebruikersnaam is niet toegelaten');
+    if (!valid_password($pw)) throw new HttpError(400, 'Wachtwoord: minstens 8 tekens');
+    $display = trim(mb_substr((string) ($b['displayName'] ?? ''), 0, 60));
+    with_lock('users', function () use ($name, $pw, $display) {
+        $users = get_users();
+        foreach (array_keys($users) as $n) if (strtolower((string) $n) === strtolower($name)) throw new HttpError(409, 'Deze gebruikersnaam is al in gebruik');
+        $users[$name] = ['pw' => password_hash($pw, PASSWORD_DEFAULT), 'created' => gmdate('c'), 'role' => 'member', 'displayName' => $display !== '' ? $display : $name];
+        write_json('users.json', $users);
+    });
+    log_login($name, 'wachtwoord', true, 'nieuw account');
+    return $name;
 }
 
 // ---------- Google ----------

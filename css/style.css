@@ -521,3 +521,9 @@ tr.is-disabled td { opacity: .55; }
 .reg-state .grow { flex: 1; min-width: 220px; }
 .reg-badge { font-size: 13px; padding: 4px 10px; }
 .app-about { margin: 16px 0 0; text-align: center; line-height: 1.5; }
+#toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
+#toast .toast-action { background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 6px; padding: 4px 10px; font: inherit; font-weight: 700; cursor: pointer; }
+.trash summary { cursor: pointer; }
+.trash[open] summary { margin-bottom: 8px; }
+#toast.has-action { white-space: nowrap; }
+@media (max-width: 420px) { #toast.has-action { white-space: normal; min-width: 280px; } }

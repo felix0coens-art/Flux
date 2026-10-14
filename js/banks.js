@@ -186,7 +186,7 @@
     const loose = new Map();
     for (const t of state.transactions) if (t.accountId === accountId) loose.set('fp|' + C.fingerprint(Object.assign({}, t, { accountId: '' })), t);
     // Transacties die via de bankkoppeling binnenkwamen hebben andere referenties: herkennen op bedrag en datum
-    const gone = (state.deleted || []).filter(d => d.accountId === accountId);
+    const gone = (state.deleted || []).filter(d => d.accountId === accountId && !d.manual);
     const goneKeys = new Map(gone.map(d => [d.key, d]));
     const linked = state.transactions.filter(t => t.accountId === accountId && isLinkedRef(t.bankRef))
       .concat(gone.filter(d => isLinkedRef(d.bankRef)));
@@ -309,7 +309,7 @@
    * en transacties uit een CSV-bestand of manuele invoer via bedrag en datum (hoogstens 4 dagen verschil).
    */
   function planLinked(state, accountId, rows) {
-    const gone = (state.deleted || []).filter(d => d.accountId === accountId);
+    const gone = (state.deleted || []).filter(d => d.accountId === accountId && !d.manual);
     const inAcc = state.transactions.filter(t => t.accountId === accountId).concat(gone);
     const byRef = new Map(inAcc.filter(t => t.bankRef).map(t => [t.bankRef, t]));
     const pool = inAcc.filter(t => !isLinkedRef(t.bankRef));
@@ -356,13 +356,35 @@
     const at = new Date(now || Date.now()).toISOString();
     const removed = state.transactions.filter(t => set.has(t.id));
     state.deleted = state.deleted || [];
+    const entries = [];
     for (const t of removed) {
-      if (t.source !== 'import') continue;
-      state.deleted.push({ id: C.uid('del'), accountId: t.accountId, key: rowKey(t), bankRef: t.bankRef || null, date: t.date, amount: t.amount,
-        counterparty: t.counterparty || '', description: String(t.description || '').slice(0, 120), importId: t.importId || null, deletedAt: at });
+      // Volledige kopie bewaren, zodat je het altijd kan terugzetten (prullenbak)
+      const e = { id: C.uid('del'), accountId: t.accountId, key: rowKey(t), bankRef: t.bankRef || null, date: t.date, amount: t.amount,
+        counterparty: t.counterparty || '', description: String(t.description || '').slice(0, 120), importId: t.importId || null, deletedAt: at,
+        manual: t.source !== 'import', tx: JSON.parse(JSON.stringify(t)) };
+      state.deleted.push(e);
+      entries.push(e.id);
     }
     state.transactions = state.transactions.filter(t => !set.has(t.id));
-    return removed.length;
+    return { count: removed.length, ids: entries };
+  }
+
+  /** Zet verwijderde transacties terug (uit de prullenbak). Geeft het aantal teruggezette transacties. */
+  function restoreDeleted(state, ids) {
+    const set = new Set(ids);
+    let n = 0;
+    const have = new Set(state.transactions.map(t => t.id));
+    for (const d of (state.deleted || []).filter(x => set.has(x.id))) {
+      // Oudere verwijderingen (zonder volledige kopie): opnieuw opbouwen uit wat bewaard werd
+      const t = d.tx ? JSON.parse(JSON.stringify(d.tx)) : {
+        id: C.uid('tx'), accountId: d.accountId, date: d.date, amount: d.amount, counterparty: d.counterparty || '', counterpartyIban: '',
+        description: d.description || '', bankRef: d.bankRef || undefined, categoryId: null, categorySource: null, splits: [],
+        source: 'import', importId: d.importId || undefined, transferMode: 'auto', createdAt: Date.parse(d.deletedAt) || Date.now()
+      };
+      if (!have.has(t.id)) { state.transactions.push(t); have.add(t.id); n++; }
+    }
+    state.deleted = (state.deleted || []).filter(x => !set.has(x.id));
+    return n;
   }
 
   /** Een verwijderde transactie toch terugzetten bij de volgende import (vergeten). */
@@ -399,7 +421,7 @@
   }
 
   const api = { PROFILES, merchantFromDescription, detect, parse, plan, apply, undo, hashText, rowKey, endBalance, splitByAccount,
-    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef, removeTransactions, forgetDeleted, accountStarts, trimBefore };
+    fromEnableBanking, balanceFromEnableBanking, planLinked, applyLinked, isLinkedRef, removeTransactions, restoreDeleted, forgetDeleted, accountStarts, trimBefore };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxBanks = api;
 })(typeof window !== 'undefined' ? window : globalThis);

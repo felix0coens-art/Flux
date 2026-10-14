@@ -197,6 +197,14 @@
     return r.user;
   }
 
+  async function register(username, password, displayName) {
+    const r = await api('POST', '/api/register', { username, password, displayName });
+    await refreshFeatures();
+    account = r;
+    await afterLogin(r.user);
+    return r.user;
+  }
+
   async function setup(code, username, password) {
     const r = await api('POST', '/api/setup', { code, username, password });
     await refreshFeatures();
@@ -266,7 +274,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

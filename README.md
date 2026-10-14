@@ -69,7 +69,7 @@ Elke transactie staat eerst op **Te verwerken**. In het veld *Gekoppeld aan* **t
 
 Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Helder stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
 
-**Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijder je transacties die uit een bankbestand of de bankkoppeling kwamen, dan onthoudt Helder ze. Bij een volgende import of ophaalbeurt komen ze niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
+**Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijderen kan je altijd terugdraaien: meteen via **Ongedaan maken** in de melding, of later via de **🗑 Prullenbak** onderaan het tabblad Bank. Zolang transacties uit een bankbestand of de bankkoppeling in de prullenbak staan, komen ze bij een volgende import niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
 
 Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 
@@ -174,7 +174,7 @@ Goed om te weten:
 
 ### Helder publiek maken: aanmelden met Google en een beheerder
 
-Andere mensen kunnen een eigen Helder-account aanmaken door zich **aan te melden met Google**. Elk account heeft een eigen, aparte boekhouding. Jij krijgt een apart **beheerdersaccount**, los van je gewone account. Daarmee zie je wie er een account heeft en wanneer er aangemeld werd, maar niemands financiële gegevens.
+Andere mensen kunnen een eigen Helder-account aanmaken, met een **gebruikersnaam en wachtwoord** of door zich **aan te melden met Google** (optioneel). Elk account heeft een eigen, aparte boekhouding. Jij krijgt een apart **beheerdersaccount**, los van je gewone account. Daarmee zie je wie er een account heeft en wanneer er aangemeld werd, maar niemands financiële gegevens.
 
 1. **Google-login aanmaken** (gratis):
    - Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project, bv. *Helder*.

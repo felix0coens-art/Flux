@@ -124,6 +124,15 @@ function handle(string $method, string $path): void {
         return;
     }
 
+    if ($path === '/api/register' && $method === 'POST') {
+        if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer later opnieuw');
+        record_attempt(); // ook geslaagde registraties tellen mee, tegen massaal aanmaken
+        $name = register_user(body());
+        $token = create_session($name);
+        send(200, user_public($name, get_users()[$name]), ['Set-Cookie' => session_cookie($token, $cookieAge)]);
+        return;
+    }
+
     if ($path === '/api/logout' && $method === 'POST') {
         $b = body();
         destroy_session(!empty($b['everywhere']));

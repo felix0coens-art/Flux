@@ -203,7 +203,7 @@ function record_attempt(): void {
  */
 function setup_code(): ?string {
     // Enkel zolang er geen eigen account is (de beheerder en Google-gebruikers tellen niet mee)
-    foreach (get_users() as $u) if (($u['role'] ?? '') !== 'admin' && !isset($u['google'])) return null;
+    foreach (get_users() as $u) if (($u['role'] ?? '') === '' && !isset($u['google'])) return null;
     $u = cfg('FLUX_USERNAME');
     $p = cfg('FLUX_PASSWORD');
     if ($u && $p && valid_username($u) && valid_password($p)) {

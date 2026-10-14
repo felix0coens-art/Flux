@@ -448,6 +448,14 @@ async function handleApi(req, res, pathname, query) {
     return send(res, 200, Accounts.userPublic(b.username, u), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
   }
 
+  if (pathname === '/api/register' && req.method === 'POST') {
+    if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer later opnieuw');
+    recordAttempt(req); // ook geslaagde registraties tellen mee, tegen massaal aanmaken
+    const name = await Acc.register(req, await readBody(req));
+    const token = await createSession(name);
+    return send(res, 200, Accounts.userPublic(name, (await getUsers())[name]), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+  }
+
   if (pathname === '/api/logout' && req.method === 'POST') {
     const b = await readBody(req);
     await destroySession(req, !!b.everywhere);

@@ -17,7 +17,7 @@ const GOOGLE_TOKEN = process.env.FLUX_GOOGLE_TOKEN_URL || 'https://oauth2.google
 function userRole(u) {
   if (!u) return 'none';
   if (u.role === 'admin') return 'admin';
-  return u.google ? 'member' : 'owner';
+  return u.google || u.role === 'member' ? 'member' : 'owner';
 }
 
 function userPublic(name, u) {
@@ -87,6 +87,24 @@ function create(store) {
       await writeJson('sessions.json', s);
     });
     await logLogin(req, username, 'account', true, 'account verwijderd door gebruiker');
+  }
+
+  /** Zelf een account aanmaken met gebruikersnaam en wachtwoord (enkel als nieuwe accounts open staan). */
+  async function register(req, b) {
+    if ((await siteSettings()).registration !== 'open') throw store.httpError(403, 'Nieuwe accounts kunnen op dit moment niet aangemaakt worden');
+    const name = String(b.username || '').trim(), pw = String(b.password || '');
+    if (!/^[a-zA-Z0-9._-]{2,40}$/.test(name)) throw store.httpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
+    if (name.startsWith('g_')) throw store.httpError(400, 'Deze gebruikersnaam is niet toegelaten');
+    if (pw.length < 8 || pw.length > 200) throw store.httpError(400, 'Wachtwoord: minstens 8 tekens');
+    const display = String(b.displayName || '').trim().slice(0, 60);
+    await withLock('users', async () => {
+      const users = await getUsers();
+      if (Object.keys(users).some(n => n.toLowerCase() === name.toLowerCase())) throw store.httpError(409, 'Deze gebruikersnaam is al in gebruik');
+      users[name] = Object.assign(hashPassword(pw), { created: new Date().toISOString(), role: 'member', displayName: display || name });
+      await writeJson('users.json', users);
+    });
+    await logLogin(req, name, 'wachtwoord', true, 'nieuw account');
+    return name;
   }
 
   async function ensureAdmin(username) {
@@ -204,7 +222,7 @@ function create(store) {
     return { ok: true };
   }
 
-  return { googleConfigured, siteSettings, saveSite, logLogin, ensureAdmin, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
+  return { googleConfigured, siteSettings, saveSite, logLogin, ensureAdmin, register, deleteOwn, purgeOldBackups, googleStart, googleCallback, overview, userAction };
 }
 
 function authPage(r) {

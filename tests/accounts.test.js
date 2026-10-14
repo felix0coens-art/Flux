@@ -92,6 +92,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       const s0 = await call('GET', '/api/session');
       assert.deepEqual(s0.json.auth, { google: true, registration: 'closed' });
 
+      assert.equal((await call('POST', '/api/register', { username: 'vroeg', password: 'vroeg-geheim-1' })).status, 403, 'registratie gesloten');
       // Registratie gesloten: een nieuwe Google-gebruiker kan niet binnen
       const closed = await googleLogin({ sub: '1001', email: 'an@example.com', name: 'An Peeters' });
       assert.equal(closed.status, 400);
@@ -134,6 +135,19 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.equal(bad.status, 400);
       // Hergebruik van de state mag niet
       assert.equal((await call('GET', '/api/auth/google/callback?code=x&state=verzonnen')).status, 400);
+
+      // Zonder Google: zelf een account met gebruikersnaam en wachtwoord
+      const reg = await call('POST', '/api/register', { username: 'carla', password: 'carla-geheim-1', displayName: 'Carla V.' });
+      assert.equal(reg.status, 200, reg.text);
+      assert.equal(reg.json.role, 'member');
+      assert.equal(reg.json.displayName, 'Carla V.');
+      assert.equal((await call('POST', '/api/register', { username: 'CARLA', password: 'nog-een-wachtwoord' })).status, 409, 'naam al in gebruik (hoofdletters tellen niet)');
+      assert.equal((await call('POST', '/api/register', { username: 'g_123', password: 'nog-een-wachtwoord' })).status, 400);
+      assert.equal((await call('POST', '/api/register', { username: 'kort', password: '123' })).status, 400);
+      assert.equal((await call('GET', '/api/bank/status', null, reg.cookie)).status, 403, 'ook geen bankkoppeling');
+      const carla = await call('POST', '/api/login', { username: 'carla', password: 'carla-geheim-1' });
+      assert.equal(carla.json.role, 'member');
+      assert.equal((await call('POST', '/api/password', { current: 'carla-geheim-1', password: 'carla-nieuw-22' }, carla.cookie)).status, 200);
 
       // Bert maakt een account en verwijdert het zelf weer: alles meteen weg
       const bert = (await googleLogin({ sub: '1003', email: 'bert@example.com', name: 'Bert' })).cookie;
