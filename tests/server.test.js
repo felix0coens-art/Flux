@@ -105,7 +105,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
     assert.equal((await call('GET', '/server/server.js')).status, 404);
     assert.equal((await call('GET', '/js/../data/users.json')).status, 404);
     assert.equal((await call('GET', '/js/%2e%2e/server/ai.js')).status, 404);
-    for (const lp of ['/privacy.html', '/voorwaarden.html']) {
+    for (const lp of ['/privacy.html', '/voorwaarden.html', '/Privacy', '/privacy', '/terms']) {
       const r = await call('GET', lp);
       assert.equal(r.status, 200, lp);
       assert.match(r.text, /Felix Coens/);

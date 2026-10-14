@@ -2660,6 +2660,7 @@
         <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" value="${esc(a.previousUser || '')}" required></label>
         <label class="field"><span>Wachtwoord</span><input type="password" name="password" autocomplete="current-password" required></label>
         <div class="errors">${esc(a.error || '')}</div><button class="btn primary" type="submit">Aanmelden</button></form>
+      <p class="small muted app-about">Helder is een gratis app voor je persoonlijke boekhouding: je bankuitgaven en inkomsten overzichtelijk ingedeeld, voorschotten aan vrienden opvolgen en je beleggingen en vermogen door de tijd volgen. Elk account heeft een eigen, afgeschermde boekhouding.</p>
       <p class="small muted legal-links">${g ? 'Door aan te melden ga je akkoord met de ' : ''}<a href="voorwaarden.html" target="_blank" rel="noopener">${g ? 'gebruiksvoorwaarden' : 'Gebruiksvoorwaarden'}</a>${g ? ' en de ' : ' · '}<a href="privacy.html" target="_blank" rel="noopener">${g ? 'privacyverklaring' : 'Privacyverklaring'}</a>.</p></div>`;
   }
 

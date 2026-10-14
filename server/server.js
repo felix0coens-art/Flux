@@ -356,6 +356,8 @@ const STATIC_DIRS = ['css/', 'js/', 'icons/', 'fonts/'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 
 async function serveStatic(req, res, pathname) {
+  if (/^\/(privacy|privacy-policy|privacybeleid|privacyverklaring)(\.html)?\/?$/i.test(pathname)) pathname = '/privacy.html';
+  if (/^\/(voorwaarden|terms|gebruiksvoorwaarden|terms-of-service)(\.html)?\/?$/i.test(pathname)) pathname = '/voorwaarden.html';
   let rel = STATIC[pathname];
   if (!rel) {
     const p = pathname.replace(/^\/+/, '');

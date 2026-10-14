@@ -12,3 +12,4 @@
 .legal-table th, .legal-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .legal-table th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
 .legal-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); }
+.legal-en { margin-top: 40px; padding: 4px 20px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }

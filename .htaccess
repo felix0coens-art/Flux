@@ -9,6 +9,9 @@ DirectoryIndex index.html
   RewriteCond %{HTTP:X-Forwarded-Proto} !=https
   RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+  # Korte adressen voor de juridische pagina's (ook met hoofdletters)
+  RewriteRule ^(privacy|privacy-policy|privacybeleid|privacyverklaring)(\.html)?/?$ privacy.html [NC,L]
+  RewriteRule ^(voorwaarden|terms|gebruiksvoorwaarden|terms-of-service)(\.html)?/?$ voorwaarden.html [NC,L]
   # Cookies en de CSRF-header doorgeven, en alle API-verzoeken naar api.php
   RewriteRule ^api/ api.php [L,QSA]
 </IfModule>

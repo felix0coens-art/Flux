@@ -520,3 +520,4 @@ tr.is-disabled td { opacity: .55; }
 .reg-state { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .reg-state .grow { flex: 1; min-width: 220px; }
 .reg-badge { font-size: 13px; padding: 4px 10px; }
+.app-about { margin: 16px 0 0; text-align: center; line-height: 1.5; }
