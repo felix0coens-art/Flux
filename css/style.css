@@ -906,15 +906,27 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .act-due { font-size: 12px; color: var(--muted); }
 .act-due.soon { color: var(--orange); font-weight: 600; }
 .act-due.late { color: var(--red); font-weight: 600; }
-.act-txs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
-.act-tx { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; }
-.act-tx:hover { border-color: var(--primary); }
+.act-top { display: flex; align-items: flex-start; gap: 10px; }
+.act-top .act-title { flex: 1; min-width: 0; }
+.act-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; white-space: nowrap; }
+.act-sum strong { font-size: 16px; }
+.act-txs { margin-top: 6px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.act-tx { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 5px 10px; font-size: 13px; color: var(--text); text-decoration: none; }
+.act-tx + .act-tx, .act-more { border-top: 1px solid var(--border); }
+.act-tx:hover { background: var(--surface-2); }
+.act-tx .at-date { color: var(--muted); font-size: 12px; }
+.act-tx .at-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-more summary { cursor: pointer; padding: 5px 10px; color: var(--primary); }
+.act-more[open] summary { border-bottom: 1px solid var(--border); }
+.act-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 6px; }
 .act-done { margin-top: 10px; }
 .act-done summary { cursor: pointer; margin-bottom: 8px; }
 .action-head .act-check { margin-right: 4px; }
 .action-badge.done { opacity: .6; text-decoration: line-through; }
 #nav .count.soft { background: var(--green-soft); color: var(--green); }
 @media (max-width: 700px) {
+  .act-tx { grid-template-columns: minmax(0, 1fr) auto; }
+  .act-tx .at-date { display: none; }
   .page-head .owed-seg { margin-left: 0; width: 100%; }
   .owed-seg button { flex: 1; padding: 6px 4px; }
   .follow-stat strong { font-size: 22px; }

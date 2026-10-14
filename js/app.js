@@ -1649,20 +1649,30 @@
     return `<span class="act-due ${d < 0 ? 'late' : d <= 2 ? 'soon' : ''}">📅 ${txt}</span>`;
   }
 
-  /** Eén actie als lijn om af te vinken, met de transacties waar ze over gaat. */
+  /** Eén actie als lijn om af te vinken, met de transacties eronder als lijstje en hun optelsom. */
   function actionRow(a) {
     const s = C.actionSummary(state, a);
+    const total = s.txs.reduce((t, x) => t + x.amount, 0);
     const name = t => esc(t.title || t.counterparty || t.description || '—');
+    const line = t => `<a href="#" class="act-tx" data-action="edit-tx" data-id="${esc(t.id)}"><span class="at-date">${fmtDate(t.date)}</span><span class="at-name">${name(t)}</span><span class="amount ${amountClass(t.amount)}">${money(t.amount)}</span></a>`;
+    const SHOW = 3;
+    const key = 'act-' + a.id;
     return `<div class="act-row ${a.closed ? 'is-done' : ''}">
       <button class="act-check" data-action="action-done" data-id="${esc(a.id)}" aria-pressed="${a.closed ? 'true' : 'false'}" title="${a.closed ? 'Toch nog niet gedaan' : 'Afvinken: gedaan'}">${a.closed ? '✓' : ''}</button>
       <div class="grow">
-        <div class="act-title"><button class="linklike act-name" data-action="action-view" data-id="${esc(a.id)}">${esc(a.name)}</button>${dueLabel(a)}${a.closed && a.doneAt ? `<span class="small muted">gedaan op ${fmtDate(a.doneAt)}</span>` : ''}</div>
+        <div class="act-top">
+          <div class="act-title"><button class="linklike act-name" data-action="action-view" data-id="${esc(a.id)}">${esc(a.name)}</button>${dueLabel(a)}${a.closed && a.doneAt ? `<span class="small muted">gedaan op ${fmtDate(a.doneAt)}</span>` : ''}</div>
+          ${s.txs.length ? `<div class="act-sum"><strong class="${amountClass(total)}">${money(total)}</strong><span class="small muted">${s.txs.length === 1 ? '1 transactie' : 'samen, ' + s.txs.length + ' transacties'}</span>${s.out && s.back ? `<span class="small muted">${money(-s.out)} uit · ${money(s.back)} in</span>` : ''}</div>` : ''}
+          <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}" title="Bewerken" aria-label="Bewerken">✎</button>
+        </div>
         ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}
-        <div class="act-txs">${s.txs.slice(0, 4).map(t => `<a href="#" class="act-tx" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)} <span class="${amountClass(t.amount)}">${money(t.amount)}</span></a>`).join('')}${s.txs.length > 4 ? `<button class="linklike small" data-action="action-view" data-id="${esc(a.id)}">+${s.txs.length - 4} meer</button>` : ''}
-          ${a.closed ? '' : `<button class="linklike small" data-action="action-add-tx" data-id="${esc(a.id)}">${s.txs.length ? '+ transactie' : '+ Kies de transactie(s)'}</button>`}</div>
-        ${a.expectBack && s.out ? `<div class="small ${s.open > 0 ? 'muted' : 'pos'}">${s.open > 0 ? `nog ${money(s.open)} terug te krijgen${a.person ? ' van ' + esc(a.person) : ''}` : '✓ terugbetaald'}</div>` : ''}
+        ${s.txs.length ? `<div class="act-txs">${s.txs.slice(0, SHOW).map(line).join('')}
+          ${s.txs.length > SHOW ? `<details class="act-more" data-keep="${esc(key)}" ${ui.keepOpen[key] ? 'open' : ''}><summary class="small">Nog ${s.txs.length - SHOW} tonen</summary>${s.txs.slice(SHOW).map(line).join('')}</details>` : ''}</div>` : ''}
+        <div class="act-foot small">
+          ${a.expectBack && s.out ? `<span class="${s.open > 0 ? '' : 'pos'}">${s.open > 0 ? `nog <strong>${money(s.open)}</strong> terug te krijgen${a.person ? ' van ' + esc(a.person) : ''}${s.back ? ` · al ${money(s.back)} terug` : ''}` : '✓ terugbetaald'}</span>` : ''}
+          ${a.closed ? '' : `<button class="linklike" data-action="action-add-tx" data-id="${esc(a.id)}">${s.txs.length ? '+ transactie toevoegen' : '+ Kies de transactie(s)'}</button>`}
+        </div>
       </div>
-      <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}" title="Bewerken" aria-label="Bewerken">✎</button>
     </div>`;
   }
 
