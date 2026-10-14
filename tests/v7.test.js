@@ -105,3 +105,21 @@ test('voorschot kwijtschelden: telt als uitgave in de gekozen categorie en staat
   s.people[0].forgiven = [];
   assert.equal(C.advancesOverview(s).people.find(p => p.person === 'Jan').open, 2000);
 });
+
+test('voorschotten: titel, en per voorschot afhandelen (transactie, kwijtschelden, gesplitste betaling)', () => {
+  const s = Store.defaultState();
+  s.transactions.push(
+    tx('a1', '2026-09-01', -3000, 'Ticketmaster', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan', title: 'Concertticket' }),
+    tx('a2', '2026-09-05', -5000, 'Restaurant', { splits: [{ categoryId: C.SYS_ADVANCE, amount: -2000, person: 'Jan', note: 'Etentje' }, { categoryId: 'cat_boodschappen', amount: -3000 }] }),
+    // Terugbetaling specifiek voor het etentje (niet voor het oudere ticket)
+    tx('r1', '2026-09-10', 2000, 'Jan', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan', advanceOf: 'a2:0' }));
+  s.people.push({ id: 'p1', name: 'Jan', ibans: [], forgiven: [{ id: 'f1', date: '2026-10-01', amount: 1000, categoryId: 'cat_boodschappen', advanceOf: 'a1' }] });
+  C.recompute(s);
+  assert.equal(s.transactions.find(t => t.id === 'r1').advanceOf, 'a2:0', 'koppeling aan een splitsing blijft bewaard');
+  const items = C.advancesOverview(s).items;
+  const ticket = items.find(i => i.txId === 'a1'), meal = items.find(i => i.txId === 'a2');
+  assert.deepEqual([ticket.title, meal.title, meal.split], ['Concertticket', 'Etentje', 0]);
+  assert.deepEqual([meal.repaid, meal.amount], [2000, 2000], 'etentje terugbetaald');
+  assert.deepEqual([ticket.repaid, ticket.forgiven], [1000, 1000], 'deel van het ticket kwijtgescholden');
+  assert.equal(C.advancesOverview(s).people[0].open, 2000);
+});

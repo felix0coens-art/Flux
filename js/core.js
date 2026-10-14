@@ -842,7 +842,7 @@
     const ids = new Set(state.transactions.map(t => t.id));
     for (const tx of state.transactions) {
       if (tx.refundOf && !ids.has(tx.refundOf)) tx.refundOf = null;
-      if (tx.advanceOf && !ids.has(tx.advanceOf)) tx.advanceOf = null;
+      if (tx.advanceOf && !ids.has(String(tx.advanceOf).split(':')[0])) tx.advanceOf = null;
       if (tx.categoryId && !state.categories.some(c => c.id === tx.categoryId)) { tx.categoryId = null; tx.categorySource = null; }
       if (tx.splits) tx.splits = tx.splits.filter(s => state.categories.some(c => c.id === s.categoryId));
     }
@@ -904,17 +904,20 @@
     const repayments = [];
     for (const tx of state.transactions) {
       if (tx.isTransfer) continue;
-      for (const l of splitLines(tx)) {
-        if (l.categoryId !== SYS_ADVANCE) continue;
+      splitLines(tx).forEach((l, splitIndex) => {
+        if (l.categoryId !== SYS_ADVANCE) return;
         const person = (l.person || tx.person || '').trim() || 'Onbekend';
-        if (l.amount < 0) items.push({ txId: tx.id, date: tx.date, person, amount: -l.amount, repaid: 0, note: l.note || tx.description || tx.counterparty || '' });
+        const split = !!(tx.splits && tx.splits.length) && splitIndex < tx.splits.length ? splitIndex : null;
+        // Titel: wat je zelf gaf (titel van de transactie of notitie van de splitsing)
+        const title = (split != null ? (l.note || '') : (tx.title || '')).trim();
+        if (l.amount < 0) items.push({ txId: tx.id, split, date: tx.date, person, amount: -l.amount, repaid: 0, forgiven: 0, title, note: l.note || tx.description || tx.counterparty || '', counterparty: tx.counterparty || '' });
         else repayments.push({ txId: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null });
-      }
+      });
     }
     // Kwijtschelden telt als terugbetaling (zonder geld), oudste voorschot eerst
     const forgivenBy = {};
     for (const f of forgivenList(state)) {
-      repayments.push({ txId: null, date: f.date, person: f.person, amount: f.amount, advanceOf: null, forgiven: true });
+      repayments.push({ txId: null, date: f.date, person: f.person, amount: f.amount, advanceOf: f.advanceOf || null, forgiven: true });
       const k = f.person.toLowerCase();
       forgivenBy[k] = (forgivenBy[k] || 0) + f.amount;
     }
@@ -924,9 +927,12 @@
     for (const r of repayments) {
       let left = r.amount;
       if (r.advanceOf) {
-        for (const it of items.filter(i => i.txId === r.advanceOf)) {
+        // "txId" of "txId:splitnummer" (één voorschotlijn in een gesplitste betaling)
+        const [id, sp] = String(r.advanceOf).split(':');
+        for (const it of items.filter(i => i.txId === id && (sp == null || String(i.split) === sp))) {
           const take = Math.min(left, it.amount - it.repaid);
           it.repaid += take; left -= take;
+          if (r.forgiven && take > 0) it.forgiven += take;
         }
       }
       if (left > 0) unassigned.push(Object.assign({}, r, { amount: left }));
@@ -938,7 +944,7 @@
         if (left <= 0) break;
         const take = Math.min(left, it.amount - it.repaid);
         it.repaid += take; left -= take;
-        if (r.forgiven && take > 0) it.forgiven = (it.forgiven || 0) + take;
+        if (r.forgiven && take > 0) it.forgiven += take;
       }
       if (left > 0) credit[r.person] = (credit[r.person] || 0) + left; // meer terug dan voorgeschoten
     }

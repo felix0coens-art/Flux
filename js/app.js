@@ -276,7 +276,7 @@
     const bankBtn = $('#nav [data-view=bank]');
     if (bankBtn) bankBtn.innerHTML = 'Bank' + (todo ? ` <span class="count">${todo}</span>` : '');
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
-    if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin(); return; }
+    if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
     const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
@@ -294,7 +294,7 @@
       ? { id: act.id, value: act.value, start: act.selectionStart, end: act.selectionEnd } : null;
     closePicker(false);
     for (const id of ui.selected) if (!txById(id)) ui.selected.delete(id);
-    $('#main').innerHTML = banner + (views[ui.view] || renderDashboard)();
+    $('#main').innerHTML = banner + (views[ui.view] || renderDashboard)() + appFooter();
     afterRender();
     if (keep) {
       const el = $$('[data-assign-input]').find(x => x.dataset.assignInput === keep.id);
@@ -307,6 +307,12 @@
         try { el.setSelectionRange(field.start, field.end); } catch (e) { /* niet erg */ }
       }
     }
+  }
+
+  function appFooter() {
+    return `<footer class="app-footer small muted">
+      <a href="privacy.html" target="_blank" rel="noopener">Privacyverklaring</a> · <a href="voorwaarden.html" target="_blank" rel="noopener">Gebruiksvoorwaarden</a> · <a href="mailto:privacy@helderfin.be">Contact</a>
+    </footer>`;
   }
 
   function todoCount() { return state.transactions.filter(t => kindOf(t) === 'todo').length; }
@@ -427,8 +433,8 @@
           ${expRows.length ? '<p class="small"><a href="#expenses" data-view-link="expenses">Alle uitgaven bekijken →</a></p>' : ''}</div>
       </div>
       <p class="small muted">Alle balken gebruiken dezelfde schaal. Voorschotten, beleggingen en overschrijvingen tussen je eigen rekeningen tellen niet mee; terugbetalingen verminderen de uitgave.</p>
-      <h3 style="margin-top:16px">Per maand${multi ? '' : ' <span class="muted small">(laatste 12 maanden)</span>'}</h3>
-      ${monthBars(lines, from, end)}
+      <h3 style="margin-top:16px">Per maand${multi ? '' : ' <span class="muted small">(laatste 12 maanden · klik op een maand om ze te bekijken)</span>'}</h3>
+      ${monthList(lines, from, end)}
     </div>`;
   }
 
@@ -618,6 +624,37 @@
     if (!covered.length && !anyTx) return { status: 'none', missing: [] };
     const missing = banks.filter(x => !covered.includes(x)).map(x => x.a.name);
     return { status: missing.length ? 'partial' : 'full', missing };
+  }
+
+  /**
+   * Maand per maand als lijst: nieuwste bovenaan, per maand wat binnenkwam, wat buitenging en wat overbleef.
+   * Eén schaal voor alle balken; klik op een maand om ze te bekijken.
+   */
+  function monthList(lines, from, to) {
+    const months = [];
+    for (let m = from; m <= to; m = shiftMonth(m, 1)) months.push(m);
+    const data = months.map(m => { const x = C.summarize(state, C.periodRange('monthly', m + '-01'), lines); return Object.assign({ m, inc: x.netIncome, exp: x.expenses }, monthCoverage(m)); }).reverse();
+    const known = data.filter(d => d.status !== 'none');
+    const max = Math.max(1, ...known.map(d => Math.max(d.inc, d.exp)));
+    const full = data.filter(d => d.status === 'full' && d.m < today.slice(0, 7));
+    const avg = full.length ? { inc: Math.round(full.reduce((a, d) => a + d.inc, 0) / full.length), exp: Math.round(full.reduce((a, d) => a + d.exp, 0) / full.length) } : null;
+    const sel = ui.range.from === ui.range.to ? ui.range.from : null;
+    const w = v => (Math.max(0, v) / max * 100).toFixed(2);
+    const name = m => MONTHS_SHORT[Number(m.slice(5)) - 1] + ' ' + m.slice(0, 4);
+    return `<div class="month-list" role="table" aria-label="Inkomsten en uitgaven per maand">
+      <div class="ml-head" role="row"><span>Maand</span><span><i class="sw s1"></i>Netto inkomsten <i class="sw s2" style="margin-left:10px"></i>Uitgaven</span><span class="right">Over</span></div>
+      ${data.map(d => d.status === 'none'
+        ? `<div class="ml-row none" role="row"><span class="ml-month">${name(d.m)}</span><span class="muted small">geen gegevens</span><span></span></div>`
+        : `<button class="ml-row ${d.m === sel ? 'active' : ''}" role="row" data-action="month-select" data-m="${d.m}" title="${esc(monthLabel(d.m))} bekijken">
+          <span class="ml-month">${name(d.m)}${d.m === today.slice(0, 7) ? ' <span class="badge small">lopend</span>' : ''}${d.status === 'partial' ? ` <span class="small muted" title="Geen gegevens voor ${esc(d.missing.join(', '))}">onvolledig</span>` : ''}</span>
+          <span class="ml-bars">
+            <span class="ml-bar"><span class="ml-track"><i class="s1" style="width:${w(d.inc)}%"></i></span><b>${money(d.inc)}</b></span>
+            <span class="ml-bar"><span class="ml-track"><i class="s2" style="width:${w(d.exp)}%"></i></span><b>${money(d.exp)}</b></span>
+          </span>
+          <span class="ml-net ${d.inc - d.exp >= 0 ? 'pos' : 'negv'}">${d.inc - d.exp >= 0 ? '+' : '−'}${money(Math.abs(d.inc - d.exp))}</span>
+        </button>`).join('')}
+      ${avg ? `<div class="ml-row avg" role="row"><span class="ml-month">Gemiddeld</span><span class="small muted">per volledige maand: ${money(avg.inc)} binnen, ${money(avg.exp)} buiten</span><span class="ml-net ${avg.inc - avg.exp >= 0 ? 'pos' : 'negv'}">${avg.inc - avg.exp >= 0 ? '+' : '−'}${money(Math.abs(avg.inc - avg.exp))}</span></div>` : ''}
+    </div>`;
   }
 
   /** Netto inkomsten en uitgaven per maand in de gekozen periode. */
@@ -1129,64 +1166,132 @@
     ensurePerson(name, t.amount > 0 ? t.counterpartyIban : '');
   }
 
+  /** Sleutel van één voorschot: de transactie, of "transactie:splitsing" bij een gesplitste betaling. */
+  const advKey = it => it.txId + (it.split != null ? ':' + it.split : '');
+  function advItem(key) {
+    const ov = C.advancesOverview(state);
+    return ov.items.find(it => advKey(it) === key) || null;
+  }
+
   function renderAdvances() {
     const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
-    const ov = C.advancesOverview(state);
-    const open = people.filter(p => p.stats.open > 0);
-    const everAdvanced = ov.items.reduce((sum, i) => sum + i.amount, 0);
-    const card = p => {
+    const openPeople = people.filter(p => p.stats.open > 0);
+    const done = people.filter(p => p.stats.open <= 0);
+    const totalOpen = openPeople.reduce((a, p) => a + p.stats.open, 0);
+    const openItemCount = openPeople.reduce((a, p) => a + p.stats.items.filter(it => it.amount - it.repaid > 0).length, 0);
+    const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
+    const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
+    const history = (p) => {
+      const st = p.stats;
+      const ent = p.entity || {};
+      const closed = st.items.filter(it => it.amount - it.repaid <= 0).slice().reverse();
+      const reps = state.transactions.filter(t => C.splitLines(t).some(l => l.categoryId === C.SYS_ADVANCE && l.amount > 0 && String(l.person || t.person || '').toLowerCase() === p.name.toLowerCase()))
+        .sort((a, b) => b.date.localeCompare(a.date));
+      const forgiven = (ent.forgiven || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+      if (!closed.length && !reps.length && !forgiven.length) return '';
+      return `<details class="adv-history"><summary class="small">Afgehandeld en terugbetalingen <span class="muted">(${closed.length + reps.length + forgiven.length})</span></summary>
+        ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span></span><span class="amount">${money(it.amount)}</span><span class="small">${settledHow(it)}</span></div>`).join('')}</div>` : ''}
+        ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span></div>`).join('')}</div>` : ''}
+        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(f => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(f.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(f.date)} → ${esc(catName(f.categoryId))}</span></span><span class="amount">${money(f.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(f.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
+      </details>`;
+    };
+    const openCard = p => {
       const st = p.stats;
       const ent = p.entity || {};
       const sugg = C.suggestRepayments(state, p.name, ent.ibans, today, 3);
-      const reps = state.transactions.filter(t => C.splitLines(t).some(l => l.categoryId === C.SYS_ADVANCE && l.amount > 0 && String(l.person || t.person || '').toLowerCase() === p.name.toLowerCase()))
-        .sort((a, b) => b.date.localeCompare(a.date));
-      const pctRepaid = st.advanced ? Math.min(1, st.repaid / st.advanced) : 0;
-      const status = st.open > 0 ? `<span class="badge warn">nog ${money(st.open)} open</span>` : st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.advanced && st.forgiven ? '<span class="badge ok">✓ geregeld</span>' : st.advanced ? '<span class="badge ok">✓ alles terugbetaald</span>' : '<span class="badge">nog niets voorgeschoten</span>';
+      const items = st.items.filter(it => it.amount - it.repaid > 0).slice().sort((a, b) => b.date.localeCompare(a.date));
       return `<div class="card person-card">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-          <div class="grow"><strong>${esc(p.name)}</strong><div class="small muted">voorgeschoten ${money(st.advanced)} · terugbetaald ${money(st.repaid)}${st.forgiven ? ' · kwijtgescholden ' + money(st.forgiven) : ''}</div></div>${status}</div>
-        ${st.advanced ? `<div class="progress"><div class="bar ok" style="width:${(pctRepaid * 100).toFixed(1)}%"></div></div>` : ''}
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${items.length} open voorschot${items.length === 1 ? '' : 'ten'}</div></div>
+          <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(st.open)}</strong></div></div>
         ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
-        ${st.items.length ? `<table class="mini adv-table"><thead><tr><th>Voorgeschoten</th><th class="right">Bedrag</th><th class="right">Status</th></tr></thead><tbody>${st.items.slice().reverse().map(it => `<tr>
-            <td><a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">${fmtDate(it.date)}</a> <span class="small muted">${esc((it.note || '').slice(0, 40))}</span></td>
-            <td class="amount">${money(it.amount)}</td>
-            <td class="right small">${it.repaid >= it.amount && it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.repaid >= it.amount ? '<span class="pos">✓ terug</span>' : it.repaid > 0 ? 'nog ' + money(it.amount - it.repaid) : '<span class="warn-text">open</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
-        ${reps.length ? `<details><summary class="small">${reps.length} terugbetaling${reps.length === 1 ? '' : 'en'}</summary><table class="mini"><tbody>${reps.map(t => `<tr><td><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${fmtDate(t.date)}</a> <span class="small muted">${esc(t.counterparty || (t.source === 'manual' ? 'cash' : ''))}</span></td><td class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</td></tr>`).join('')}</tbody></table></details>` : ''}
-        ${(ent.forgiven || []).length ? `<div class="forgiven-list">${ent.forgiven.slice().sort((a, b) => b.date.localeCompare(a.date)).map(f => `<div class="small forgiven-row">🎁 ${fmtDate(f.date)} · <strong>${money(f.amount)}</strong> kwijtgescholden → ${catBadge(f.categoryId)}${f.note ? ` <span class="muted">${esc(f.note)}</span>` : ''}
-          <button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(f.id)}" title="Kwijtschelding ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
+        <div class="adv-items">${items.map(it => {
+          const left = it.amount - it.repaid;
+          const key = esc(advKey(it));
+          return `<div class="adv-item">
+            <div class="adv-item-top">
+              <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
+              <strong class="adv-amt">${money(left)}</strong>
+            </div>
+            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
+            <div class="adv-paid"><span class="small muted">Betaald?</span>
+              <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Met een transactie</button>
+              <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 In cash</button>
+              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+            </div>
+          </div>`;
+        }).join('')}</div>
+        ${history(p)}
         <div class="card-tools">
-          ${st.open > 0 ? `<button class="btn small" data-action="forgive" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden…</button>` : ''}
-          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">↗ Betaling aanduiden als voorschot</button>
-          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="in">↙ Terugbetaling aanduiden</button>
-          ${st.open > 0 ? `<button class="btn small" data-action="adv-cash" data-person="${esc(p.name)}">💶 Terugbetaald in cash</button>` : ''}
+          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
+          <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
+      </div>`;
+    };
+    const doneCard = p => {
+      const st = p.stats;
+      const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
+      return `<div class="card person-card done">
+        <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong></div>${status}</div>
+        ${history(p)}
+        <div class="card-tools">
+          <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">+ Voorschot toevoegen</button>
           <button class="btn small ghost" data-action="person-edit" data-person="${esc(p.name)}">✎ Bewerk</button></div>
       </div>`;
     };
     return `
       <div class="page-head"><h1>Voorschotten</h1><span class="spacer"></span>
-        <button class="btn primary" data-action="person-new">+ Persoon</button></div>
-      <p class="muted">Betaalde je iets voor iemand anders (bv. de hele restaurantrekening, concerttickets)? Dan is dat geen uitgave maar een <strong>voorschot</strong>.
-        Koppel die betaling aan de persoon, en later de terugbetaling ook. Zo zie je altijd wie je nog wat schuldig is, en tellen voorschotten nooit mee als uitgave of inkomen.</p>
-      <div class="grid kpis">
-        <div class="card kpi"><div class="label">Nog terug te krijgen</div><div class="value">${money(Math.max(0, open.reduce((a, p) => a + p.stats.open, 0)))}</div><div class="hint">${open.length} ${open.length === 1 ? 'persoon' : 'personen'}</div></div>
-        <div class="card kpi"><div class="label">Ooit voorgeschoten</div><div class="value">${money(everAdvanced)}</div><div class="hint">${ov.items.length} voorschotten</div></div>
-        <div class="card kpi"><div class="label">Hoe koppel ik snel?</div><div class="hint" style="margin-top:6px">Typ in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong> of <strong>🤝 Terugbetaling van Pieter</strong>.</div></div>
+        <button class="btn" data-action="person-new">+ Persoon</button>
+        <button class="btn primary" data-action="adv-pick" data-dir="out">+ Voorschot toevoegen</button></div>
+      <p class="muted">Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Dan is dat een <strong>voorschot</strong>, geen uitgave. Hier zie je wat je nog terug moet krijgen. Is het betaald, duid dan aan hoe: met een transactie, in cash, of kwijtgescholden.</p>
+      <div class="adv-summary card">
+        <div><div class="label">Nog terug te krijgen</div><div class="value">${money(totalOpen)}</div></div>
+        <div class="small muted">${openItemCount} open voorschot${openItemCount === 1 ? '' : 'ten'} bij ${openPeople.length} ${openPeople.length === 1 ? 'persoon' : 'personen'}</div>
+        <div class="small muted adv-tip">Tip: typ bij een transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.</div>
       </div>
-      ${people.length ? `<div class="grid cards people">${people.map(card).join('')}</div>` : `<div class="card empty-state"><p>Nog geen personen. Maak er een aan met <strong>+ Persoon</strong>, of duid een betaling aan als voorschot.</p></div>`}`;
+      ${openPeople.length ? `<h2 class="section-title">Nog open</h2><div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
+        : people.length ? '<div class="card empty-state"><p>🎉 Niemand is je nog iets schuldig.</p></div>' : ''}
+      ${done.length ? `<h2 class="section-title">Alles in orde</h2><div class="grid cards people">${done.map(doneCard).join('')}</div>` : ''}
+      ${!people.length ? `<div class="card empty-state"><p>Nog geen voorschotten. Klik op <strong>+ Voorschot toevoegen</strong> en kies de betaling die je voor iemand deed.</p></div>` : ''}`;
+  }
+
+  /** Titel van één voorschot (bij een gesplitste betaling: de notitie van die splitsing). */
+  function advTitleModal() {
+    const m = modal;
+    const it = advItem(m.key);
+    if (!it) return modalShell('Titel', '<p class="muted">Dit voorschot bestaat niet meer.</p>', '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>');
+    const t = txById(it.txId);
+    return modalShell('Titel van het voorschot', `
+      <p class="small muted">Waarvoor schoot je ${money(it.amount)} voor aan ${esc(it.person)} op ${fmtDate(it.date)}? Bv. <em>Concertticket</em>, <em>Etentje Gent</em>.</p>
+      <label class="field"><span>Titel</span><input type="text" id="adv-title-input" maxlength="80" value="${esc(it.title)}" placeholder="bv. Concertticket"></label>
+      <p class="small muted">Transactie: ${esc((t && (t.counterparty || t.description)) || '')} · ${money(t ? t.amount : -it.amount)}</p>`,
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="adv-title-save">Opslaan</button>`);
+  }
+
+  function saveAdvTitle() {
+    const it = advItem(modal.key);
+    const t = it && txById(it.txId);
+    if (!t) { closeModal(); return; }
+    const v = $('#adv-title-input').value.trim();
+    if (it.split != null && t.splits && t.splits[it.split]) t.splits[it.split].note = v;
+    else if (v) t.title = v; else delete t.title;
+    closeModal();
+    commit(v ? 'Titel bewaard' : 'Titel verwijderd');
   }
 
   /** Een openstaand voorschot kwijtschelden: het wordt een uitgave in een categorie naar keuze. */
   function forgiveModal() {
     const m = modal;
     const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
-    return modalShell('Kwijtschelden — ' + m.person, `
+    const max = m.max != null ? m.max : st.open;
+    return modalShell('Kwijtschelden — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
       <p class="small muted">Je vraagt dit geld niet meer terug van <strong>${esc(m.person)}</strong> (bv. je trakteerde, of het was een cadeau). Dan is het geen voorschot meer maar een <strong>uitgave</strong>: kies in welke categorie het moet tellen.</p>
       <div class="form-grid">
-        <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(st.open)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, st.open) / 100).toFixed(2).replace('.', ','))}"></label>
+        <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(max)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, max) / 100).toFixed(2).replace('.', ','))}"></label>
         <label class="field"><span>Datum</span><input type="date" id="fg-date" value="${esc(today)}" max="${today}"></label>
         <label class="field full"><span>Telt als uitgave in</span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
-        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. verjaardagscadeau"></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. verjaardagscadeau" value="${esc(m.title || '')}"></label>
       </div>
       <div class="errors" id="fg-errors"></div>`,
       `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Kwijtschelden</button>`);
@@ -1195,19 +1300,20 @@
   function saveForgive() {
     const m = modal;
     const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
+    const max = m.max != null ? m.max : st.open;
     const amount = C.parseAmount($('#fg-amount').value);
     const date = $('#fg-date').value;
     const categoryId = $('#fg-category').value || null;
     const errors = [];
     if (isNaN(amount) || amount <= 0) errors.push('Geef een bedrag groter dan 0.');
-    else if (amount > st.open) errors.push('Dat is meer dan wat nog open staat (' + money(st.open) + ').');
+    else if (amount > max) errors.push('Dat is meer dan wat nog open staat (' + money(max) + ').');
     if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
     if (!categoryId) errors.push('Kies in welke categorie het als uitgave telt.');
     else if (C.SYS_ADVANCE === categoryId || (cat(categoryId) && cat(categoryId).kind !== 'expense')) errors.push('Kies een uitgavencategorie.');
     if (errors.length) { $('#fg-errors').innerHTML = errors.map(esc).join('<br>'); return; }
     const p = ensurePerson(m.person);
     if (!p) { $('#fg-errors').textContent = 'Kies eerst een naam voor deze persoon (Bewerk).'; return; }
-    const entry = { id: C.uid('fg'), date, amount, categoryId, note: $('#fg-note').value.trim() };
+    const entry = Object.assign({ id: C.uid('fg'), date, amount, categoryId, note: $('#fg-note').value.trim() }, m.advanceOf ? { advanceOf: m.advanceOf } : {});
     p.forgiven = (p.forgiven || []).concat([entry]);
     closeModal();
     commit();
@@ -1265,8 +1371,12 @@
       .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 80);
     const sugg = new Set(out ? [] : C.suggestRepayments(state, m.person, (personEntity(m.person) || {}).ibans, today, 20).map(x => x.tx.id));
     list.sort((a, b) => (sugg.has(b.id) ? 1 : 0) - (sugg.has(a.id) ? 1 : 0));
-    return modalShell(out ? `Voorgeschoten voor ${m.person}` : `Terugbetaling van ${m.person}`, `
-      <p class="small muted">${out ? 'Vink de betalingen aan die je voor ' + esc(m.person) + ' deed. Betaalde je ook voor jezelf? Open dan de transactie en splits ze.' : 'Vink de betalingen aan waarmee ' + esc(m.person) + ' je terugbetaalde. Ze worden afgeboekt op de oudste open voorschotten.'}</p>
+    const who = m.person || 'iemand';
+    return modalShell(m.forItem ? `Terugbetaling van ${m.forItem}` : out ? `Voorschot toevoegen${m.person ? ' voor ' + m.person : ''}` : `Terugbetaling van ${m.person}`, `
+      ${m.askPerson ? `<label class="field"><span>Voor wie schoot je het voor?</span><input type="text" id="adv-person" list="adv-people" value="${esc(m.person || '')}" placeholder="bv. Pieter">
+        <datalist id="adv-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>` : ''}
+      ${m.forItem ? `<p class="small">Kies de betaling waarmee ${esc(m.person)} <strong>${esc(m.forItem)}</strong> terugbetaalde (nog ${money(m.left || 0)} open).</p>` : ''}
+      <p class="small muted">${m.forItem ? '' : out ? 'Vink de betalingen aan die je voor ' + esc(who) + ' deed. Betaalde je ook voor jezelf? Open dan de transactie en splits ze.' : 'Vink de betalingen aan waarmee ' + esc(m.person) + ' je terugbetaalde. Ze worden afgeboekt op de oudste open voorschotten.'}</p>
       <input type="search" id="adv-search" placeholder="Zoeken…" value="${esc(m.search || '')}">
       <div class="table-wrap" style="margin-top:8px"><table class="tx-table"><tbody>${list.map(t => `<tr class="${m.chosen.has(t.id) ? 'is-selected' : ''}">
         <td class="sel-cell"><input type="checkbox" data-adv-pick="${esc(t.id)}" ${m.chosen.has(t.id) ? 'checked' : ''}></td>
@@ -2199,7 +2309,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3165,6 +3275,60 @@
           <div class="preview-bars">${[62, 70, 58, 75, 66, 80, 72, 68, 77, 74, 79, 71].map((v, i) => `<span style="height:${v}%"></span><span class="o" style="height:${[48, 52, 50, 55, 47, 60, 51, 49, 58, 53, 56, 52][i]}%"></span>`).join('')}</div>
         </div>
       </section>
+      <section class="landing-examples" aria-label="Voorbeelden">
+        <h2>Zo ziet het eruit</h2>
+        <div class="example-grid">
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-tx"><div><strong>COLRUYT GENT</strong><div class="small muted">Bancontact · 12/10</div></div><b>€ -45,20</b></div>
+              <div class="ex-input">boo<span class="caret"></span></div>
+              <div class="ex-menu"><div class="on">🛒 Boodschappen <span class="small muted">Enter ↵</span></div><div>📚 Boeken &amp; studie</div><div>🎁 Cadeaus</div></div>
+            </div>
+            <figcaption><strong>Typ en druk op Enter.</strong> Koppelen gaat zo snel als typen, en Helder onthoudt het voor de volgende keer.</figcaption>
+          </figure>
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-person"><span class="avatar">P</span><strong>Pieter</strong><span class="ex-open">nog € 62,00</span></div>
+              <div class="ex-item"><div><strong>Concertticket</strong><div class="small muted">03/10</div></div><b>€ 45,00</b></div>
+              <div class="ex-item"><div><strong>Etentje Gent</strong><div class="small muted">09/10</div></div><b>€ 17,00</b></div>
+              <div class="ex-buttons"><span>🔗 Met een transactie</span><span>💶 In cash</span><span>🎁 Kwijtschelden</span></div>
+            </div>
+            <figcaption><strong>Wie is je nog iets schuldig?</strong> Elk voorschot met een titel, en met één klik afgehandeld.</figcaption>
+          </figure>
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-donut" style="background:conic-gradient(var(--series-1) 0 38%, var(--series-2) 38% 62%, var(--series-3) 62% 78%, var(--series-4) 78% 90%, var(--border) 90% 100%)"><span>€ 1.915</span></div>
+              <ul class="ex-legend"><li><i style="background:var(--series-1)"></i>🏠 Huur &amp; wonen <b>38%</b></li><li><i style="background:var(--series-2)"></i>🛒 Boodschappen <b>24%</b></li><li><i style="background:var(--series-3)"></i>🚗 Vervoer <b>16%</b></li><li><i style="background:var(--series-4)"></i>🍽️ Horeca <b>12%</b></li><li><i style="background:var(--border)"></i>Andere <b>10%</b></li></ul>
+            </div>
+            <figcaption><strong>Waar gaat je geld naartoe?</strong> Je uitgaven per categorie, per maand of per jaar.</figcaption>
+          </figure>
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-kpis"><div><div class="small muted">Portefeuille</div><strong>€ 12.480</strong></div><div><div class="small muted">Rendement</div><strong class="pos">+7,2% <span class="small muted">/jaar</span></strong></div></div>
+              <svg viewBox="0 0 200 60" class="ex-spark" preserveAspectRatio="none"><polyline points="0,52 20,48 40,50 60,40 80,42 100,33 120,35 140,24 160,27 180,16 200,12" /><polyline class="dep" points="0,54 50,50 100,44 150,40 200,36" /></svg>
+              <div class="small muted">Degiro + Saxo · stortingen <span style="color:var(--series-2)">━</span> waarde <span style="color:var(--series-1)">━</span></div>
+            </div>
+            <figcaption><strong>Je beleggingen erbij.</strong> Degiro en Saxo samen, met je echte rendement en dividenden.</figcaption>
+          </figure>
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-tx"><div><strong>Takeaway.com</strong><div class="small muted">06/08 · ↩ € 16,00 terug (2×)</div></div><b>€ -8,29</b></div>
+              <div class="ex-tx muted-row"><div>COENS VICTOR</div><b class="pos">€ 8,50</b></div>
+              <div class="ex-tx muted-row"><div>VAN HOUCKE HELEEN</div><b class="pos">€ 7,50</b></div>
+              <div class="ex-buttons"><span>↩ 2 terugbetalingen koppelen</span></div>
+            </div>
+            <figcaption><strong>Samen besteld, apart betaald?</strong> Koppel terugbetalingen aan de uitgave en zie wat je zelf betaalde.</figcaption>
+          </figure>
+          <figure class="example">
+            <div class="ex-card">
+              <div class="ex-bank"><span>🏦</span><div><strong>KBC</strong><div class="small muted">bijgewerkt vandaag 08:12</div></div><span class="ex-ok">✓ gekoppeld</span></div>
+              <div class="ex-bank"><span>🏦</span><div><strong>Argenta</strong><div class="small muted">bijgewerkt vandaag 08:12</div></div><span class="ex-ok">✓ gekoppeld</span></div>
+              <div class="ex-bank"><span>📄</span><div><strong>Belfius spaarrekening</strong><div class="small muted">CSV opgeladen · 14 transacties</div></div></div>
+            </div>
+            <figcaption><strong>Alle banken op één plek.</strong> Rechtstreeks gekoppeld of met een bestand, zonder dubbels.</figcaption>
+          </figure>
+        </div>
+      </section>
       <section class="landing-features">
         <h2>Wat Helder voor je doet</h2>
         <div class="feature-grid">${features.map(([i, t, d]) => `<div class="feature"><div class="feature-icon" aria-hidden="true">${i}</div><h3>${t}</h3><p>${d}</p></div>`).join('')}</div>
@@ -3380,12 +3544,41 @@
     'person-save': savePerson,
     'person-delete': () => { state.people = (state.people || []).filter(p => p.name.toLowerCase() !== modal.original.toLowerCase()); closeModal(); commit('Persoon verwijderd'); },
     'adv-accept': el => { const t = txById(el.dataset.id); if (!t) return; markAdvance(t, el.dataset.person); commit('Terugbetaling van ' + el.dataset.person + ' gekoppeld'); },
-    'adv-pick': el => openModal({ type: 'advPick', person: el.dataset.person, dir: el.dataset.dir, chosen: new Set(), search: '' }),
+    'adv-pick': el => openModal({ type: 'advPick', person: el.dataset.person || '', askPerson: !el.dataset.person, dir: el.dataset.dir, chosen: new Set(), search: '' }),
     'adv-pick-apply': () => {
       const m = modal;
-      for (const id of m.chosen) { const t = txById(id); if (t) markAdvance(t, m.person); }
+      if (m.askPerson) m.person = ($('#adv-person') ? $('#adv-person').value : m.person || '').trim();
+      if (!m.person) { const i = $('#adv-person'); if (i) { i.focus(); i.classList.add('invalid'); } toast('Geef eerst de naam van de persoon.'); return; }
+      for (const id of m.chosen) { const t = txById(id); if (t) { markAdvance(t, m.person); if (m.advanceOf) t.advanceOf = m.advanceOf; } }
       closeModal();
       commit(`${m.chosen.size} ${m.dir === 'out' ? 'voorschot(ten) voor' : 'terugbetaling(en) van'} ${m.person} gekoppeld`);
+      // Eén nieuw voorschot zonder titel: meteen om een titel vragen
+      const only = m.dir === 'out' && m.chosen.size === 1 ? txById(Array.from(m.chosen)[0]) : null;
+      if (only && !only.title) openModal({ type: 'advTitle', key: only.id });
+    },
+    'adv-title': el => openModal({ type: 'advTitle', key: el.dataset.key }),
+    'adv-title-save': saveAdvTitle,
+    'adv-item-tx': el => {
+      const it = advItem(el.dataset.key);
+      if (!it) return;
+      openModal({ type: 'advPick', person: it.person, dir: 'in', advanceOf: el.dataset.key, forItem: it.title || it.counterparty || 'dit voorschot', left: it.amount - it.repaid, chosen: new Set(), search: '' });
+    },
+    'adv-item-cash': el => {
+      const it = advItem(el.dataset.key);
+      if (!it) return;
+      const left = it.amount - it.repaid;
+      const name = it.title || it.counterparty || 'dit voorschot';
+      const cash = state.accounts.find(a => a.type === 'cash');
+      if (!confirm(`${it.person} betaalde ${money(left)} voor “${name}” terug in cash?\n\nHelder maakt een terugbetaling aan${cash ? ' op je rekening “' + cash.name + '”' : ''}.`)) return;
+      const t = Object.assign(newTx(cash && cash.id), { amount: left, counterparty: it.person, description: 'Terugbetaald in cash', title: 'Cash: ' + name, advanceOf: el.dataset.key });
+      markAdvance(t, it.person);
+      state.transactions.push(t);
+      commit(`“${name}” is terugbetaald in cash`);
+    },
+    'adv-item-forgive': el => {
+      const it = advItem(el.dataset.key);
+      if (!it) return;
+      openModal({ type: 'forgive', person: it.person, advanceOf: el.dataset.key, max: it.amount - it.repaid, title: it.title || '' });
     },
     'adv-cash': el => {
       const p = C.personList(state).find(x => x.name === el.dataset.person);
@@ -3435,6 +3628,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'month-select': el => { ui.range = { from: el.dataset.m, to: el.dataset.m }; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
     'landing-top': () => { window.scrollTo({ top: 0, behavior: 'smooth' }); const c = $('.landing-card .google-btn') || $('.landing-card input'); if (c) setTimeout(() => c.focus(), 300); },
     'google-unlink': async () => {
       if (!confirm('Je account loskoppelen van Google? Je meldt je dan weer enkel aan met je gebruikersnaam en wachtwoord.')) return;
@@ -3599,6 +3793,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (modal && modal.type === 'tx' && (el.closest('#splits') || el.id === 'tx-amount')) { updateSplitRemaining(); updateTxSections(); }
     if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();
+    if (modal && modal.type === 'advPick' && el.id === 'adv-person') { modal.person = el.value; return; }
     if (modal && modal.type === 'advPick' && el.id === 'adv-search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#adv-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
