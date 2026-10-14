@@ -106,7 +106,54 @@ Op het overzicht toont een grafiek je **totale vermogen**: elke bankrekening apa
 
 ## Hosten
 
-Helder bestaat uit één kleine Node.js-server, zonder database. Je hebt **HTTPS** nodig: dat beschermt je wachtwoord, en zonder HTTPS kan je Helder niet als app op je iPhone installeren. Kies een van deze drie manieren.
+Helder heeft een kleine server nodig, zonder database. Die bestaat in twee gelijkwaardige versies: **PHP** (`api.php` + `php/`, voor gewone webhosting) en **Node.js** (`server/`, voor Docker of een eigen server). Je hebt **HTTPS** nodig: dat beschermt je wachtwoord, en zonder HTTPS kan je Helder niet als app op je iPhone installeren.
+
+### Webhosting (zoals Vimexx) met automatische updates via GitHub
+
+Zo staat Helder op `helderfin.be`. Elke keer dat er nieuwe code op GitHub komt, test GitHub die automatisch en zet ze daarna op je hosting. Je hoeft zelf niets meer te doen. Je gegevens staan in een aparte map **naast** de webmap en worden nooit overschreven:
+
+```
+/home/<gebruiker>/domains/helderfin.be/
+├── public_html/        ← de app (wordt bij elke update vervangen)
+├── helder-data/        ← je gegevens + dagelijkse back-ups (blijft altijd staan, niet bereikbaar via het web)
+└── helder-config.php   ← optioneel: API-sleutel voor de AI-functie
+```
+
+**Eenmalig instellen (± 15 minuten):**
+
+1. **DirectAdmin klaarzetten**
+   - *Select PHP version*: kies **PHP 8.3** (minstens 8.1).
+   - *SSL Certificates*: vraag een gratis Let's Encrypt-certificaat aan voor `helderfin.be` en `www.helderfin.be`.
+   - Kijk of SSH aan staat voor je pakket. In DirectAdmin onder *SSH-Keys*, of vraag het aan Vimexx: *"Kan SSH-toegang aangezet worden voor mijn webhosting, en wat zijn de SSH-host en -poort?"*
+2. **Een SSH-sleutel maken** voor GitHub. Open op je Mac het programma Terminal en voer uit:
+   ```bash
+   ssh-keygen -t ed25519 -C helder-github -N "" -f ~/Desktop/helder-github
+   ```
+   Je krijgt twee bestanden op je bureaublad. De inhoud van `helder-github.pub` (de publieke sleutel) voeg je in DirectAdmin toe bij **SSH-Keys** (plakken als nieuwe sleutel, en daarna autoriseren).
+3. **De gegevens aan GitHub geven.** Ga in de repository naar **Settings → Secrets and variables → Actions → New repository secret** en voeg toe:
+
+   | Naam | Waarde |
+   |---|---|
+   | `HELDER_SSH_HOST` | de SSH-server van je hosting (vraag dit aan Vimexx als je het niet vindt) |
+   | `HELDER_SSH_PORT` | de SSH-poort (vaak niet 22; vraag het na) |
+   | `HELDER_SSH_USER` | je DirectAdmin-gebruikersnaam |
+   | `HELDER_SSH_KEY` | de volledige inhoud van het bestand `helder-github` (de **privé**sleutel, zonder `.pub`) |
+   | `HELDER_DEPLOY_PATH` | `/home/<gebruiker>/domains/helderfin.be/public_html` |
+   | `HELDER_ANTHROPIC_API_KEY` | *(optioneel)* je API-sleutel voor de AI-classificatie |
+
+   Bij het tabblad **Variables** kan je ook `HELDER_URL` = `https://helderfin.be` toevoegen. GitHub controleert dan na elke update of de site werkt.
+   Verwijder daarna `helder-github` van je bureaublad, of bewaar het veilig.
+4. **De eerste keer uitrollen**: ga in GitHub naar **Actions → Testen en uitrollen → Run workflow**. Na een paar minuten staat Helder online.
+5. **Je account aanmaken**: open `https://helderfin.be`. De setupcode vind je in DirectAdmin → **File Manager** → `domains/helderfin.be/helder-data/SETUPCODE.txt`. Na het aanmaken verdwijnt dat bestand vanzelf.
+
+**Daarna:** elke update op GitHub (de branch `main` of de werkbranch van Helder) wordt automatisch getest en, als de tests slagen, binnen een paar minuten uitgerold. Lukt een test niet, dan blijft de vorige versie gewoon staan. De voortgang zie je in het tabblad **Actions** op GitHub. Je toestellen halen de nieuwe versie vanzelf op bij de volgende keer openen.
+
+Goed om te weten:
+- Uitrollen raakt enkel `public_html`. De workflow weigert te starten als `HELDER_DEPLOY_PATH` niet op `/public_html` eindigt. Zet daar dus geen andere eigen bestanden in, want die worden bij een update verwijderd.
+- De dagelijkse back-ups staan in `helder-data/backups/`. Wil je extra zekerheid, zet dan ook de back-ups van Vimexx aan, of download af en toe een back-up via *Instellingen*.
+- Lokaal de PHP-versie uitproberen: `php -S localhost:8080 php/router.php`.
+
+De andere manieren hieronder gebruiken de Node.js-server.
 
 ### Optie A — Thuis, privé en gratis, met Tailscale (aanbevolen om te starten)
 
@@ -217,7 +264,7 @@ Alle gegevens staan in de datamap: één JSON-bestand per gebruiker, `users.json
 
 ### Beveiliging
 
-- Wachtwoorden worden opgeslagen met scrypt. Van de sessietokens wordt enkel een hash bewaard, en de sessiecookie is `HttpOnly` en `SameSite`.
+- Wachtwoorden worden opgeslagen met scrypt (Node-server) of bcrypt via `password_hash` (PHP-server). Van de sessietokens wordt enkel een hash bewaard, en de sessiecookie is `HttpOnly` en `SameSite`.
 - Na 10 foute aanmeldpogingen per kwartier wordt een IP-adres tijdelijk geblokkeerd.
 - De server stuurt strikte beveiligingsheaders mee (CSP, `X-Frame-Options`) en serveert enkel de app-bestanden.
 - Bij het online opzoeken wordt enkel de naam van de tegenpartij verstuurd. Met AI gaat ook de eerste 120 tekens van de mededeling mee.
@@ -245,7 +292,12 @@ server/server.js           HTTP-server: app, login, synchronisatie, opzoeken (me
 server/ai.js               optionele classificatie via Claude
 server/degiro.js           rechtstreekse Degiro-koppeling
 server/prices.js           historische koersen (Yahoo Finance) voor de reconstructie
-tests/                     tests (npm test)
+api.php, php/lib/          dezelfde server in PHP, voor gewone webhosting (Vimexx, DirectAdmin, ...)
+php/router.php             om de PHP-versie lokaal te draaien: php -S localhost:8080 php/router.php
+.htaccess, .user.ini       Apache- en PHP-instellingen voor de webhosting
+scripts/build-hosting.sh   stelt de bestanden voor public_html samen
+.github/workflows/         tests + automatisch uitrollen naar de webhosting
+tests/                     tests (npm test), ook voor de PHP-server als php geïnstalleerd is
 ```
 
 Bedragen staan intern als gehele centen (negatief = uitgave). Je kan lokaal starten met `npm start` en dan surfen naar <http://localhost:8080>.

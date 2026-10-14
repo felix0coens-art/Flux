@@ -1858,7 +1858,7 @@
     const a = ui.auth;
     if (a.setupRequired) {
       return `<div class="auth card"><div class="auth-logo">${LOGO}<span class="wordmark">H€lder</span></div><h1>Account aanmaken</h1>
-        <p class="muted">Maak je account aan. De setupcode staat in de log van de server.</p>
+        <p class="muted">Maak je account aan. ${esc(a.setupHint || 'De setupcode staat in de log van de server.')}</p>
         <form data-form="setup" class="form-stack">
           <label class="field"><span>Setupcode</span><input type="text" name="code" autocomplete="one-time-code" required autocapitalize="characters"></label>
           <label class="field"><span>Gebruikersnaam</span><input type="text" name="username" autocomplete="username" autocapitalize="none" required></label>
@@ -2164,7 +2164,7 @@
       onStatus: s => { ui.sync = s; renderSyncBadge(); },
       onOutdated: msg => { toast(msg); setTimeout(() => location.reload(), 1500); },
       onAuthRequired: info => {
-        ui.auth = { setupRequired: !!info.setupRequired, previousUser: info.previousUser || null, expired: !!info.previousUser };
+        ui.auth = { setupRequired: !!info.setupRequired, setupHint: info.setupHint || '', previousUser: info.previousUser || null, expired: !!info.previousUser };
         closeModal();
         render();
       }

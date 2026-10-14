@@ -1,0 +1,14 @@
+{
+  "name": "helder/server",
+  "description": "Helder-server voor PHP-webhosting (enkel nodig voor de optionele AI-functie)",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.1",
+    "anthropic-ai/sdk": "^0.57.0",
+    "guzzlehttp/guzzle": "^7.9"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "allow-plugins": { "php-http/discovery": true }
+  }
+}

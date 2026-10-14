@@ -3,3 +3,4 @@ data
 tests
 .git
 *.md
+php/vendor

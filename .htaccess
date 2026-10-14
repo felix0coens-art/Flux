@@ -1,0 +1,38 @@
+# Helder op Apache-webhosting (bv. Vimexx/DirectAdmin)
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Altijd via https (zodra het SSL-certificaat actief is)
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+  # Cookies en de CSRF-header doorgeven, en alle API-verzoeken naar api.php
+  RewriteRule ^api/ api.php [L,QSA]
+</IfModule>
+
+# Geen verborgen bestanden, back-ups of broncode tonen
+<FilesMatch "^\.|\.(bak|tmp|md)$">
+  Require all denied
+</FilesMatch>
+<Files "manifest.webmanifest">
+  Require all granted
+</Files>
+
+AddType application/manifest+json .webmanifest
+AddType font/woff2 .woff2
+AddDefaultCharset utf-8
+AddCharset utf-8 .js .css .html
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  Header always set X-Frame-Options "DENY"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  # App-bestanden altijd controleren op een nieuwere versie (de service worker zorgt voor offline gebruik)
+  <FilesMatch "\.(html|js|css|webmanifest|png|woff2)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

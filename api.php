@@ -1,0 +1,181 @@
+<?php
+/*
+ * Toegangspunt van de Helder-API op PHP-hosting. .htaccess stuurt alle /api/...-verzoeken hierheen.
+ * De rest van de code staat in php/lib (niet rechtstreeks bereikbaar via het web).
+ */
+
+declare(strict_types=1);
+
+require __DIR__ . '/php/lib/helder.php';
+require __DIR__ . '/php/lib/lookup.php';
+require __DIR__ . '/php/lib/prices.php';
+require __DIR__ . '/php/lib/degiro.php';
+require __DIR__ . '/php/lib/ai.php';
+
+@set_time_limit(300);
+ini_set('display_errors', '0');
+
+const SECURITY_HEADERS = [
+    'X-Content-Type-Options' => 'nosniff',
+    'Referrer-Policy' => 'same-origin',
+    'X-Frame-Options' => 'DENY',
+    'Content-Security-Policy' => "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+];
+
+function send(int $status, $body, array $headers = []): void {
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    foreach (SECURITY_HEADERS + $headers as $k => $v) header("$k: $v", true);
+    echo json_out($body);
+}
+
+/** Leest de JSON-body. $assoc=false voor gegevens (behoudt {} versus []). */
+function body(bool $assoc = true) {
+    static $raw = null;
+    if ($raw === null) {
+        $raw = (string) file_get_contents('php://input', false, null, 0, MAX_BODY + 1);
+        if (strlen($raw) > MAX_BODY) throw new HttpError(413, 'Te groot');
+    }
+    if (trim($raw) === '') return $assoc ? [] : new stdClass();
+    $data = json_decode($raw, $assoc);
+    if ($data === null) throw new HttpError(400, 'Ongeldige JSON');
+    return $data;
+}
+
+function handle(string $method, string $path): void {
+    // CSRF-bescherming: wijzigende verzoeken moeten van de app zelf komen
+    if ($method !== 'GET' && ($_SERVER['HTTP_X_FLUX'] ?? '') !== '1') throw new HttpError(403, 'Verboden');
+    $user = session_user();
+    $cookieAge = SESSION_DAYS * 86400;
+
+    if ($path === '/api/session' && $method === 'GET') {
+        $code = setup_code();
+        send(200, [
+            'user' => $user,
+            'setupRequired' => $code !== null,
+            'setupHint' => $code !== null ? 'De setupcode staat in het bestand SETUPCODE.txt in de map helder-data op je hosting (DirectAdmin → File Manager).' : null,
+            'features' => ['ai' => ai_available(), 'aiModel' => ai_available() ? ai_model() : null],
+        ]);
+        return;
+    }
+
+    if ($path === '/api/setup' && $method === 'POST') {
+        $b = body();
+        $code = setup_code();
+        if ($code === null) throw new HttpError(400, 'Er bestaat al een account');
+        if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer later opnieuw');
+        record_attempt();
+        if (strtoupper(trim((string) ($b['code'] ?? ''))) !== $code) throw new HttpError(401, 'Verkeerde setupcode (zie SETUPCODE.txt in helder-data)');
+        if (!valid_username($b['username'] ?? null)) throw new HttpError(400, 'Gebruikersnaam: 2-40 tekens (letters, cijfers, . _ -)');
+        if (!valid_password($b['password'] ?? null)) throw new HttpError(400, 'Wachtwoord: minstens 8 tekens');
+        create_user($b['username'], $b['password']);
+        @unlink(data_dir() . '/SETUPCODE.txt');
+        $token = create_session($b['username']);
+        send(200, ['user' => $b['username']], ['Set-Cookie' => session_cookie($token, $cookieAge)]);
+        return;
+    }
+
+    if ($path === '/api/login' && $method === 'POST') {
+        $b = body();
+        if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+        $users = get_users();
+        $name = $b['username'] ?? null;
+        $u = valid_username($name) ? ($users[$name] ?? null) : null;
+        if (!$u || !verify_password((string) ($b['password'] ?? ''), $u)) {
+            record_attempt();
+            throw new HttpError(401, 'Gebruikersnaam of wachtwoord klopt niet');
+        }
+        $token = create_session($name);
+        send(200, ['user' => $name], ['Set-Cookie' => session_cookie($token, $cookieAge)]);
+        return;
+    }
+
+    if ($path === '/api/logout' && $method === 'POST') {
+        $b = body();
+        destroy_session(!empty($b['everywhere']));
+        send(200, ['ok' => true], ['Set-Cookie' => session_cookie('', 0)]);
+        return;
+    }
+
+    if (!$user) throw new HttpError(401, 'Niet aangemeld');
+
+    if ($path === '/api/sync' && $method === 'POST') {
+        $b = body(false);
+        // Een verouderde app (uit de cache) mag geen oude gegevens terugzetten
+        if (($b->schema ?? null) !== HELDER_VERSION) throw new HttpError(409, 'Er is een nieuwe versie van Helder. Herlaad de pagina.');
+        $rev = isset($b->rev) && is_int($b->rev) ? $b->rev : null;
+        send(200, sync_user($user, $b->changes ?? null, $rev));
+        return;
+    }
+
+    if ($path === '/api/data' && $method === 'GET') {
+        $d = load_user_data($user);
+        send(200, ['rev' => (int) ($d->rev ?? 0), 'state' => $d->state ?? null]);
+        return;
+    }
+
+    if ($path === '/api/password' && $method === 'POST') {
+        $b = body();
+        if (!verify_password((string) ($b['current'] ?? ''), get_users()[$user] ?? null)) throw new HttpError(401, 'Huidig wachtwoord klopt niet');
+        if (!valid_password($b['password'] ?? null)) throw new HttpError(400, 'Nieuw wachtwoord: minstens 8 tekens');
+        set_password($user, $b['password']);
+        send(200, ['ok' => true]);
+        return;
+    }
+
+    if ($path === '/api/lookup' && $method === 'POST') {
+        send(200, lookup_items(body(), 'http_fetch'));
+        return;
+    }
+
+    if ($path === '/api/prices' && $method === 'POST') {
+        $b = body();
+        $list = [];
+        foreach (array_slice(is_array($b['instruments'] ?? null) ? $b['instruments'] : [], 0, 40) as $i) {
+            $ins = [
+                'key' => substr((string) ($i['key'] ?? ''), 0, 60),
+                'isin' => preg_match('/^[A-Z]{2}[A-Z0-9]{9}\d$/', (string) ($i['isin'] ?? '')) ? $i['isin'] : '',
+                'name' => substr((string) ($i['name'] ?? ''), 0, 80),
+                'currency' => substr((string) ($i['currency'] ?? 'EUR'), 0, 4),
+                'from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($i['from'] ?? '')) ? $i['from'] : '2015-01-01',
+            ];
+            if ($ins['key'] !== '' && ($ins['isin'] !== '' || $ins['name'] !== '')) $list[] = $ins;
+        }
+        send(200, fetch_prices('http_fetch', $list));
+        return;
+    }
+
+    if ($path === '/api/degiro/sync' && $method === 'POST') {
+        $b = body();
+        if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+        if (empty($b['username']) || empty($b['password'])) throw new HttpError(400, 'Geef je Degiro-gebruikersnaam en wachtwoord');
+        try {
+            send(200, degiro_fetch_all('http_fetch', (string) $b['username'], (string) $b['password'], (string) ($b['otp'] ?? ''), $b['fromDate'] ?? null));
+        } catch (DegiroError $e) {
+            if ($e->kind === 'auth') record_attempt();
+            throw new HttpError(in_array($e->kind, ['otp', 'auth'], true) ? 401 : 502, $e->getMessage(), $e->kind);
+        } catch (HttpError $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            error_log('Helder Degiro: ' . $e->getMessage());
+            throw new HttpError(502, 'Degiro is niet bereikbaar of antwoordde onverwacht. Probeer later opnieuw, of gebruik de exportbestanden.');
+        }
+        return;
+    }
+
+    throw new HttpError(404, 'Onbekend');
+}
+
+$path = rawurldecode((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH));
+// Werkt ook als Helder in een submap staat (bv. /helder/api/sync)
+$pos = strpos($path, '/api/');
+$path = $pos === false ? $path : substr($path, $pos);
+try {
+    handle($_SERVER['REQUEST_METHOD'] ?? 'GET', $path);
+} catch (HttpError $e) {
+    send($e->status, array_filter(['error' => $e->getMessage(), 'code' => $e->errorCode], fn($v) => $v !== null));
+} catch (Throwable $e) {
+    error_log('Helder: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    send(500, ['error' => 'Interne fout']);
+}

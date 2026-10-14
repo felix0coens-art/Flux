@@ -1,0 +1,93 @@
+# Bij elke update: alle tests draaien en, als ze slagen, Helder automatisch op je webhosting zetten.
+# Instellen: zie README → "Automatisch uitrollen naar je webhosting (Vimexx)".
+# Je gegevens staan in helder-data, NAAST public_html, en worden door het uitrollen nooit aangeraakt.
+name: Testen en uitrollen
+
+on:
+  push:
+    branches: [main, claude/flux-personal-accounting-snumhb]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uitrollen
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PHP-bibliotheken (Anthropic SDK)
+        run: php -v && cd php && composer install --no-dev --no-interaction --prefer-dist --no-progress
+      - name: Tests (Node- én PHP-server)
+        run: npm test
+
+  uitrollen:
+    needs: test
+    runs-on: ubuntu-24.04
+    env:
+      SSH_HOST: ${{ secrets.HELDER_SSH_HOST }}
+      SSH_PORT: ${{ secrets.HELDER_SSH_PORT }}
+      SSH_USER: ${{ secrets.HELDER_SSH_USER }}
+      SSH_KEY: ${{ secrets.HELDER_SSH_KEY }}
+      DEPLOY_PATH: ${{ secrets.HELDER_DEPLOY_PATH }}
+      ANTHROPIC_API_KEY: ${{ secrets.HELDER_ANTHROPIC_API_KEY }}
+      SITE_URL: ${{ vars.HELDER_URL }}
+    steps:
+      - name: Instellingen controleren
+        id: check
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_KEY" ] || [ -z "$DEPLOY_PATH" ]; then
+            echo "::notice::Uitrollen is nog niet ingesteld (HELDER_SSH_HOST, HELDER_SSH_USER, HELDER_SSH_KEY en HELDER_DEPLOY_PATH ontbreken). Zie de README."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Veiligheid: enkel uitrollen naar een public_html-map (rsync --delete mag nooit je gegevens raken)
+          case "${DEPLOY_PATH%/}" in
+            */public_html) ;;
+            *) echo "::error::HELDER_DEPLOY_PATH moet eindigen op /public_html (bv. /home/gebruiker/domains/helderfin.be/public_html)"; exit 1 ;;
+          esac
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ok == 'true'
+
+      - name: Bestanden voor de hosting samenstellen
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          cd php && composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader && cd ..
+          HELDER_BUILD="${GITHUB_SHA::7}" scripts/build-hosting.sh dist/public_html
+
+      - name: SSH-sleutel klaarzetten
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/helder && chmod 600 ~/.ssh/helder
+          ssh-keyscan -p "${SSH_PORT:-22}" -T 15 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          test -s ~/.ssh/known_hosts || { echo "::error::Kan $SSH_HOST niet bereiken via SSH (poort ${SSH_PORT:-22}). Staat SSH aan voor je hostingpakket?"; exit 1; }
+
+      - name: Uitrollen (enkel de app; helder-data blijft onaangeroerd)
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          SSH="ssh -i ~/.ssh/helder -p ${SSH_PORT:-22} -o BatchMode=yes"
+          rsync -rlz --delete --chmod=D755,F644 \
+            --exclude '.well-known' --exclude 'cgi-bin' \
+            -e "$SSH" dist/public_html/ "$SSH_USER@$SSH_HOST:${DEPLOY_PATH%/}/"
+          # Optioneel: API-sleutel voor de AI-functie, in een bestand naast (niet in) public_html
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            php -r 'echo "<?php\n// Aangemaakt door GitHub (HELDER_ANTHROPIC_API_KEY)\nreturn " . var_export(["ANTHROPIC_API_KEY" => getenv("ANTHROPIC_API_KEY")], true) . ";\n";' \
+              | $SSH "$SSH_USER@$SSH_HOST" "umask 077 && cat > '$(dirname "${DEPLOY_PATH%/}")/helder-config.php'"
+          fi
+          echo "Helder is bijgewerkt (versie ${GITHUB_SHA::7})."
+
+      - name: Controleren of de site werkt
+        if: steps.check.outputs.ok == 'true' && env.SITE_URL != ''
+        run: |
+          sleep 2
+          curl -fsS "${SITE_URL%/}/api/session" | grep -q '"features"' && echo "De API van Helder antwoordt." \
+            || { echo "::error::${SITE_URL%/}/api/session antwoordt niet zoals verwacht. Kijk de PHP-versie (8.1 of hoger) en het SSL-certificaat na."; exit 1; }

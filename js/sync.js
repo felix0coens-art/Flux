@@ -167,7 +167,7 @@
     if (!session.user) {
       mode = 'auth';
       setStatus('idle');
-      opts.onAuthRequired({ setupRequired: session.setupRequired, previousUser: meta.user });
+      opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user });
       return mode;
     }
     await afterLogin(session.user);
@@ -179,7 +179,7 @@
       const session = await api('GET', '/api/session');
       features = session.features || {};
       if (session.user) { mode = 'server'; await syncNow(); }
-      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, previousUser: meta.user }); }
+      else { mode = 'auth'; opts.onAuthRequired({ setupRequired: session.setupRequired, setupHint: session.setupHint, previousUser: meta.user }); }
     } catch (e) { /* nog steeds offline */ }
   }
 
