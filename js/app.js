@@ -765,6 +765,7 @@
     const refundGroup = '↩ Terugbetaling van een uitgave';
     const addRefunds = () => refunds.forEach(r => add('refund:' + r.tx.id, '↩ ' + (r.tx.title || r.tx.counterparty || r.tx.description || 'uitgave') + ' ' + money(r.tx.amount), refundGroup, fmtDate(r.tx.date) + (r.openAmount < -r.tx.amount ? ' · nog ' + money(r.openAmount) + ' open' : '')));
     const strong = refunds.length && Math.abs(C.daysBetween(refunds[0].tx.date, t.date)) <= 7;
+    if (incoming) add('whatis', '❓ Wat is dit geld? — ik help je kiezen', 'Hulp');
     if (strong) addRefunds();
     cats(incoming ? 'income' : 'expense', incoming ? 'Inkomst' : 'Uitgave');
     add('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…', incoming ? 'Inkomst' : 'Uitgave');
@@ -984,7 +985,7 @@
         return `<td class="amount ${amountClass(t.amount + back)}" title="Netto: wat je zelf betaalde">${money(t.amount + back)}
           <div class="small muted refund-note"><s>${money(t.amount)}</s> · ↩ ${money(back)} terug${n > 1 ? ` (${n}×)` : ''}</div></td>`;
       })()}
-      <td class="assign-cell">${assignSelect(t)}${hint ? `<div><button class="btn small ghost" data-action="rule-hint" data-id="${esc(t.id)}">⚙ Altijd zo voor “${esc((t.counterparty || t.description).slice(0, 28))}”</button></div>` : ''}</td>
+      <td class="assign-cell">${assignSelect(t)}${t.amount > 0 && k === 'todo' ? `<div><button class="btn small ghost wi-help" data-action="what-is" data-id="${esc(t.id)}">❓ Wat is dit geld?</button></div>` : ''}${hint ? `<div><button class="btn small ghost" data-action="rule-hint" data-id="${esc(t.id)}">⚙ Altijd zo voor “${esc((t.counterparty || t.description).slice(0, 28))}”</button></div>` : ''}</td>
     </tr>`;
   }
 
@@ -1343,6 +1344,56 @@
         : '<p class="muted">Geen transacties in deze periode.</p>'}`,
       `${c && !c.id.startsWith('sys_') ? `<button class="btn" data-action="edit-category" data-id="${esc(c.id)}">Categorie bewerken</button>` : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
   }
+
+  // ----- Wat is dit geld? -----
+
+  /**
+   * Eén vraag voor inkomend geld. Elke keuze leidt naar het juiste mechanisme in Helder
+   * (inkomen, terugbetaling van een uitgave, terugbetaling van een voorschot, actie, eigen rekening).
+   */
+  function whatIsModal() {
+    const m = modal;
+    const t = txById(m.txId);
+    if (!t) return modalShell('Wat is dit geld?', '<p class="muted">Deze transactie bestaat niet meer.</p>', '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>');
+    const choices = [
+      ['income', '💶', 'Inkomen', 'Loon, een cadeau, iets dat je verkocht, rente, …'],
+      ['refund', '↩', 'Ik krijg geld terug van een uitgave', 'Iemand betaalt zijn deel van iets dat jij betaalde, of een bestelling werd geannuleerd of teruggestort. De uitgave wordt dan kleiner.'],
+      ['advance', '🤝', 'Iemand betaalt een voorschot terug', 'Je had iets voorgeschoten voor iemand (dat telde niet als jouw uitgave).'],
+      ['action', '🏷', 'Het hoort bij een actie', 'Bv. mama betaalt de kleren terug die jij voor haar kocht.'],
+      ['transfer', '↔', 'Van een eigen rekening', 'Je zette zelf geld over, bv. van je spaarrekening.']
+    ];
+    const c = m.choice;
+    let detail = '';
+    if (c === 'income') {
+      detail = `<label class="field"><span>Welk soort inkomen?</span><select id="wi-cat">${categoryOptions(t.categoryId && cat(t.categoryId) && cat(t.categoryId).kind === 'income' ? t.categoryId : null, { kind: 'income' })}</select></label>
+        <p class="btn-row"><button class="btn primary" data-action="wi-apply">Opslaan</button><button class="btn ghost" data-action="wi-newcat">+ Nieuwe inkomstenbron</button></p>`;
+    } else if (c === 'refund') {
+      const sugg = C.suggestRefundTargets(state, t, 6);
+      detail = sugg.length ? `<p class="small muted">Van welke uitgave? Helder stelt de waarschijnlijkste voor:</p><div class="wi-list">${sugg.map(x => `<button class="wi-pick" data-action="wi-refund" data-id="${esc(x.tx.id)}"><span class="grow"><strong>${esc(x.tx.title || x.tx.counterparty || x.tx.description || 'uitgave')}</strong><span class="small muted">${fmtDate(x.tx.date)}${x.tx.categoryId ? ' · ' + esc(catLabel(x.tx.categoryId)) : ''}</span></span><span class="amount">${money(x.tx.amount)}</span></button>`).join('')}</div>
+        <p class="small"><a href="#" data-action="wi-refund-other">Een andere uitgave zoeken…</a></p>`
+        : `<p class="small muted">Helder vindt geen passende uitgave in de laatste 3 maanden.</p><p><button class="btn" data-action="wi-refund-other">Uitgave zelf kiezen…</button></p>`;
+    } else if (c === 'advance') {
+      const people = C.personList(state).filter(p => p.stats.open > 0).sort((a, b) => b.stats.open - a.stats.open);
+      detail = `<label class="field"><span>Wie betaalt terug?</span><input type="text" id="wi-person" list="wi-people" value="${esc(people[0] ? people[0].name : '')}" placeholder="naam">
+          <datalist id="wi-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
+        ${people.length ? `<p class="small muted">Open: ${people.slice(0, 5).map(p => `${esc(p.name)} ${money(p.stats.open)}`).join(' · ')}</p>` : ''}
+        <p class="btn-row"><button class="btn primary" data-action="wi-advance">Koppelen</button></p>
+        <p class="small muted">Wil je kiezen welk voorschot precies terugbetaald is? Dat kan daarna in Voorschotten → 📒 Rekening-courant.</p>`;
+    } else if (c === 'action') {
+      const acts = (state.actions || []).filter(a => !a.closed);
+      detail = `<label class="field"><span>Welke actie?</span><select id="wi-action">${acts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></label>
+        <label class="field"><span>Telt als inkomen in <span class="muted small">(optioneel)</span></span><select id="wi-action-cat">${categoryOptions(null, { kind: 'income', emptyLabel: '— Niet indelen —' })}</select></label>
+        <p class="btn-row"><button class="btn primary" data-action="wi-action">Toevoegen</button></p>`;
+    } else if (c === 'transfer') {
+      detail = `<p class="small muted">Dan telt het niet als inkomen. Staat die andere rekening ook in Helder, dan herkent Helder de overschrijving meestal vanzelf.</p><p><button class="btn primary" data-action="wi-transfer">Ja, van een eigen rekening</button></p>`;
+    }
+    return modalShell('Wat is dit geld?', `
+      <div class="wi-tx"><div><strong>${esc(t.title || t.counterparty || t.description || '—')}</strong><div class="small muted">${fmtDate(t.date)} · ${esc(accName(t.accountId))}${t.description && (t.title || t.counterparty) ? ' · ' + esc(t.description.slice(0, 60)) : ''}</div></div><span class="amount pos">${money(t.amount)}</span></div>
+      <div class="wi-choices">${choices.map(([id, icon, title, help]) => `<button class="wi-choice ${c === id ? 'active' : ''}" data-action="wi-choose" data-choice="${id}"><span class="wi-icon">${icon}</span><span class="grow"><strong>${title}</strong><span class="small muted">${help}</span></span></button>${c === id ? `<div class="wi-detail">${detail}</div>` : ''}`).join('')}</div>`,
+      '<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button>', true);
+  }
+
+  function whatIsDone(msg) { closeModal(); commit(msg); }
 
   // ----- Acties -----
 
@@ -2640,7 +2691,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -2856,6 +2907,7 @@
       return;
     }
     ui.ruleHint = null;
+    if (value === 'whatis') { render(); openModal({ type: 'whatIs', txId: t.id, choice: null }); return; }
     if (value.startsWith('refund:')) { linkRefunds([t], value.slice(7)); return; }
     if (value.startsWith('adv:')) {
       markAdvance(t, value.slice(4));
@@ -3963,6 +4015,39 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'what-is': el => openModal({ type: 'whatIs', txId: el.dataset.id, choice: null }),
+    'wi-choose': el => { modal.choice = modal.choice === el.dataset.choice ? null : el.dataset.choice; renderModal(); },
+    'wi-apply': () => {
+      const t = txById(modal.txId); const v = $('#wi-cat').value;
+      if (!t || !v) { toast('Kies een soort inkomen.'); return; }
+      t.categoryId = v; t.categorySource = 'manual'; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no';
+      whatIsDone('Ingedeeld als ' + catName(v));
+    },
+    'wi-newcat': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'new-cat'); },
+    'wi-refund': el => { const t = txById(modal.txId); closeModal(); if (t) linkRefunds([t], el.dataset.id); },
+    'wi-refund-other': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'refund'); },
+    'wi-advance': () => {
+      const t = txById(modal.txId); const name = $('#wi-person').value.trim();
+      if (!t) return;
+      if (!name) { toast('Geef de naam van wie terugbetaalt.'); return; }
+      markAdvance(t, name);
+      whatIsDone('Terugbetaling van ' + name + ' gekoppeld');
+    },
+    'wi-action': () => {
+      const t = txById(modal.txId); if (!t) return;
+      let id = $('#wi-action').value;
+      const catId = $('#wi-action-cat').value;
+      if (id === '__new__') {
+        const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+        if (!name) return;
+        const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
+        state.actions = (state.actions || []).concat([a]); id = a.id;
+      }
+      addToAction([t.id], id);
+      if (catId) { t.categoryId = catId; t.categorySource = 'manual'; t.ruleId = null; }
+      whatIsDone('Toegevoegd aan “' + (actionById(id) || {}).name + '”');
+    },
+    'wi-transfer': () => { const t = txById(modal.txId); if (!t) return; t.transferMode = 'yes'; t.categoryId = null; t.categorySource = null; whatIsDone('Aangeduid als overschrijving van een eigen rekening'); },
     'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }),
     'action-edit': el => { const a = actionById(el.dataset.id); if (a) openModal({ type: 'action', edit: Object.assign({}, a) }); },
     'action-save': saveAction,

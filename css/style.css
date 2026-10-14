@@ -837,3 +837,19 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
   .tl-hint { display: none; }
   .page-head .btn { padding: 7px 10px; font-size: 14px; }
 }
+/* Wat is dit geld? */
+.wi-tx { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; margin-bottom: 12px; }
+.wi-tx .amount { font-size: 20px; font-weight: 800; }
+.wi-choices { display: flex; flex-direction: column; gap: 8px; }
+.wi-choice { display: flex; align-items: flex-start; gap: 12px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font: inherit; color: var(--text); cursor: pointer; }
+.wi-choice:hover { border-color: var(--primary); }
+.wi-choice.active { border-color: var(--primary); background: var(--primary-soft); }
+.wi-choice .grow { display: flex; flex-direction: column; gap: 2px; }
+.wi-icon { font-size: 22px; width: 28px; text-align: center; }
+.wi-detail { border: 1px solid var(--primary); border-top: 0; border-radius: 0 0 12px 12px; margin-top: -10px; padding: 14px 12px 10px; }
+.wi-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.wi-pick { display: flex; align-items: center; gap: 10px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font: inherit; color: var(--text); cursor: pointer; }
+.wi-pick:hover { background: var(--surface-2); }
+.wi-pick .grow { display: flex; flex-direction: column; }
+.wi-help { margin-top: 4px; }
+.wi-pick .grow, .wi-choice .grow { flex: 1; min-width: 0; }
