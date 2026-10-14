@@ -150,3 +150,26 @@ test('voorschotten als rekening-courant: zelf kiezen wat vereffend is, en een ov
   const oct = C.summarize(s, { start: '2026-10-01', end: '2026-10-31' });
   assert.equal(oct.income, 500, 'het overschot is een inkomst');
 });
+
+test('acties: transacties bundelen, blijven gewone uitgaven, met wat nog terug moet komen', () => {
+  const s = Store.defaultState();
+  assert.ok(C.SYNC_COLLECTIONS.includes('actions'));
+  const php = require('fs').readFileSync(require('path').join(__dirname, '..', 'php', 'lib', 'helder.php'), 'utf8');
+  assert.match(php, /const SYNC_COLLECTIONS = \[[^\]]*'actions'/);
+  s.actions.push({ id: 'act1', name: 'Kleren voor mama', expectBack: true, person: 'mama' });
+  s.transactions.push(
+    tx('k1', '2026-10-01', -6000, 'Zara', { categoryId: 'cat_boodschappen', categorySource: 'manual', actions: ['act1'] }),
+    tx('k2', '2026-10-03', -4000, 'H&M', { categoryId: 'cat_boodschappen', categorySource: 'manual', actions: ['act1'] }),
+    tx('m1', '2026-10-10', 7000, 'Mama', { actions: ['act1'] }),
+    tx('x', '2026-10-04', -1000, 'Colruyt', { categoryId: 'cat_boodschappen', categorySource: 'manual' }));
+  C.recompute(s);
+  const sum = C.actionSummary(s, s.actions[0]);
+  assert.deepEqual([sum.txs.length, sum.out, sum.back, sum.open], [3, 10000, 7000, 3000]);
+  assert.equal(C.summarize(s, { start: '2026-10-01', end: '2026-10-31' }).byCategory.cat_boodschappen, -11000, 'de kleren blijven gewone uitgaven');
+  assert.equal(C.advancesOverview(s).people.length, 0, 'en zijn geen voorschot');
+  // Actie verwijderd: de koppeling verdwijnt, de transacties blijven
+  s.actions = [];
+  C.recompute(s);
+  assert.equal(s.transactions.find(t => t.id === 'k1').actions, undefined);
+  assert.equal(s.transactions.length, 4);
+});

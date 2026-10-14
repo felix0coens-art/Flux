@@ -24,7 +24,7 @@
   let snap = C.snapshot(realState);
 
   const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
-  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'invest', 'settings'];
+  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'actions', 'invest', 'settings'];
   const ui = {
     view: VIEWS.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'dashboard',
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
@@ -285,7 +285,7 @@
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
-    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
+    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, actions: renderActions, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)
@@ -896,6 +896,7 @@
       <strong>${n} geselecteerd</strong>
       <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
       ${(() => { const r = bulkRefundTarget(); return r ? `<button class="btn small primary" data-action="bulk-refund" title="De inkomende bedragen tellen als terugbetaling van deze uitgave">↩ ${r.incomes.length === 1 ? 'Terugbetaling' : r.incomes.length + ' terugbetalingen'} van ${esc((r.expense.title || r.expense.counterparty || 'de uitgave').slice(0, 24))} koppelen</button>` : ''; })()}
+      ${(state.actions || []).some(a => !a.closed) || true ? `<select class="bulk-action" data-bulk-action aria-label="Aan een actie toevoegen"><option value="">🏷 Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select>` : ''}
       <button class="btn small danger" data-action="bulk-delete">🗑 Verwijderen</button>
       <button class="btn small ghost" data-action="bulk-clear">Selectie wissen</button></div>`;
   }
@@ -960,12 +961,13 @@
     if (t.categorySource === 'rule') extra.push('<span class="badge small muted" title="Automatisch via een regel">⚙ regel</span>');
     if (t.categorySource === 'system') extra.push('<span class="badge small muted" title="Automatisch herkend">⚙ automatisch</span>');
     if (C.looksLikeRefund(t)) extra.push('<span class="badge maybe">Van een vriend?</span>');
+    for (const id of t.actions || []) { const a = actionById(id); if (a) extra.push(`<span class="badge action-badge" data-action="action-view" data-id="${esc(a.id)}" title="Actie: alles wat hierbij hoort">🏷 ${esc(a.name)}</span>`); }
     const hint = ui.ruleHint && ui.ruleHint.txId === t.id && t.categoryId === ui.ruleHint.categoryId && (t.counterparty || t.description);
     const sel = ui.selected.has(t.id);
     return `<tr class="${k === 'todo' ? 'is-todo' : ''} ${t.isTransfer ? 'is-transfer' : ''} ${sel ? 'is-selected' : ''}">
       <td class="sel-cell"><input type="checkbox" data-select="${esc(t.id)}" ${sel ? 'checked' : ''} aria-label="Selecteer"></td>
       <td class="nowrap">${fmtDate(t.date)}${opts.showAccount ? `<div class="small muted">${esc(accName(t.accountId))}</div>` : ''}</td>
-      <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}">${t.title ? `<div class="tx-title">${esc(t.title)}</div><div class="desc">${esc([t.counterparty, t.description].filter(Boolean).join(' · '))}</div>` : `<div>${esc(t.counterparty || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>`}
+      <td class="clickable" data-action="edit-tx" data-id="${esc(t.id)}">${t.title ? `<div class="tx-title" title="Je eigen titel">${esc(t.title)}</div><div class="desc tx-bankname">${esc([t.counterparty, t.description].filter(Boolean).join(' · '))}</div>` : `<div>${esc(t.counterparty || Banks.merchantFromDescription(t.description) || t.description || '—')}</div><div class="desc" title="${esc(t.description)}">${esc(t.description)}</div>`}
         <div class="badge-row">${opts.showKind ? kindBadge(k) : ''}${extra.join('')}${opts.showSource ? sourceBadge(t) : ''}</div></td>
       ${(() => {
         // Uitgave waarop terugbetaald werd (vrienden, annulering): toon wat je zelf betaalde
@@ -1242,7 +1244,7 @@
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
           <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">${items.length} open voorschot${items.length === 1 ? '' : 'ten'}</div></div>
           <div class="person-open"><div class="small muted">nog terug te krijgen</div><strong>${money(st.open)}</strong></div></div>
-        ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
+        ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.title || x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
         <div class="adv-items">${items.map(it => {
           const left = it.amount - it.repaid;
@@ -1333,6 +1335,130 @@
       ${rows.length ? `<div class="table-wrap"><table class="tx-table"><tbody>${rows.slice(0, 500).map(row).join('')}</tbody></table></div>${rows.length > 500 ? `<p class="small muted">De eerste 500 van ${rows.length}.</p>` : ''}`
         : '<p class="muted">Geen transacties in deze periode.</p>'}`,
       `${c && !c.id.startsWith('sys_') ? `<button class="btn" data-action="edit-category" data-id="${esc(c.id)}">Categorie bewerken</button>` : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>`, true);
+  }
+
+  // ----- Acties -----
+
+  function actionById(id) { return (state.actions || []).find(a => a.id === id) || null; }
+
+  /** Eén actie: wat je uitgaf, wat er terugkwam, wat nog open staat, en alle transacties. */
+  function actionCard(a, inModal) {
+    const s = C.actionSummary(state, a);
+    const pct = a.expectBack && s.out ? Math.min(1, s.back / s.out) : 0;
+    const name = t => esc(t.title || t.counterparty || t.description || '—');
+    return `<div class="${inModal ? '' : 'card '}action-card ${a.closed ? 'closed' : ''}" id="action-${esc(a.id)}">
+      <div class="action-head">
+        <div class="grow"><strong class="action-name">🏷 ${esc(a.name)}</strong>${a.closed ? ' <span class="badge">afgerond</span>' : ''}
+          ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ''}</div>
+        ${a.expectBack ? `<div class="action-open"><div class="small muted">${s.open > 0 ? 'nog terug te krijgen' + (a.person ? ' van ' + esc(a.person) : '') : 'terugbetaald'}</div><strong class="${s.open > 0 ? '' : 'pos'}">${s.open > 0 ? money(s.open) : '✓'}</strong></div>` : ''}
+      </div>
+      <div class="action-totals small">
+        <span>Uitgegeven <strong>${money(s.out)}</strong></span>
+        ${s.back ? `<span>Teruggekregen <strong class="pos">${money(s.back)}</strong></span>` : ''}
+        <span>${s.txs.length} transactie${s.txs.length === 1 ? '' : 's'}</span>
+      </div>
+      ${a.expectBack && s.out ? `<div class="progress"><div class="bar ok" style="width:${(pct * 100).toFixed(1)}%"></div></div>` : ''}
+      ${s.txs.length ? `<div class="action-txs">${s.txs.map(t => `<div class="action-tx">
+          <div class="at-main"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${name(t)}</a>
+            <div class="small muted">${fmtDate(t.date)}${t.title && t.counterparty ? ' · ' + esc(t.counterparty) : ''}${t.categoryId ? ' · ' + esc(catLabel(t.categoryId)) : ''}</div></div>
+          <span class="amount ${amountClass(t.amount)}">${money(t.amount)}</span>
+          <button class="btn small ghost" data-action="action-tx-remove" data-action-id="${esc(a.id)}" data-id="${esc(t.id)}" title="Uit deze actie halen">✕</button></div>`).join('')}</div>`
+        : '<p class="small muted">Nog geen transacties. Voeg ze toe met de knop hieronder, of kies de actie bij een transactie.</p>'}
+      <div class="card-tools">
+        <button class="btn small" data-action="action-add-tx" data-id="${esc(a.id)}">+ Transacties toevoegen</button>
+        ${a.closed ? `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="0">Heropenen</button>` : `<button class="btn small" data-action="action-close" data-id="${esc(a.id)}" data-closed="1">✓ Afronden</button>`}
+        <button class="btn small ghost" data-action="action-edit" data-id="${esc(a.id)}">✎ Bewerk</button>
+      </div>
+    </div>`;
+  }
+
+  function renderActions() {
+    const list = (state.actions || []).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const open = list.filter(a => !a.closed), closed = list.filter(a => a.closed);
+    const toGet = open.reduce((t, a) => t + C.actionSummary(state, a).open, 0);
+    return `
+      <div class="page-head"><h1>Acties</h1><span class="spacer"></span><button class="btn primary" data-action="action-new">+ Nieuwe actie</button></div>
+      <p class="muted">Een actie bundelt transacties die bij elkaar horen, bv. <em>“Kleren — mama betaalt terug”</em> of <em>“Verbouwing badkamer”</em>. Anders dan een voorschot blijven het gewoon <strong>jouw uitgaven</strong> (in hun categorie); de actie toont het geheel: wat je uitgaf, wat er terugkwam en wat je nog moet terugkrijgen.</p>
+      ${open.some(a => a.expectBack) ? `<div class="adv-summary card"><div><div class="label">Nog terug te krijgen via acties</div><div class="value">${money(toGet)}</div></div><div class="small muted">${open.filter(a => a.expectBack && C.actionSummary(state, a).open > 0).length} open actie(s)</div></div>` : ''}
+      ${open.length ? `<div class="grid cards actions-grid">${open.map(a => actionCard(a)).join('')}</div>`
+        : `<div class="card empty-state"><p>Nog geen acties. Maak er een met <strong>+ Nieuwe actie</strong>, of selecteer transacties bij Bank en kies <strong>🏷 Aan actie toevoegen</strong>.</p></div>`}
+      ${closed.length ? `<details class="card" style="margin-top:16px"><summary><strong>Afgeronde acties</strong> <span class="small muted">(${closed.length})</span></summary><div class="grid cards actions-grid" style="margin-top:12px">${closed.map(a => actionCard(a)).join('')}</div></details>` : ''}`;
+  }
+
+  function actionModal() {
+    const m = modal;
+    const a = m.edit;
+    return modalShell(m.isNew ? 'Nieuwe actie' : 'Actie bewerken', `
+      <div class="form-stack">
+        <label class="field"><span>Naam</span><input type="text" id="act-name" maxlength="60" value="${esc(a.name || '')}" placeholder="bv. Kleren voor mama"></label>
+        <label class="check"><input type="checkbox" id="act-back" ${a.expectBack ? 'checked' : ''}> Ik moet dit (deels) terugkrijgen</label>
+        <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="act-person" maxlength="40" list="act-people" value="${esc(a.person || '')}" placeholder="bv. mama">
+          <datalist id="act-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
+        <label class="field"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="act-note" maxlength="120" value="${esc(a.note || '')}"></label>
+        <div class="errors" id="act-errors"></div>
+      </div>`,
+      `${m.isNew ? '' : '<button class="btn danger" data-action="action-delete">Verwijderen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="action-save">Opslaan</button>`);
+  }
+
+  function saveAction() {
+    const m = modal;
+    const name = $('#act-name').value.trim();
+    if (!name) { $('#act-errors').textContent = 'Geef de actie een naam.'; return; }
+    const a = Object.assign({}, m.edit, { name, expectBack: $('#act-back').checked, person: $('#act-person').value.trim(), note: $('#act-note').value.trim() });
+    state.actions = state.actions || [];
+    const i = state.actions.findIndex(x => x.id === a.id);
+    if (i >= 0) state.actions[i] = a; else state.actions.push(Object.assign(a, { createdAt: new Date().toISOString() }));
+    // Kwamen we hier vanuit transacties? Die meteen toevoegen
+    for (const id of m.addTx || []) { const t = txById(id); if (t && !(t.actions || []).includes(a.id)) t.actions = (t.actions || []).concat([a.id]); }
+    if (m.addTx && m.addTx.length) ui.selected.clear();
+    const back = m.back;
+    closeModal();
+    commit(m.isNew ? `Actie “${name}” gemaakt` : 'Actie bewaard');
+    if (back) openModal(back);
+  }
+
+  /** Transacties kiezen om aan een actie toe te voegen (uitgaven én inkomende terugbetalingen). */
+  function actionPickModal() {
+    const m = modal;
+    const a = actionById(m.id);
+    const q = (m.search || '').toLowerCase();
+    const list = state.transactions.filter(t => !(t.actions || []).includes(m.id) && !t.isTransfer)
+      .filter(t => !q || `${t.title || ''} ${t.counterparty} ${t.description} ${C.centsToInput(t.amount)}`.toLowerCase().includes(q))
+      .sort((x, y) => y.date.localeCompare(x.date)).slice(0, 120);
+    return modalShell(`Toevoegen aan “${a ? a.name : ''}”`, `
+      <p class="small muted">Vink de uitgaven aan die bij deze actie horen, en ook de terugbetalingen${a && a.person ? ' van ' + esc(a.person) : ''} als die al binnenkwamen.</p>
+      <input type="search" id="act-search" placeholder="Zoeken…" value="${esc(m.search || '')}">
+      <div class="table-wrap" style="margin-top:8px"><table class="tx-table"><tbody>${list.map(t => `<tr class="${m.chosen.has(t.id) ? 'is-selected' : ''}">
+        <td class="sel-cell"><input type="checkbox" data-act-pick="${esc(t.id)}" ${m.chosen.has(t.id) ? 'checked' : ''}></td>
+        <td class="nowrap">${fmtDate(t.date)}</td><td>${t.title ? `<strong>${esc(t.title)}</strong> <span class="small muted">${esc(t.counterparty)}</span>` : esc(t.counterparty || '—')}<div class="desc">${esc(t.description)}</div></td>
+        <td class="amount ${amountClass(t.amount)}">${money(t.amount)}</td><td class="small muted">${esc(t.categoryId ? catLabel(t.categoryId) : 'te verwerken')}</td></tr>`).join('') || '<tr><td class="muted">Geen transacties gevonden.</td></tr>'}</tbody></table></div>`,
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="action-pick-apply" ${m.chosen.size ? '' : 'disabled'}>${m.chosen.size} toevoegen</button>`, true);
+  }
+
+  /** In het transactievenster: actie toevoegen zonder het venster opnieuw te tekenen (getypte velden blijven). */
+  function txAddAction(sel) {
+    const t = modal.tx;
+    let id = sel.value;
+    if (!id) return;
+    if (id === '__new__') {
+      const name = (prompt('Naam van de nieuwe actie (bv. “Kleren voor mama”)') || '').trim();
+      if (!name) { sel.value = ''; return; }
+      const a = { id: C.uid('act'), name, expectBack: true, person: '', note: '', createdAt: new Date().toISOString() };
+      state.actions = (state.actions || []).concat([a]);
+      id = a.id;
+    }
+    const a = actionById(id);
+    t.actions = (t.actions || []).filter(x => x !== id).concat([id]);
+    sel.insertAdjacentHTML('beforebegin', `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`);
+    const opt = Array.from(sel.options).find(o => o.value === id);
+    if (opt) opt.remove();
+    sel.value = '';
+  }
+
+  function addToAction(ids, actionId) {
+    let n = 0;
+    for (const id of ids) { const t = txById(id); if (t && !(t.actions || []).includes(actionId)) { t.actions = (t.actions || []).concat([actionId]); n++; } }
+    return n;
   }
 
   /**
@@ -2507,7 +2633,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -2585,12 +2711,15 @@
         <h3>Terugbetaling van een uitgave</h3>
         <p class="small muted" style="margin:0 0 8px">Boekte je de hele rekening als jouw uitgave en betaalt een vriend zijn deel terug? Koppel het hier: die uitgave wordt verminderd.</p>
         <select id="tx-refund" style="width:100%"><option value="">— Nee —</option>
-          ${suggestions.map(s => `<option value="${esc(s.tx.id)}" ${t.refundOf === s.tx.id ? 'selected' : ''}>${fmtDate(s.tx.date)} · ${esc(s.tx.counterparty || s.tx.description)} · ${money(s.tx.amount)}</option>`).join('')}
+          ${suggestions.map(s => `<option value="${esc(s.tx.id)}" ${t.refundOf === s.tx.id ? 'selected' : ''}>${fmtDate(s.tx.date)} · ${esc(s.tx.title || s.tx.counterparty || s.tx.description)} · ${money(s.tx.amount)}</option>`).join('')}
         </select></div>` : ''}
 
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
         <div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div></div>` : ''}
 
+      <div class="field"><span>Acties <span class="muted small">(bv. “Kleren — terug te krijgen van mama”)</span></span>
+        <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge">🏷 ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
+          <select id="tx-action-add" aria-label="Aan een actie toevoegen"><option value="">+ Aan actie toevoegen…</option>${(state.actions || []).filter(a => !a.closed && !(t.actions || []).includes(a.id)).map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}<option value="__new__">+ Nieuwe actie…</option></select></div></div>
       <label class="field"><span>Notitie</span><textarea id="tx-note" rows="2">${esc(t.note || '')}</textarea></label>
       <div class="errors" id="tx-errors"></div>`;
     const foot = `${!isNew ? '<button class="btn danger" data-action="delete-tx">Verwijderen</button>' : ''}
@@ -2684,6 +2813,7 @@
       t.ruleId = null;
     }
     if (newCat && t.isTransfer && t.transferMode === 'auto') t.transferMode = 'no';
+    if (t.actions && !t.actions.length) delete t.actions;
     const idx = state.transactions.findIndex(x => x.id === t.id);
     if (idx >= 0) state.transactions[idx] = t;
     else { t.createdAt = Date.now(); state.transactions.push(t); }
@@ -2795,7 +2925,7 @@
     if (!r.value) { el.innerHTML = '<span class="muted">Vul een waarde in.</span>'; return; }
     if (r.operator === 'regex') { try { new RegExp(r.value); } catch (e) { el.innerHTML = '<span style="color:var(--red)">Ongeldige reguliere expressie.</span>'; return; } }
     const m = state.transactions.filter(t => !t.isTransfer && C.ruleMatches(r, t));
-    el.innerHTML = `<strong>${m.length}</strong> transactie(s) komen overeen. ` + m.slice(0, 6).map(t => `<div class="muted">${fmtDate(t.date)} · ${esc(t.counterparty)} · ${esc(t.description).slice(0, 50)} · ${money(t.amount)}</div>`).join('');
+    el.innerHTML = `<strong>${m.length}</strong> transactie(s) komen overeen. ` + m.slice(0, 6).map(t => `<div class="muted">${fmtDate(t.date)} · ${esc(t.title ? t.title + ' (' + t.counterparty + ')' : t.counterparty)} · ${esc(t.description).slice(0, 50)} · ${money(t.amount)}</div>`).join('');
   }
   function saveRule() {
     const r = readRuleForm();
@@ -3826,6 +3956,38 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'action-new': () => openModal({ type: 'action', isNew: true, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }),
+    'action-edit': el => { const a = actionById(el.dataset.id); if (a) openModal({ type: 'action', edit: Object.assign({}, a) }); },
+    'action-save': saveAction,
+    'action-delete': () => {
+      const a = modal.edit;
+      if (!confirm(`De actie “${a.name}” verwijderen? De transacties zelf blijven gewoon staan.`)) return;
+      state.actions = (state.actions || []).filter(x => x.id !== a.id);
+      closeModal();
+      commit('Actie verwijderd');
+    },
+    'action-close': el => { const a = actionById(el.dataset.id); if (!a) return; a.closed = el.dataset.closed === '1'; commit(a.closed ? `“${a.name}” afgerond` : `“${a.name}” heropend`); if (modal && modal.type === 'actionView') renderModal(); },
+    'action-view': (el, ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); openModal({ type: 'actionView', id: el.dataset.id }); },
+    'action-add-tx': el => openModal({ type: 'actionPick', id: el.dataset.id, chosen: new Set(), search: '' }),
+    'action-pick-apply': () => { const m = modal; const n = addToAction(m.chosen, m.id); closeModal(); commit(`${n} transactie(s) toegevoegd aan “${(actionById(m.id) || {}).name}”`); },
+    'action-tx-remove': el => {
+      const t = txById(el.dataset.id);
+      if (!t) return;
+      t.actions = (t.actions || []).filter(id => id !== el.dataset.actionId);
+      if (!t.actions.length) delete t.actions;
+      commit('Uit de actie gehaald');
+      if (modal && modal.type === 'actionView') renderModal();
+    },
+    'tx-action-remove': el => {
+      const t = modal && modal.tx;
+      if (!t) return;
+      t.actions = (t.actions || []).filter(id => id !== el.dataset.id);
+      const a = actionById(el.dataset.id);
+      el.closest('.action-badge').remove();
+      const sel = $('#tx-action-add');
+      if (sel && a) sel.insertAdjacentHTML('afterbegin', '');
+      if (sel && a) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name; sel.insertBefore(o, sel.options[1] || null); }
+    },
     'goal-edit': () => { ui.editGoal = true; render(); },
     'goal-cancel': () => { ui.editGoal = false; render(); },
     'adv-ledger': el => openModal({ type: 'advLedger', person: el.dataset.person }),
@@ -4000,6 +4162,10 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();
     if (modal && modal.type === 'advPick' && el.id === 'adv-person') { modal.person = el.value; return; }
+    if (modal && modal.type === 'actionPick' && el.id === 'act-search') {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#act-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
+    }
     if (modal && modal.type === 'advPick' && el.id === 'adv-search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#adv-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
@@ -4020,9 +4186,20 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
     if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
+    if (el.dataset.bulkAction != null) {
+      const ids = Array.from(ui.selected);
+      if (el.value === '__new__') { openModal({ type: 'action', isNew: true, addTx: ids, edit: { id: C.uid('act'), name: '', expectBack: true, person: '', note: '' } }); return; }
+      if (!el.value) return;
+      const a = actionById(el.value);
+      const n = addToAction(ids, el.value);
+      ui.selected.clear();
+      commit(`${n} transactie(s) toegevoegd aan “${a ? a.name : ''}”`);
+      return;
+    }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
+    if (modal.type === 'tx' && el.id === 'tx-action-add') { txAddAction(el); return; }
     if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); if (el.id === 'tx-category') updateTitleSuggestion(); return; }
     if (modal.type === 'rule') { updateRulePreview(); return; }
     if (modal.type === 'category' && el.id === 'cat-kind') { $('#cat-income-field').hidden = el.value !== 'incomeCost'; return; }
@@ -4061,6 +4238,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       });
       return;
     }
+    if (modal.type === 'actionPick' && el.dataset.actPick) { if (el.checked) modal.chosen.add(el.dataset.actPick); else modal.chosen.delete(el.dataset.actPick); renderModal(); return; }
     if (modal.type === 'advPick' && el.dataset.advPick) { if (el.checked) modal.chosen.add(el.dataset.advPick); else modal.chosen.delete(el.dataset.advPick); renderModal(); return; }
     if (modal.type === 'bankConnect' && el.id === 'eb-country') { modal.country = el.value; loadAspsps(); return; }
     if (modal.type === 'degiroFiles') {

@@ -749,3 +749,30 @@ table.ledger tr.lg-surplus td:first-child { border-left: 3px solid var(--green);
 .sv-form { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .sv-form .field { margin: 0; }
 @media (max-width: 700px) { .sv-main { grid-template-columns: 1fr; gap: 12px; } }
+/* Eigen titel = de belangrijkste naam van een transactie */
+.tx-title { font-weight: 700; font-size: 15.5px; color: var(--text); }
+.tx-bankname { font-size: 12px; }
+/* Acties */
+.action-badge { background: #fff4e0; color: #8a5300; border-color: #f3d39b; cursor: pointer; }
+.action-badge .chip-x { background: none; border: 0; padding: 0 0 0 4px; cursor: pointer; color: inherit; font-size: 11px; }
+.tx-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tx-actions select { max-width: 260px; }
+.bulk-action { font-size: 13px; padding: 4px 6px; }
+.action-card .action-head { display: flex; gap: 12px; align-items: flex-start; }
+.action-name { font-size: 17px; }
+.action-open { text-align: right; }
+.action-open strong { font-size: 20px; }
+.action-totals { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; color: var(--muted); }
+.action-totals strong { color: var(--text); }
+.action-txs { display: flex; flex-direction: column; margin: 8px 0; border-top: 1px solid var(--border); }
+.action-tx { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.action-tx a { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-tx a:hover { text-decoration: underline; }
+.action-card.closed { opacity: .8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .action-badge { background: #3a2a10; color: #f3c56b; border-color: #5c4318; } }
+@media (max-width: 600px) { .action-tx { grid-template-columns: auto minmax(0, 1fr) auto auto; } .action-tx > span:nth-child(3) { display: none; } }
+.actions-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.action-tx { grid-template-columns: minmax(0, 1fr) auto auto; }
+.at-main a { display: block; font-weight: 600; }
+@media (max-width: 600px) { .action-tx { grid-template-columns: minmax(0, 1fr) auto auto; } }
+.grid.cards.actions-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }

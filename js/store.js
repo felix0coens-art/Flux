@@ -65,6 +65,7 @@
       ],
       imports: [],
       people: [], // personen voor voorschotten (naam, IBAN's om terugbetalingen te herkennen)
+      actions: [], // acties: transacties die bij elkaar horen (bv. "kleren, terug te krijgen van mama")
       deleted: [], // verwijderde transacties uit bestanden/bankkoppeling: worden bij een volgende import overgeslagen
       categories: DEFAULT_CATEGORIES.map(c => Object.assign({}, c)),
       rules: [],
@@ -85,7 +86,7 @@
     }
     const base = defaultState();
     const s = Object.assign(base, data);
-    for (const k of ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people']) if (!Array.isArray(s[k])) s[k] = [];
+    for (const k of ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions']) if (!Array.isArray(s[k])) s[k] = [];
     if (!s.subscriptions || typeof s.subscriptions !== 'object') s.subscriptions = {};
     if (!s.tombstones || typeof s.tombstones !== 'object') s.tombstones = {};
     s.settings = Object.assign({ warnAt: 0.8, lookupProvider: 'auto', lookupCountries: 'be', autoLookup: true, investPattern: 'degiro|flatex|saxo' }, s.settings || {});

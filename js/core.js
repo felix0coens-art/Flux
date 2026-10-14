@@ -848,6 +848,11 @@
     for (const tx of state.transactions) {
       if (tx.refundOf && !ids.has(tx.refundOf)) tx.refundOf = null;
       if (tx.advanceOf && !ids.has(String(tx.advanceOf).split(':')[0])) tx.advanceOf = null;
+      if (tx.actions && tx.actions.length) {
+        const known = new Set((state.actions || []).map(a => a.id));
+        const keep = tx.actions.filter(id => known.has(id));
+        if (keep.length !== tx.actions.length) { if (keep.length) tx.actions = keep; else delete tx.actions; }
+      }
       if (tx.categoryId && !state.categories.some(c => c.id === tx.categoryId)) { tx.categoryId = null; tx.categorySource = null; }
       if (tx.splits) tx.splits = tx.splits.filter(s => state.categories.some(c => c.id === s.categoryId));
     }
@@ -1011,6 +1016,18 @@
     return { invested, toSavings, total: invested + toSavings };
   }
 
+  /**
+   * Een actie bundelt transacties die bij elkaar horen (bv. "kleren voor mama, moet ze terugbetalen").
+   * Anders dan een voorschot blijven het gewone uitgaven en inkomsten; de actie toont enkel het geheel:
+   * wat je uitgaf, wat er terugkwam en wat je nog terug moet krijgen.
+   */
+  function actionSummary(state, action) {
+    const txs = state.transactions.filter(t => (t.actions || []).includes(action.id)).sort((a, b) => b.date.localeCompare(a.date));
+    const out = txs.filter(t => t.amount < 0).reduce((a, t) => a - t.amount, 0);
+    const back = txs.filter(t => t.amount > 0).reduce((a, t) => a + t.amount, 0);
+    return { txs, out, back, net: out - back, open: action.expectBack ? Math.max(0, out - back) : 0 };
+  }
+
   /** Te veel terugbetaald en ingeboekt als (andere) inkomst: [{ id, person, date, amount (+), categoryId, note }] */
   function surplusList(state) {
     const out = [];
@@ -1092,7 +1109,7 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions'];
   const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 
@@ -1264,7 +1281,7 @@
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
-    detectTransfers, splitLines, validateSplits, allocations, forgivenList, surplusList, savingsIn, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
+    detectTransfers, splitLines, validateSplits, allocations, forgivenList, surplusList, savingsIn, actionSummary, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,
