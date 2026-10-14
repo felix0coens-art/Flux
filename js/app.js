@@ -283,8 +283,15 @@
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)
     const act = document.activeElement;
+    // In een datumveld onthoudt de browser in welk deel (dag/maand/jaar) je typt; opnieuw tekenen breekt dat.
+    // Dan pas tekenen zodra je het veld verlaat.
+    if (act && act.tagName === 'INPUT' && act.type === 'date' && $('#main').contains(act)) { ui.renderLater = true; return; }
+    ui.renderLater = false;
     const keep = act && act.dataset && act.dataset.assignInput && $('#main').contains(act)
       ? { id: act.dataset.assignInput, value: act.value, typed: picker.typed && picker.input === act, start: act.selectionStart, end: act.selectionEnd } : null;
+    // Idem voor andere velden met een id (bv. een datum die je aan het typen bent)
+    const field = !keep && act && act.id && /^(INPUT|TEXTAREA)$/.test(act.tagName) && /^(text|search|number|email|password|textarea)$/.test(act.type) && $('#main').contains(act)
+      ? { id: act.id, value: act.value, start: act.selectionStart, end: act.selectionEnd } : null;
     closePicker(false);
     for (const id of ui.selected) if (!txById(id)) ui.selected.delete(id);
     $('#main').innerHTML = banner + (views[ui.view] || renderDashboard)();
@@ -292,6 +299,13 @@
     if (keep) {
       const el = $$('[data-assign-input]').find(x => x.dataset.assignInput === keep.id);
       if (el) { el.value = keep.value; el.focus(); try { el.setSelectionRange(keep.start, keep.end); } catch (e) { /* niet erg */ } openPicker(el, keep.typed); }
+    }
+    if (field) {
+      const el = document.getElementById(field.id);
+      if (el && $('#main').contains(el)) {
+        el.value = field.value; el.focus();
+        try { el.setSelectionRange(field.start, field.end); } catch (e) { /* niet erg */ }
+      }
     }
   }
 
@@ -1187,6 +1201,28 @@
   }
 
   // ----- Gemeenschappelijke startdatum -----
+
+  /**
+   * Datumvelden: Chrome meldt al een wijziging bij elk cijfer van het jaartal (2 → 0002, 20 → 0020 …).
+   * Pas bewaren als de datum volledig en geloofwaardig is, na een korte pauze of bij het verlaten van het veld;
+   * anders tekent Helder het veld opnieuw terwijl je nog typt.
+   */
+  let dateTimer = null;
+  function dateWhenDone(el, apply) {
+    if (dateTimer) clearTimeout(dateTimer.id);
+    const run = () => {
+      if (!dateTimer || dateTimer.el !== el) return;
+      clearTimeout(dateTimer.id);
+      dateTimer = null;
+      // Werd het veld intussen opnieuw getekend? Dan staat de getypte waarde in het nieuwe veld
+      const cur = el.isConnected ? el : (el.id && document.getElementById(el.id)) || el;
+      const v = cur.value;
+      const y = Number(v.slice(0, 4));
+      if (v && (y < 1990 || y > Number(today.slice(0, 4)) + 1)) return; // nog aan het typen
+      apply(v);
+    };
+    dateTimer = { el, run, id: setTimeout(run, 1500) };
+  }
 
   function setDataFrom(value, quiet) {
     const v = /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : '';
@@ -3372,7 +3408,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
-    if (el.id === 'data-from') { setDataFrom(el.value); return; }
+    if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); if (el.id === 'tx-category') updateTitleSuggestion(); return; }
@@ -3389,7 +3425,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     }
     if (modal.type === 'import') {
       if (el.id === 'imp-file' && el.files[0]) { loadImportFile(el.files[0]); return; }
-      if (el.id === 'imp-from') { setDataFrom(el.value, true); planImport(); renderModal(); return; }
+      if (el.id === 'imp-from') { dateWhenDone(el, v => { setDataFrom(v, true); planImport(); renderModal(); }); return; }
       if (el.dataset.map) { modal.mapping[el.dataset.map] = el.value === '' ? null : Number(el.value); planImport(); renderModal(); return; }
       if (el.dataset.partAccount != null) {
         const p = modal.parts[Number(el.dataset.partAccount)];
@@ -3443,6 +3479,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset && el.dataset.assignInput) { el.select(); openPicker(el, false); }
   });
   document.addEventListener('focusout', ev => {
+    if (dateTimer && (dateTimer.el === ev.target || (ev.target.id && dateTimer.el.id === ev.target.id))) dateTimer.run();
+    if (ui.renderLater && ev.target.type === 'date') setTimeout(() => { if (ui.renderLater && !(document.activeElement && document.activeElement.type === 'date')) render(); }, 0);
     if (ev.target.dataset && ev.target.dataset.assignInput && picker.input === ev.target) setTimeout(() => { if (picker.input === ev.target && document.activeElement !== ev.target) closePicker(true); }, 120);
   });
   document.addEventListener('mousedown', ev => {
