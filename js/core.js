@@ -357,7 +357,23 @@
         lines.push({ txId: tx.id, date: tx.date, categoryId: l.categoryId, amount: l.amount, refund: false, accountId: tx.accountId, person: l.person });
       }
     }
+    // Kwijtgescholden voorschotten: het voorschot is "terugbetaald" door een uitgave in de gekozen categorie
+    for (const f of forgivenList(state)) {
+      lines.push({ txId: null, forgiveId: f.id, date: f.date, categoryId: SYS_ADVANCE, amount: f.amount, refund: false, person: f.person, forgiven: true });
+      lines.push({ txId: null, forgiveId: f.id, date: f.date, categoryId: f.categoryId || null, amount: -f.amount, refund: false, person: f.person, forgiven: true });
+    }
     return lines;
+  }
+
+  /** Alle kwijtgescholden bedragen (bewaard bij de persoon): [{ id, person, date, amount (centen, +), categoryId, note }] */
+  function forgivenList(state) {
+    const out = [];
+    for (const p of state.people || []) {
+      for (const f of p.forgiven || []) {
+        if (f && f.amount > 0 && parseDate(f.date)) out.push(Object.assign({}, f, { person: p.name }));
+      }
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /** Totale terugbetaald bedrag per oorspronkelijke transactie-id. */
@@ -895,6 +911,13 @@
         else repayments.push({ txId: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null });
       }
     }
+    // Kwijtschelden telt als terugbetaling (zonder geld), oudste voorschot eerst
+    const forgivenBy = {};
+    for (const f of forgivenList(state)) {
+      repayments.push({ txId: null, date: f.date, person: f.person, amount: f.amount, advanceOf: null, forgiven: true });
+      const k = f.person.toLowerCase();
+      forgivenBy[k] = (forgivenBy[k] || 0) + f.amount;
+    }
     items.sort((a, b) => a.date.localeCompare(b.date));
     // Eerst gekoppelde terugbetalingen, dan de rest per persoon (oudste eerst)
     const unassigned = [];
@@ -915,6 +938,7 @@
         if (left <= 0) break;
         const take = Math.min(left, it.amount - it.repaid);
         it.repaid += take; left -= take;
+        if (r.forgiven && take > 0) it.forgiven = (it.forgiven || 0) + take;
       }
       if (left > 0) credit[r.person] = (credit[r.person] || 0) + left; // meer terug dan voorgeschoten
     }
@@ -927,6 +951,11 @@
       const p = people[person] = people[person] || { person, advanced: 0, repaid: 0, open: 0, items: [] };
       p.repaid += amount; p.open -= amount;
     }
+    // "terugbetaald" = echt geld terug; wat je kwijtschold staat apart
+    for (const p of Object.values(people)) {
+      p.forgiven = forgivenBy[p.person.toLowerCase()] || 0;
+      p.repaid -= p.forgiven;
+    }
     const list = Object.values(people).sort((a, b) => b.open - a.open);
     return { items, people: list, totalOpen: sum(list.map(p => p.open)) };
   }
@@ -937,7 +966,7 @@
     for (const p of state.people || []) if (p.name) out.set(p.name.trim().toLowerCase(), { name: p.name.trim(), entity: p });
     const ov = advancesOverview(state);
     for (const p of ov.people) { const k = p.person.toLowerCase(); if (!out.has(k)) out.set(k, { name: p.person, entity: null }); }
-    return Array.from(out.values()).map(x => Object.assign(x, { stats: ov.people.find(p => p.person.toLowerCase() === x.name.toLowerCase()) || { person: x.name, advanced: 0, repaid: 0, open: 0, items: [] } }));
+    return Array.from(out.values()).map(x => Object.assign(x, { stats: ov.people.find(p => p.person.toLowerCase() === x.name.toLowerCase()) || { person: x.name, advanced: 0, repaid: 0, forgiven: 0, open: 0, items: [] } }));
   }
 
   /**
@@ -1175,7 +1204,7 @@
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
-    detectTransfers, splitLines, validateSplits, allocations, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
+    detectTransfers, splitLines, validateSplits, allocations, forgivenList, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,

@@ -86,3 +86,22 @@ test('Belfius-CSV (ook spaarrekening) wordt herkend', () => {
   assert.match(r.transactions[0].description, /Basisrente · RENTE SPAARREKENING/);
   assert.deepEqual(r.period, { from: '2026-09-02', to: '2026-09-30' });
 });
+
+test('voorschot kwijtschelden: telt als uitgave in de gekozen categorie en staat niet meer open', () => {
+  const s = Store.defaultState();
+  s.transactions.push(tx('a1', '2026-09-01', -3000, 'Restaurant', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan' }),
+    tx('a2', '2026-09-10', 1000, 'Jan', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan' }));
+  s.people.push({ id: 'p1', name: 'Jan', ibans: [], forgiven: [{ id: 'f1', date: '2026-10-01', amount: 2000, categoryId: 'cat_boodschappen', note: 'cadeau' }] });
+  C.recompute(s);
+  const jan = C.advancesOverview(s).people.find(p => p.person === 'Jan');
+  assert.deepEqual([jan.advanced, jan.repaid, jan.forgiven, jan.open], [3000, 1000, 2000, 0]);
+  assert.equal(jan.items[0].forgiven, 2000);
+  const oct = C.summarize(s, { start: '2026-10-01', end: '2026-10-31' });
+  assert.equal(oct.expenses, 2000, 'kwijtschelding is een uitgave op de datum van het kwijtschelden');
+  assert.equal(oct.byCategory.cat_boodschappen, -2000);
+  const sep = C.summarize(s, { start: '2026-09-01', end: '2026-09-30' });
+  assert.equal(sep.expenses, 0, 'het voorschot zelf blijft geen uitgave');
+  // Ongedaan maken: weer open
+  s.people[0].forgiven = [];
+  assert.equal(C.advancesOverview(s).people.find(p => p.person === 'Jan').open, 2000);
+});

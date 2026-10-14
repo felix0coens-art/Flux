@@ -352,8 +352,8 @@
           <div class="hint">${sum.net < 0 ? 'meer uitgegeven dan verdiend' : sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : ''}</div></div>
         <div class="card kpi"><div class="label">Belegd</div><div class="value">${money(sum.invested)}</div><div class="hint">naar je beleggingsrekening</div></div>
       </div>
+      ${incomeVsExpenses(sum, lines, range, multi)}
       <div class="card" style="margin-bottom:16px"><h2>Vermogen door de tijd</h2>${netWorthChart(range)}</div>
-      ${multi ? `<div class="card" style="margin-bottom:16px"><h2>Inkomsten en uitgaven per maand</h2>${monthBars(lines)}</div>` : ''}
       <div class="grid two">
         <div class="card">
           <h2>Vermogen</h2>
@@ -364,13 +364,6 @@
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen))}</span></div>
           </div>
           ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}
-        </div>
-        <div class="card">
-          <h2>Inkomsten per bron</h2>
-          ${Object.keys(sum.byIncome).length ? '<div class="list">' + Object.entries(sum.byIncome).sort((a, b) => b[1].gross - a[1].gross).map(([id, v]) => `<div class="list-row">
-              <span class="dot-lg" style="background:${esc(catColor(id === '__none__' ? null : id))}"></span>
-              <div class="grow">${esc(id === '__none__' ? 'Nog niet gekoppeld' : catLabel(id))}<div class="small muted">bruto ${money(v.gross)}${v.costs ? ' − kosten ' + money(v.costs) : ''}</div></div>
-              <span class="amount">${money(v.net)}</span></div>`).join('') + '</div>' : '<p class="muted">Geen inkomsten in deze periode.</p>'}
         </div>
         <div class="card">
           <h2>Voorschotten</h2>
@@ -386,6 +379,57 @@
           </div>
         </div>
       </div>`;
+  }
+
+  /**
+   * Inkomsten tegenover uitgaven: één schaal voor beide kanten, zodat je meteen ziet wat er binnenkwam,
+   * waar het naartoe ging en wat er overbleef. Daaronder het verloop per maand.
+   */
+  function incomeVsExpenses(sum, lines, range, multi) {
+    const cats = new Map(state.categories.map(c => [c.id, c]));
+    const exp = {};
+    for (const l of lines) {
+      if (!C.inRange(l.date, range)) continue;
+      const c = l.categoryId ? cats.get(l.categoryId) : null;
+      const kind = c ? c.kind : (l.amount > 0 ? 'income' : 'expense');
+      if (kind !== 'expense' || (c && c.incomeId && cats.has(c.incomeId))) continue;
+      const k = l.categoryId || '__none__';
+      exp[k] = (exp[k] || 0) - l.amount;
+    }
+    const expList = Object.entries(exp).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    const TOP = 6;
+    const expRows = expList.slice(0, TOP).map(([id, v]) => ({ id, v }));
+    const rest = expList.slice(TOP).reduce((a, [, v]) => a + v, 0);
+    if (rest > 0) expRows.push({ id: '__rest__', v: rest, n: expList.length - TOP });
+    const incRows = Object.entries(sum.byIncome).filter(([, v]) => v.net > 0).sort((a, b) => b[1].net - a[1].net).map(([id, v]) => ({ id, v: v.net, gross: v.gross, costs: v.costs }));
+    const inc = sum.netIncome, out = sum.expenses, left = inc - out;
+    const max = Math.max(1, inc, out);
+    const pct = (v, t) => t > 0 ? Math.round(v / t * 100) + '%' : '';
+    const name = id => id === '__none__' ? 'Nog niet gekoppeld' : id === '__rest__' ? 'Andere' : catLabel(id);
+    const row = (r, cls, total) => `<div class="ive-row" title="${esc(name(r.id))}: ${money(r.v)} (${pct(r.v, total)})${r.costs ? ' — bruto ' + money(r.gross) + ', kosten ' + money(r.costs) : ''}">
+        <span class="ive-name">${r.id === '__rest__' ? `Andere <span class="muted small">(${r.n})</span>` : esc(name(r.id))}</span>
+        <span class="ive-track"><span class="ive-fill ${cls}" style="width:${(r.v / max * 100).toFixed(2)}%"></span></span>
+        <span class="ive-amt">${money(r.v)}<span class="muted small"> ${pct(r.v, total)}</span></span></div>`;
+    const end = range.end > today ? today.slice(0, 7) : range.end.slice(0, 7);
+    const from = multi ? ui.range.from : shiftMonth(end, -11);
+    return `<div class="card ive" style="margin-bottom:16px">
+      <h2>Inkomsten tegenover uitgaven</h2>
+      <div class="ive-balance">
+        <div class="ive-line"><span class="ive-label">Netto inkomsten</span><span class="ive-track big"><span class="ive-fill s1" style="width:${(Math.max(0, inc) / max * 100).toFixed(2)}%"></span></span><strong class="ive-amt">${money(inc)}</strong></div>
+        <div class="ive-line"><span class="ive-label">Uitgaven</span><span class="ive-track big"><span class="ive-fill s2" style="width:${(Math.max(0, out) / max * 100).toFixed(2)}%"></span></span><strong class="ive-amt">${money(out)}</strong></div>
+        <div class="ive-result ${left >= 0 ? 'pos' : 'negv'}">${left >= 0
+          ? `<strong>${money(left)} over</strong> <span class="muted">· je hield ${pct(left, inc) || '—'} van je netto inkomen over</span>`
+          : `<strong>${money(-left)} tekort</strong> <span class="muted">· je gaf meer uit dan er binnenkwam</span>`}</div>
+      </div>
+      <div class="ive-cols">
+        <div><h3>Waar het vandaan kwam</h3>${incRows.length ? incRows.map(r => row(r, 's1', Math.max(inc, incRows.reduce((a, x) => a + x.v, 0)))).join('') : '<p class="muted small">Geen inkomsten in deze periode.</p>'}</div>
+        <div><h3>Waar het naartoe ging</h3>${expRows.length ? expRows.map(r => row(r, 's2', Math.max(out, expRows.reduce((a, x) => a + x.v, 0)))).join('') : '<p class="muted small">Geen uitgaven in deze periode.</p>'}
+          ${expRows.length ? '<p class="small"><a href="#expenses" data-view-link="expenses">Alle uitgaven bekijken →</a></p>' : ''}</div>
+      </div>
+      <p class="small muted">Alle balken gebruiken dezelfde schaal. Voorschotten, beleggingen en overschrijvingen tussen je eigen rekeningen tellen niet mee; terugbetalingen verminderen de uitgave.</p>
+      <h3 style="margin-top:16px">Per maand${multi ? '' : ' <span class="muted small">(laatste 12 maanden)</span>'}</h3>
+      ${monthBars(lines, from, end)}
+    </div>`;
   }
 
   /** Datums voor een tijdreeks: per dag bij een korte periode, anders elk maandeinde (en vandaag). */
@@ -577,9 +621,9 @@
   }
 
   /** Netto inkomsten en uitgaven per maand in de gekozen periode. */
-  function monthBars(lines) {
+  function monthBars(lines, from, to) {
     const months = [];
-    for (let m = ui.range.from; m <= ui.range.to; m = shiftMonth(m, 1)) months.push(m);
+    for (let m = from || ui.range.from; m <= (to || ui.range.to); m = shiftMonth(m, 1)) months.push(m);
     const data = months.map(m => { const x = C.summarize(state, C.periodRange('monthly', m + '-01'), lines); return Object.assign({ m, inc: x.netIncome, exp: x.expenses }, monthCoverage(m)); });
     const max = Math.max(1, ...data.map(d => Math.max(d.inc, d.exp)));
     const narrow = window.innerWidth < 700;
@@ -1097,19 +1141,22 @@
       const reps = state.transactions.filter(t => C.splitLines(t).some(l => l.categoryId === C.SYS_ADVANCE && l.amount > 0 && String(l.person || t.person || '').toLowerCase() === p.name.toLowerCase()))
         .sort((a, b) => b.date.localeCompare(a.date));
       const pctRepaid = st.advanced ? Math.min(1, st.repaid / st.advanced) : 0;
-      const status = st.open > 0 ? `<span class="badge warn">nog ${money(st.open)} open</span>` : st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.advanced ? '<span class="badge ok">✓ alles terugbetaald</span>' : '<span class="badge">nog niets voorgeschoten</span>';
+      const status = st.open > 0 ? `<span class="badge warn">nog ${money(st.open)} open</span>` : st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.advanced && st.forgiven ? '<span class="badge ok">✓ geregeld</span>' : st.advanced ? '<span class="badge ok">✓ alles terugbetaald</span>' : '<span class="badge">nog niets voorgeschoten</span>';
       return `<div class="card person-card">
         <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
-          <div class="grow"><strong>${esc(p.name)}</strong><div class="small muted">voorgeschoten ${money(st.advanced)} · terugbetaald ${money(st.repaid)}</div></div>${status}</div>
+          <div class="grow"><strong>${esc(p.name)}</strong><div class="small muted">voorgeschoten ${money(st.advanced)} · terugbetaald ${money(st.repaid)}${st.forgiven ? ' · kwijtgescholden ' + money(st.forgiven) : ''}</div></div>${status}</div>
         ${st.advanced ? `<div class="progress"><div class="bar ok" style="width:${(pctRepaid * 100).toFixed(1)}%"></div></div>` : ''}
         ${sugg.length ? `<div class="suggest">${sugg.map(x => `<div class="suggest-row">💡 <span class="grow">Terugbetaling? <strong>${money(x.tx.amount)}</strong> van ${esc(x.tx.counterparty || '?')} op ${fmtDate(x.tx.date)} <span class="muted small">(${esc(x.why)})</span></span>
           <button class="btn small primary" data-action="adv-accept" data-id="${esc(x.tx.id)}" data-person="${esc(p.name)}">Ja, koppel</button></div>`).join('')}</div>` : ''}
         ${st.items.length ? `<table class="mini adv-table"><thead><tr><th>Voorgeschoten</th><th class="right">Bedrag</th><th class="right">Status</th></tr></thead><tbody>${st.items.slice().reverse().map(it => `<tr>
             <td><a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">${fmtDate(it.date)}</a> <span class="small muted">${esc((it.note || '').slice(0, 40))}</span></td>
             <td class="amount">${money(it.amount)}</td>
-            <td class="right small">${it.repaid >= it.amount ? '<span class="pos">✓ terug</span>' : it.repaid > 0 ? 'nog ' + money(it.amount - it.repaid) : '<span class="warn-text">open</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
+            <td class="right small">${it.repaid >= it.amount && it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.repaid >= it.amount ? '<span class="pos">✓ terug</span>' : it.repaid > 0 ? 'nog ' + money(it.amount - it.repaid) : '<span class="warn-text">open</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
         ${reps.length ? `<details><summary class="small">${reps.length} terugbetaling${reps.length === 1 ? '' : 'en'}</summary><table class="mini"><tbody>${reps.map(t => `<tr><td><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${fmtDate(t.date)}</a> <span class="small muted">${esc(t.counterparty || (t.source === 'manual' ? 'cash' : ''))}</span></td><td class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</td></tr>`).join('')}</tbody></table></details>` : ''}
+        ${(ent.forgiven || []).length ? `<div class="forgiven-list">${ent.forgiven.slice().sort((a, b) => b.date.localeCompare(a.date)).map(f => `<div class="small forgiven-row">🎁 ${fmtDate(f.date)} · <strong>${money(f.amount)}</strong> kwijtgescholden → ${catBadge(f.categoryId)}${f.note ? ` <span class="muted">${esc(f.note)}</span>` : ''}
+          <button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(f.id)}" title="Kwijtschelding ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
         <div class="card-tools">
+          ${st.open > 0 ? `<button class="btn small" data-action="forgive" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden…</button>` : ''}
           <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">↗ Betaling aanduiden als voorschot</button>
           <button class="btn small" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="in">↙ Terugbetaling aanduiden</button>
           ${st.open > 0 ? `<button class="btn small" data-action="adv-cash" data-person="${esc(p.name)}">💶 Terugbetaald in cash</button>` : ''}
@@ -1127,6 +1174,51 @@
         <div class="card kpi"><div class="label">Hoe koppel ik snel?</div><div class="hint" style="margin-top:6px">Typ in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong> of <strong>🤝 Terugbetaling van Pieter</strong>.</div></div>
       </div>
       ${people.length ? `<div class="grid cards people">${people.map(card).join('')}</div>` : `<div class="card empty-state"><p>Nog geen personen. Maak er een aan met <strong>+ Persoon</strong>, of duid een betaling aan als voorschot.</p></div>`}`;
+  }
+
+  /** Een openstaand voorschot kwijtschelden: het wordt een uitgave in een categorie naar keuze. */
+  function forgiveModal() {
+    const m = modal;
+    const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
+    return modalShell('Kwijtschelden — ' + m.person, `
+      <p class="small muted">Je vraagt dit geld niet meer terug van <strong>${esc(m.person)}</strong> (bv. je trakteerde, of het was een cadeau). Dan is het geen voorschot meer maar een <strong>uitgave</strong>: kies in welke categorie het moet tellen.</p>
+      <div class="form-grid">
+        <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(st.open)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, st.open) / 100).toFixed(2).replace('.', ','))}"></label>
+        <label class="field"><span>Datum</span><input type="date" id="fg-date" value="${esc(today)}" max="${today}"></label>
+        <label class="field full"><span>Telt als uitgave in</span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. verjaardagscadeau"></label>
+      </div>
+      <div class="errors" id="fg-errors"></div>`,
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Kwijtschelden</button>`);
+  }
+
+  function saveForgive() {
+    const m = modal;
+    const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
+    const amount = C.parseAmount($('#fg-amount').value);
+    const date = $('#fg-date').value;
+    const categoryId = $('#fg-category').value || null;
+    const errors = [];
+    if (isNaN(amount) || amount <= 0) errors.push('Geef een bedrag groter dan 0.');
+    else if (amount > st.open) errors.push('Dat is meer dan wat nog open staat (' + money(st.open) + ').');
+    if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
+    if (!categoryId) errors.push('Kies in welke categorie het als uitgave telt.');
+    else if (C.SYS_ADVANCE === categoryId || (cat(categoryId) && cat(categoryId).kind !== 'expense')) errors.push('Kies een uitgavencategorie.');
+    if (errors.length) { $('#fg-errors').innerHTML = errors.map(esc).join('<br>'); return; }
+    const p = ensurePerson(m.person);
+    if (!p) { $('#fg-errors').textContent = 'Kies eerst een naam voor deze persoon (Bewerk).'; return; }
+    const entry = { id: C.uid('fg'), date, amount, categoryId, note: $('#fg-note').value.trim() };
+    p.forgiven = (p.forgiven || []).concat([entry]);
+    closeModal();
+    commit();
+    toast(`${money(amount)} kwijtgescholden aan ${p.name} → ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeForgive(p.name, entry.id) });
+  }
+
+  function removeForgive(person, id) {
+    const p = personEntity(person);
+    if (!p) return;
+    p.forgiven = (p.forgiven || []).filter(f => f.id !== id);
+    commit('Kwijtschelding ongedaan gemaakt');
   }
 
   function personModal() {
@@ -1249,6 +1341,7 @@
 
   // ----- Bankkoppeling (Enable Banking) -----
 
+  try { ui.settingsTab = localStorage.getItem('flux-settings-tab') || ''; } catch (e) { /* niet erg */ }
   const bankLink = { status: null, error: '', busy: {}, errors: {}, awaiting: false };
   const LINK_REFRESH_MS = 6 * 3600000;
   const POPULAR_BANKS = /^(kbc|cbc|kbc brussels|argenta|belfius|bnp paribas fortis|ing|crelan|keytrade)/i;
@@ -1989,33 +2082,17 @@
     const catKind = c => c.kind === 'income' ? 'inkomstenbron' : isIncomeCost(c) ? 'kost op ' + catName(c.incomeId) : c.kind === 'advance' ? 'systeem: voorschotten' : c.kind === 'investment' ? 'systeem: beleggingen' : 'uitgaven';
     const order = c => c.kind === 'income' ? 0 : isIncomeCost(c) ? 1 : c.kind === 'expense' ? 2 : 3;
     const manual = state.transactions.filter(t => t.source !== 'import').length;
-    return `
-      <div class="page-head"><h1>Instellingen</h1></div>
-      <div class="grid two">
-        <div class="card">
-          <h2>Wat zit er in Helder?</h2>
-          <div class="list">
-            ${(state.imports || []).map(i => `<div class="list-row"><div class="grow">📄 ${esc(i.fileName)}<div class="small muted">${esc(accName(i.accountId))} · ${esc(fmtDateTime(i.importedAt))}</div></div><span>${state.transactions.filter(t => t.importId === i.id).length}</span></div>`).join('')}
-            <div class="list-row"><div class="grow">✎ Manueel ingevoerd</div><span>${manual}</span></div>
-            ${Invest.brokers(inv()).map(b => `<div class="list-row"><div class="grow">📈 ${esc(b.name)}</div><span class="small">${b.id === 'degiro' ? (inv().files || []).length + ' bestand(en)' : ''}${b.source === 'degiro-api' || b.source === 'saxo-api' ? ' · rechtstreeks' : ''}</span></div>`).join('')}
-            <div class="list-row total"><div class="grow"><strong>Totaal transacties</strong></div><span>${state.transactions.length}</span></div>
-          </div>
-          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
-        </div>
-        ${dataFromRow()}
-        <div class="card">
-          <h2>Account & synchronisatie</h2>
-          ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
-          : `<p>Aangemeld als <strong>${esc((Sync.account && Sync.account.displayName) || sy.user || '')}</strong>${Sync.account && Sync.account.email ? ` <span class="small muted">(${esc(Sync.account.email)}, via Google)</span>` : ''}</p>
-            <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
-            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.email ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
-              <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
-            <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>
-            ${Sync.account && Sync.account.role === 'member' ? `<details class="danger-zone"><summary class="small">Account verwijderen</summary>
-              <p class="small">Je account en al je gegevens worden meteen en definitief gewist, ook de back-ups op de server. Download eerst een back-up als je je gegevens wil houden.</p>
-              <p class="btn-row"><button class="btn small" data-action="export-json">Back-up downloaden</button><button class="btn small danger" data-action="delete-account">Mijn account verwijderen</button></p></details>` : ''}`}
-          <p class="small muted" style="margin-top:12px"><a href="privacy.html" target="_blank" rel="noopener">Privacyverklaring</a> · <a href="voorwaarden.html" target="_blank" rel="noopener">Gebruiksvoorwaarden</a></p>
-        </div>
+    const tabs = [
+      ['accounts', '🏦', 'Rekeningen', 'Je rekeningen en vanaf welke datum Helder transacties bijhoudt.'],
+      ['categories', '🏷️', 'Categorieën', 'Waarin je uitgaven en inkomsten worden ingedeeld.'],
+      ['auto', '✨', 'Automatisch indelen', 'Hoe Helder onbekende tegenpartijen herkent. De regels zelf staan bij Bank.'],
+      ['account', '👤', 'Account', 'Aanmelden, synchroniseren tussen je toestellen en je account.'],
+      ['data', '💾', 'Gegevens & back-up', 'Wat er in Helder zit, back-ups, exporteren, de voorbeeldmodus en alles wissen.']
+    ];
+    const tab = tabs.some(t => t[0] === ui.settingsTab) ? ui.settingsTab : 'accounts';
+    const cur = tabs.find(t => t[0] === tab);
+    const sections = {
+      accounts: () => `
         <div class="card">
           <h2>Rekeningen</h2>
           <div class="list">${state.accounts.map(a => `<div class="list-row"><div class="grow"><strong>${esc(a.name)}</strong><div class="small muted">${a.iban ? esc(C.formatIban(a.iban)) : 'geen IBAN'} · ${state.transactions.filter(t => t.accountId === a.id).length} transacties</div></div>
@@ -2023,6 +2100,8 @@
           <p class="btn-row"><button class="btn" data-action="new-account">+ Rekening</button></p>
           <p class="small muted">Bankrekeningen worden automatisch aangemaakt bij de eerste import (IBAN uit het bestand). Overschrijvingen tussen je eigen rekeningen tellen nooit als inkomen of uitgave.</p>
         </div>
+        ${dataFromRow()}`,
+      categories: () => `
         <div class="card">
           <h2>Categorieën</h2>
           <div class="list scroll">${state.categories.slice().sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name)).map(c => `<div class="list-row">
@@ -2031,6 +2110,8 @@
             ${c.id.startsWith('sys_') ? '' : `<button class="btn small" data-action="edit-category" data-id="${esc(c.id)}">Bewerk</button><button class="btn small danger" data-action="delete-category" data-id="${esc(c.id)}" aria-label="Verwijder">✕</button>`}</div>`).join('')}</div>
           <p class="btn-row"><button class="btn" data-action="new-category">+ Uitgavencategorie</button><button class="btn" data-action="new-category" data-kind="income">+ Inkomstenbron</button></p>
         </div>
+`,
+      auto: () => `
         <div class="card">
           <h2>Online opzoeken</h2>
           <p class="small muted">Onbekende tegenpartijen worden online opgezocht (Wikidata, OpenStreetMap${aiOn ? ', AI' : ''}) en via de zoekwoorden van je categorieën gekoppeld. Jij keurt elk voorstel goed.</p>
@@ -2045,11 +2126,52 @@
           ${aiKeyBlock()}
         </div>
         <div class="card">
+          <h2>Automatische regels</h2>
+          <p class="small muted">Regels koppelen nieuwe transacties vanzelf aan een categorie of persoon. Je vindt ze op het tabblad <strong>Bank</strong>, onder de transacties.</p>
+          <p class="btn-row"><button class="btn" data-action="goto-rules">Naar de regels</button></p>
+        </div>`,
+      account: () => `
+        <div class="card">
+          <h2>Account & synchronisatie</h2>
+          ${sy.mode === 'local' ? `<p class="small muted">Helder draait nu <strong>lokaal</strong>: je gegevens staan enkel in deze browser. Om Helder op al je toestellen (ook je iPhone) te gebruiken, host je de Helder-server — zie README → <em>Hosten</em>.</p>`
+          : `<p>Aangemeld als <strong>${esc((Sync.account && Sync.account.displayName) || sy.user || '')}</strong>${Sync.account && Sync.account.email ? ` <span class="small muted">(${esc(Sync.account.email)}, via Google)</span>` : ''}</p>
+            <p class="small muted">${sy.lastSync ? 'Laatst gesynchroniseerd: ' + esc(new Date(sy.lastSync).toLocaleString('nl-BE')) : 'Nog niet gesynchroniseerd'}${sy.pending ? ' · ' + sy.pending + ' wijziging(en) wachten' : ''}</p>
+            <p class="btn-row"><button class="btn" data-action="sync-now">Nu synchroniseren</button>${Sync.account && Sync.account.email ? '' : '<button class="btn" data-action="change-password">Wachtwoord wijzigen</button>'}
+              <button class="btn" data-action="logout">Afmelden</button><button class="btn danger" data-action="logout-all">Overal afmelden</button></p>
+            <p class="small muted">iPhone: open Helder in Safari → deelknop → <em>Zet op beginscherm</em>.</p>
+            ${Sync.account && Sync.account.role === 'member' ? `<details class="danger-zone"><summary class="small">Account verwijderen</summary>
+              <p class="small">Je account en al je gegevens worden meteen en definitief gewist, ook de back-ups op de server. Download eerst een back-up als je je gegevens wil houden.</p>
+              <p class="btn-row"><button class="btn small" data-action="export-json">Back-up downloaden</button><button class="btn small danger" data-action="delete-account">Mijn account verwijderen</button></p></details>` : ''}`}
+          <p class="small muted" style="margin-top:12px"><a href="privacy.html" target="_blank" rel="noopener">Privacyverklaring</a> · <a href="voorwaarden.html" target="_blank" rel="noopener">Gebruiksvoorwaarden</a></p>
+        </div>
+`,
+      data: () => `
+        <div class="card">
           <h2>Gegevens</h2>
           <p class="btn-row"><button class="btn" data-action="export-json">Back-up downloaden</button><button class="btn" data-action="import-json">Back-up terugzetten</button><button class="btn" data-action="export-csv">Transacties exporteren (CSV)</button></p>
           <p class="btn-row">${demo ? '<button class="btn" data-action="exit-demo">Voorbeeldmodus afsluiten</button>' : '<button class="btn" data-action="enter-demo">Voorbeeldmodus openen</button>'}
             <button class="btn danger" data-action="reset">${demo ? 'Voorbeeld wissen' : 'Alles wissen' + (sy.mode !== 'local' ? ' (alle toestellen)' : '')}</button></p>
           <p class="small muted">De voorbeeldmodus is een aparte zandbak met verzonnen gegevens; je eigen gegevens worden er nooit door aangeraakt.</p>
+        </div>
+        <div class="card">
+          <h2>Wat zit er in Helder?</h2>
+          <div class="list">
+            ${(state.imports || []).map(i => `<div class="list-row"><div class="grow">📄 ${esc(i.fileName)}<div class="small muted">${esc(accName(i.accountId))} · ${esc(fmtDateTime(i.importedAt))}</div></div><span>${state.transactions.filter(t => t.importId === i.id).length}</span></div>`).join('')}
+            <div class="list-row"><div class="grow">✎ Manueel ingevoerd</div><span>${manual}</span></div>
+            ${Invest.brokers(inv()).map(b => `<div class="list-row"><div class="grow">📈 ${esc(b.name)}</div><span class="small">${b.id === 'degiro' ? (inv().files || []).length + ' bestand(en)' : ''}${b.source === 'degiro-api' || b.source === 'saxo-api' ? ' · rechtstreeks' : ''}</span></div>`).join('')}
+            <div class="list-row total"><div class="grow"><strong>Totaal transacties</strong></div><span>${state.transactions.length}</span></div>
+          </div>
+          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
+        </div>
+`
+    };
+    return `
+      <div class="page-head"><h1>Instellingen</h1></div>
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Instellingen">${tabs.map(([id, icon, label]) => `<button class="${id === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span> ${label}</button>`).join('')}</nav>
+        <div class="settings-body">
+          <div class="settings-intro"><h2>${cur[1]} ${cur[2]}</h2><p class="muted">${cur[3]}</p></div>
+          <div class="settings-cards">${sections[tab]()}</div>
         </div>
       </div>`;
   }
@@ -2069,7 +2191,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3239,6 +3361,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'settings-tab': el => { ui.settingsTab = el.dataset.tab; try { localStorage.setItem('flux-settings-tab', ui.settingsTab); } catch (e) { /* niet erg */ } render(); window.scrollTo(0, 0); },
+    'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
+    'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
+    'forgive-save': saveForgive,
+    'forgive-undo': el => { if (confirm('Deze kwijtschelding ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
     'bulk-refund': () => {
       const r = bulkRefundTarget();
       if (!r) return;
