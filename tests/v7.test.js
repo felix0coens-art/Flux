@@ -61,3 +61,14 @@ test('regels voor voorschotten zeggen ook voor wie', () => {
   C.recompute(s);
   assert.equal(s.transactions[0].person, 'Mieke');
 });
+
+test('terugbetalingen van vrienden: de uitgave van dezelfde dag staat bovenaan', () => {
+  const s = Store.defaultState();
+  s.transactions.push(tx('old', '2026-07-20', -1000, 'Colruyt'), tx('o1', '2026-08-06', -2429, 'Takeaway.com AMSTERDAM'),
+    tx('i1', '2026-08-06', 850, 'COENS VICTOR'), tx('i2', '2026-08-06', 750, 'VAN HOUCKE HELEEN'));
+  assert.equal(C.suggestRefundTargets(s, s.transactions[2])[0].tx.id, 'o1');
+  s.transactions[2].refundOf = 'o1';
+  const second = C.suggestRefundTargets(s, s.transactions[3])[0];
+  assert.equal(second.tx.id, 'o1', 'ook nadat de eerste terugbetaling gekoppeld is');
+  assert.equal(second.openAmount, 2429 - 850);
+});

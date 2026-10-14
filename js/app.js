@@ -620,13 +620,20 @@
       add('', '— Terug naar te verwerken —', 'Speciaal');
       return out;
     }
+    // Inkomend geld: past het bij een uitgave (iemand betaalt je terug, een annulering)? Dan meteen voorstellen.
+    const refunds = incoming ? C.suggestRefundTargets(state, t, 4) : [];
+    const refundGroup = '↩ Terugbetaling van een uitgave';
+    const addRefunds = () => refunds.forEach(r => add('refund:' + r.tx.id, '↩ ' + (r.tx.title || r.tx.counterparty || r.tx.description || 'uitgave') + ' ' + money(r.tx.amount), refundGroup, fmtDate(r.tx.date) + (r.openAmount < -r.tx.amount ? ' · nog ' + money(r.openAmount) + ' open' : '')));
+    const strong = refunds.length && Math.abs(C.daysBetween(refunds[0].tx.date, t.date)) <= 7;
+    if (strong) addRefunds();
     cats(incoming ? 'income' : 'expense', incoming ? 'Inkomst' : 'Uitgave');
     add('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…', incoming ? 'Inkomst' : 'Uitgave');
     for (const p of C.personList(state).sort((a, b) => a.name.localeCompare(b.name))) {
       add('adv:' + p.name, incoming ? '🤝 Terugbetaling van ' + p.name : '🤝 Voorgeschoten voor ' + p.name, 'Voorschot', incoming && p.stats.open > 0 ? 'nog ' + money(p.stats.open) + ' open' : '');
     }
     add('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van iemand anders…' : '↗ Voorgeschoten voor iemand anders…', 'Voorschot');
-    if (incoming) add('refund', '↩ Terugbetaling van een uitgave…', 'Speciaal');
+    if (incoming && !strong) addRefunds();
+    if (incoming) add('refund', '↩ Terugbetaling van een andere uitgave…', 'Speciaal');
     add('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)', 'Speciaal');
     add('transfer', '↔ Naar/van eigen rekening', 'Speciaal');
     add('split', '✂ Opsplitsen…', 'Speciaal');
@@ -755,8 +762,33 @@
     return `<div class="select-bar" role="region" aria-label="Selectie">
       <strong>${n} geselecteerd</strong>
       <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
+      ${(() => { const r = bulkRefundTarget(); return r ? `<button class="btn small primary" data-action="bulk-refund" title="De inkomende bedragen tellen als terugbetaling van deze uitgave">↩ ${r.incomes.length === 1 ? 'Terugbetaling' : r.incomes.length + ' terugbetalingen'} van ${esc((r.expense.title || r.expense.counterparty || 'de uitgave').slice(0, 24))} koppelen</button>` : ''; })()}
       <button class="btn small danger" data-action="bulk-delete">🗑 Verwijderen</button>
       <button class="btn small ghost" data-action="bulk-clear">Selectie wissen</button></div>`;
+  }
+
+  /** Inkomende betalingen koppelen als terugbetaling van één uitgave (met ongedaan maken). */
+  function linkRefunds(incomes, expenseId) {
+    const o = txById(expenseId);
+    if (!o) return;
+    const before = incomes.map(t => ({ id: t.id, refundOf: t.refundOf || null, categoryId: t.categoryId || null, categorySource: t.categorySource || null, ruleId: t.ruleId || null, transferMode: t.transferMode }));
+    for (const t of incomes) { t.refundOf = o.id; t.categoryId = null; t.categorySource = null; t.ruleId = null; if (t.isTransfer) t.transferMode = 'no'; }
+    ui.selected.clear();
+    commit();
+    const name = o.title || o.counterparty || o.description || 'de uitgave';
+    // Netto wat je zelf betaalde: de uitgave min alles wat erop terugbetaald werd
+    toast(`Gekoppeld aan ${name}: zelf betaald ${money(-(o.amount + (C.refundTotals(state)[o.id] || 0)))}`, { label: 'Ongedaan maken', run: () => {
+      for (const b of before) { const t = txById(b.id); if (t) Object.assign(t, b); }
+      commit('Koppeling ongedaan gemaakt');
+    } });
+  }
+
+  function bulkRefundTarget() {
+    const sel = Array.from(ui.selected).map(txById).filter(Boolean);
+    const out = sel.filter(t => t.amount < 0);
+    const ins = sel.filter(t => t.amount > 0);
+    if (out.length !== 1 || !ins.length || ins.length + 1 !== sel.length || ins.some(t => t.refundOf === out[0].id)) return null;
+    return { expense: out[0], incomes: ins };
   }
 
   function bulkAssign(value) {
@@ -2202,6 +2234,7 @@
       return;
     }
     ui.ruleHint = null;
+    if (value.startsWith('refund:')) { linkRefunds([t], value.slice(7)); return; }
     if (value.startsWith('adv:')) {
       markAdvance(t, value.slice(4));
       commit((t.amount > 0 ? 'Terugbetaling van ' : 'Voorschot voor ') + value.slice(4));
@@ -3157,6 +3190,13 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       loadBankLink();
     },
     'bank-retry-aspsps': () => loadAspsps(),
+    'bulk-refund': () => {
+      const r = bulkRefundTarget();
+      if (!r) return;
+      const back = r.incomes.reduce((x, t) => x + t.amount, 0);
+      if (back > -r.expense.amount && !confirm(`Je krijgt ${money(back)} terug op een uitgave van ${money(-r.expense.amount)}. Toch koppelen?`)) return;
+      linkRefunds(r.incomes, r.expense.id);
+    },
     'copy': el => { try { navigator.clipboard.writeText(el.dataset.copy); toast('Gekopieerd'); } catch (e) { toast('Kopiëren lukte niet: selecteer en kopieer de tekst zelf.'); } },
     'edit-tx': el => { const t = txById(el.dataset.id); if (t) openModal({ type: 'tx', tx: JSON.parse(JSON.stringify(t)) }); },
     'save-tx': saveTx,
