@@ -19,6 +19,7 @@
   /** Blokken op de pagina Beleggingen; je kiest zelf welke je ziet en in welke volgorde. */
   const INVEST_SECTIONS = [
     { id: 'kpis', icon: '💶', label: 'Kerncijfers', hint: 'waarde, inleg, winst, dividend' },
+    { id: 'alloc', icon: '🍩', label: 'Waarin zit je geld', hint: 'aandelen, ETF\'s, obligaties, goud, cash' },
     { id: 'returns', icon: '📈', label: 'Rendement', hint: 'TWR en MWR' },
     { id: 'chart', icon: '📉', label: 'Grafiek door de jaren' },
     { id: 'years', icon: '🗓', label: 'Rendement per jaar' },
@@ -151,6 +152,7 @@
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Geen posities.</p>'}
       </div>
 `,
+      alloc: () => allocationCard(iv),
       sold: () => iv ? soldCard(iv) : '',
       watch: () => watchCard(),
       metals: () => metalsCard(),
@@ -190,6 +192,28 @@
         <button class="btn small ghost" data-action="invest-reset">Standaard herstellen</button><button class="btn small primary" data-action="invest-edit">✓ Klaar</button></div>` : ''}
       <div class="iv-grid ${edit ? 'iv-editing' : ''}">${body}</div>
       ${!edit && hiddenList.length ? `<div class="iv-hidden-note small muted">Verborgen: ${hiddenList.map(id => `<button class="chip" data-action="invest-show" data-id="${id}" title="Terug tonen">+ ${meta(id).icon} ${esc(meta(id).label)}</button>`).join(' ')} <a href="#" data-action="invest-edit">Weergave aanpassen</a></div>` : ''}`;
+  }
+
+  const CLASS_COLORS = { stock: 'var(--series-1)', etf: 'var(--series-2)', bond: 'var(--series-3)', metal: 'var(--series-4)', cash: 'var(--series-5)', other: 'var(--muted-mark)' };
+
+  /** Ronde diagram: waarin je beleggingsgeld zit, met de indeling per product die je zelf kan aanpassen. */
+  function allocationCard(iv) {
+    const overrides = (state.settings && state.settings.assetClasses) || {};
+    const ms = metals();
+    const groups = Invest.allocation(iv, { overrides, metalsValue: ms.value });
+    if (!groups.length) return '';
+    const total = groups.reduce((a, g) => a + g.value, 0);
+    const products = groups.flatMap(g => g.items.filter(x => !x.fixed));
+    return `<div class="card" style="margin-bottom:16px">
+      <h2>Waarin zit je geld</h2>
+      ${donutChart([], { segs: groups.map(g => ({ label: g.icon + ' ' + g.label, color: CLASS_COLORS[g.id], v: g.value })), totalLabel: 'Belegd', aria: 'Verdeling van je beleggingen per soort' })}
+      <div class="alloc-groups small">${groups.map(g => `<div class="alloc-group"><span class="sw" style="background:${CLASS_COLORS[g.id]}"></span><strong>${g.icon} ${esc(g.label)}</strong>
+        <div class="muted">${g.items.slice(0, 4).map(x => esc(x.name)).join(' · ')}${g.items.length > 4 ? ' · +' + (g.items.length - 4) : ''}</div></div>`).join('')}</div>
+      ${products.length ? `<details class="alloc-edit" data-keep="allocEdit" ${ui.keepOpen.allocEdit ? 'open' : ''}><summary class="small"><strong>Klopt de indeling niet?</strong> <span class="muted">Kies per product zelf de soort</span></summary>
+        <div class="list">${products.sort((a, b) => b.value - a.value).map(x => `<div class="list-row"><div class="grow">${esc(x.name)}<div class="small muted"><span class="amount">${money(x.value)}</span>${x.manual ? ' · zelf gekozen' : ' · automatisch herkend'}</div></div>
+          <select data-asset-class="${esc(x.key)}" aria-label="Soort voor ${esc(x.name)}">${Invest.ASSET_CLASSES.map(c => `<option value="${c.id}" ${x.cls === c.id ? 'selected' : ''}>${c.icon} ${esc(c.label)}${c.id === x.auto && !x.manual ? '' : c.id === x.auto ? ' (automatisch)' : ''}</option>`).join('')}</select></div>`).join('')}</div></details>` : ''}
+      <p class="small muted">Posities volgens je laatste stand, plus de cash op je beleggingsrekening${ms.value ? ' en je fysiek goud en zilver' : ''}. Bankrekeningen tellen hier niet mee.</p>
+    </div>`;
   }
 
   function soldCard(iv) {

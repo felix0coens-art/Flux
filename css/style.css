@@ -1032,3 +1032,9 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
   .topbar #sync-badge { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 :root.privacy :is(.sv-amount, .money) { filter: blur(7px); user-select: none; }
+.alloc-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; margin: 4px 0 10px; }
+.alloc-group .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: 0; }
+.alloc-edit { margin: 6px 0 8px; }
+.alloc-edit summary { cursor: pointer; margin-bottom: 6px; }
+.alloc-edit select { max-width: 190px; }
+.donut svg text { pointer-events: none; }

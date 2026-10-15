@@ -284,6 +284,22 @@ test('synchronisatie ziet ook wijzigingen binnenin een object (bv. instellingen,
   assert.deepEqual(C.stampChanges(snap2, s), []);
 });
 
+test('beleggingen: verdeling per soort (aandelen, ETF, obligaties, goud, cash), met eigen indeling', () => {
+  const Invest = require('../js/invest.js');
+  const inv = { positionsDate: '2026-10-14', cashEur: 5000, movements: [], trades: [], positions: [
+    { key: 'A', name: 'Apple Inc', valueEur: 30000 },
+    { key: 'V', name: 'Vanguard FTSE All-World UCITS ETF (Acc)', valueEur: 50000 },
+    { key: 'B', name: 'iShares Core Global Aggregate Bond UCITS ETF', valueEur: 15000 },
+    { key: 'G', name: 'Xetra-Gold ETC', valueEur: 10000 },
+    { key: 'M', name: 'Solvay', valueEur: 2000 }
+  ] };
+  const g = Object.fromEntries(Invest.allocation(inv, { metalsValue: 20000 }).map(x => [x.id, x.value]));
+  assert.deepEqual(g, { stock: 32000, etf: 50000, bond: 15000, metal: 30000, cash: 5000 }, 'Solvay is een aandeel');
+  const g2 = Object.fromEntries(Invest.allocation(inv, { overrides: { M: 'etf' } }).map(x => [x.id, x.value]));
+  assert.equal(g2.etf, 52000, 'eigen indeling gaat voor'); assert.equal(g2.stock, 30000);
+  assert.equal(g2.metal, 10000, 'zonder fysiek goud enkel de goud-ETC');
+});
+
 test('js/app.js is geldig JavaScript', () => {
   const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);

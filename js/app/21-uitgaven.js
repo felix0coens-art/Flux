@@ -6,11 +6,11 @@
    */
   function donutChart(items, opts) {
     opts = opts || {};
-    const total = items.reduce((a, x) => a + x.v, 0);
+    const total = (opts.segs || items).reduce((a, x) => a + (x.v > 0 ? x.v : 0), 0);
     if (!total) return '';
-    const top = items.slice(0, 5);
-    const rest = items.slice(5).reduce((a, x) => a + x.v, 0);
-    const segs = top.map(x => ({ id: x.id || '__none__', label: x.id ? catLabel(x.id) : '❔ Nog niet gekoppeld', color: catColor(x.id), v: x.v }));
+    // Eigen stukken (opts.segs: { label, color, v }), of categorieën: hoogstens 5 + "Andere"
+    const segs = opts.segs ? opts.segs.filter(x => x.v > 0) : items.slice(0, 5).map(x => ({ id: x.id || '__none__', label: x.id ? catLabel(x.id) : '❔ Nog niet gekoppeld', color: catColor(x.id), v: x.v }));
+    const rest = opts.segs ? 0 : items.slice(5).reduce((a, x) => a + x.v, 0);
     if (rest > 0) segs.push({ label: '⋯ Andere (' + (items.length - 5) + ')', color: 'var(--muted-mark)', v: rest });
     const R = 80, r = 52, cx = 90, cy = 90;
     let a0 = -Math.PI / 2;
@@ -27,9 +27,9 @@
       a0 = a1;
       return `<path d="${d}" fill="${esc(sg.color)}" data-donut="${i}" class="donut-seg" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''}><title>${esc(sg.label)}: ${money(sg.v)} (${(frac * 100).toFixed(0)}%)</title></path>`;
     }).join('');
-    const pctTxt = v => (v / total * 100).toFixed(v / total < 0.1 ? 1 : 0).replace('.', ',') + '%';
+    const pctTxt = v => (v / total * 100).toFixed(v / total < 0.1 || v / total > 0.9 && v < total ? 1 : 0).replace('.', ',') + '%';
     return `<div class="donut" data-total="${esc(money(total))}" data-total-label="${esc(opts.totalLabel || 'Totaal')}">
-      <svg viewBox="0 0 180 180" role="img" aria-label="Verdeling per categorie">${arcs}
+      <svg viewBox="0 0 180 180" role="img" aria-label="${esc(opts.aria || 'Verdeling per categorie')}">${arcs}
         <text x="90" y="84" text-anchor="middle" class="donut-label" id="donut-label">${esc(opts.totalLabel || 'Totaal')}</text>
         <text x="90" y="104" text-anchor="middle" class="donut-value" id="donut-value">${esc(money(total))}</text></svg>
  <ul class="donut-legend">${segs.map((sg, i) => `<li data-donut="${i}" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''} data-label="${esc(sg.label.replace(/\s*\(\d+\)$/, ''))}" data-value="${esc(money(sg.v) + ' · ' + pctTxt(sg.v))}"><span class="sw" style="background:${esc(sg.color)}"></span><span class="name">${esc(sg.label)}</span><span class="pct">${pctTxt(sg.v)}</span><span class="amt">${money(sg.v)}</span></li>`).join('')}</ul></div>`;

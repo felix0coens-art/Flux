@@ -642,6 +642,51 @@
     };
   }
 
+  /** Soorten beleggingen voor de verdeling (vaste volgorde = vaste kleur). */
+  const ASSET_CLASSES = [
+    { id: 'stock', label: 'Aandelen', icon: '🏢' },
+    { id: 'etf', label: "ETF's en fondsen", icon: '🧺' },
+    { id: 'bond', label: 'Obligaties', icon: '📜' },
+    { id: 'metal', label: 'Goud en zilver', icon: '🪙' },
+    { id: 'cash', label: 'Cash', icon: '💶' },
+    { id: 'other', label: 'Andere', icon: '⋯' }
+  ];
+
+  /** Soort van een positie, geschat uit de naam (een eigen keuze gaat voor). */
+  function assetClassOf(p, overrides) {
+    const o = overrides && overrides[p.key || p.isin || p.name];
+    if (o && ASSET_CLASSES.some(c => c.id === o)) return o;
+    const n = String(p.name || '') + ' ' + String(p.symbol || '');
+    if (/geldmarkt|money market|cash fund|liquidit/i.test(n)) return 'cash';
+    if (/\b(gold|goud|silver|zilver|physical (gold|silver|metal)|xetra-gold|precious)\b/i.test(n) && /\b(etc|etp|physical|xetra|bullion|invesco physical|wisdomtree)\b/i.test(n)) return 'metal';
+    if (/\b(bond|bonds|obligat|treasury|govt|government|aggregate|corporate|gilt|bund|t-bill|inflation[- ]linked|fixed income)\b/i.test(n)) return 'bond';
+    if (/\b(bitcoin|ethereum|crypto|solana)\b/i.test(n)) return 'other';
+    if (/\b(etf|ucits|etc|etp|index ?fund|tracker|ishares|vanguard|xtrackers|amundi|lyxor|spdr|invesco|wisdomtree|vaneck|hsbc msci|franklin|sicav|fund|fonds|acc|dist)\b/i.test(n)) return 'etf';
+    return 'stock';
+  }
+
+  /**
+   * Waarin je beleggingsgeld zit: posities per soort, de cash op je beleggingsrekening(en) en je fysiek
+   * goud en zilver. @returns [{ id, label, icon, value, items: [{ key, name, value, auto }] }] (enkel > 0)
+   */
+  function allocation(inv, opts) {
+    opts = opts || {};
+    const by = Object.fromEntries(ASSET_CLASSES.map(c => [c.id, Object.assign({}, c, { value: 0, items: [] })]));
+    if (inv) {
+      const s = summary(inv);
+      for (const p of s.positions) {
+        if (!(p.valueEur > 0)) continue;
+        const cls = assetClassOf(p, opts.overrides);
+        const auto = assetClassOf(p, null);
+        by[cls].value += p.valueEur;
+        by[cls].items.push({ key: p.key || p.isin || p.name, name: p.name, value: p.valueEur, cls, auto, manual: cls !== auto || !!(opts.overrides && opts.overrides[p.key || p.isin || p.name]) });
+      }
+      if (s.cashEur > 0) { by.cash.value += s.cashEur; by.cash.items.push({ key: '__cash', name: 'Cash op je beleggingsrekening', value: s.cashEur, fixed: true }); }
+    }
+    if (opts.metalsValue > 0) { by.metal.value += opts.metalsValue; by.metal.items.push({ key: '__metals', name: 'Fysiek goud en zilver', value: opts.metalsValue, fixed: true }); }
+    return ASSET_CLASSES.map(c => by[c.id]).filter(c => c.value > 0);
+  }
+
   /** Laatste punt van een koersreeks ({ date, eur } in eurocent per stuk), of null. */
   function lastPoint(series) {
     const pts = series && series.points ? series.points.filter(p => p && p.eur > 0) : [];
@@ -690,7 +735,7 @@
     });
   }
 
-  const api = { soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

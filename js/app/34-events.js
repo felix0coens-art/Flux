@@ -540,6 +540,15 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
+    if (el.dataset.assetClass) {
+      const iv = inv();
+      const p = iv && Invest.summary(iv).positions.find(x => (x.key || x.isin || x.name) === el.dataset.assetClass);
+      const cur = Object.assign({}, (state.settings && state.settings.assetClasses) || {});
+      if (p && Invest.assetClassOf(p, null) === el.value) delete cur[el.dataset.assetClass]; else cur[el.dataset.assetClass] = el.value;
+      state.settings = Object.assign({}, state.settings, { assetClasses: cur });
+      commit('Indeling bewaard');
+      return;
+    }
     if (el.dataset.investShow) { toggleInvestSection(el.dataset.investShow, el.checked); return; }
     if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }
