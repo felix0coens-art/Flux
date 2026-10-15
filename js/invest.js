@@ -642,7 +642,55 @@
     };
   }
 
-  const api = { view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  /** Laatste punt van een koersreeks ({ date, eur } in eurocent per stuk), of null. */
+  function lastPoint(series) {
+    const pts = series && series.points ? series.points.filter(p => p && p.eur > 0) : [];
+    return pts.length ? pts[pts.length - 1] : null;
+  }
+
+  /**
+   * Verkochte aandelen tegenover vandaag: wat de verkochte stuks nu waard zouden zijn (laatste gekende
+   * koers) tegenover wat je bij de verkoop kreeg. Positief verschil = ze zijn sindsdien meer waard geworden.
+   */
+  function soldVsToday(inv) {
+    const r = realized(inv);
+    const series = (inv && inv.market && inv.market.series) || {};
+    return r.positions.map(p => {
+      const last = lastPoint(series[p.key]);
+      const sellPrice = p.soldQty ? p.proceeds / p.soldQty : null;
+      const todayValue = last ? Math.round(last.eur * p.soldQty) : null;
+      return Object.assign({}, p, {
+        sellPrice, lastPrice: last ? last.eur : null, lastDate: last ? last.date : null, todayValue,
+        diff: todayValue != null ? todayValue - p.proceeds : null,
+        diffPct: todayValue != null && p.proceeds ? (todayValue - p.proceeds) / p.proceeds : null
+      });
+    });
+  }
+
+  /**
+   * Favoriete aandelen: startkoers (zelf ingevuld, anders de koers op de startdatum) en de koers van vandaag.
+   * @param list [{ id, name, startDate, startPrice? }]   @param quotes { [id]: { points, symbol, currency, manualNow? } }
+   */
+  function watchSummary(list, quotes) {
+    quotes = quotes || {};
+    return (list || []).map(w => {
+      const q = quotes[w.id] || null;
+      const pts = q && q.points ? q.points.filter(p => p && p.eur > 0) : [];
+      let atStart = null;
+      for (const p of pts) { if (p.date <= w.startDate) atStart = p; else break; }
+      if (!atStart && pts.length) atStart = pts[0];
+      const start = w.startPrice > 0 ? w.startPrice : atStart ? atStart.eur : null;
+      const nowP = w.nowPrice > 0 ? { eur: w.nowPrice, date: w.nowDate || null } : pts.length ? pts[pts.length - 1] : null;
+      const change = start != null && nowP ? nowP.eur - start : null;
+      return Object.assign({}, w, {
+        symbol: q && q.symbol, start, startSource: w.startPrice > 0 ? 'manual' : atStart ? 'market' : 'none',
+        now: nowP ? nowP.eur : null, nowDate: nowP ? nowP.date : null, nowSource: w.nowPrice > 0 ? 'manual' : nowP ? 'market' : 'none',
+        change, changePct: change != null && start ? change / start : null, error: q && q.error
+      });
+    });
+  }
+
+  const api = { soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

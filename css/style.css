@@ -951,3 +951,6 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
   .mv-row { grid-template-columns: auto auto 1fr auto; }
   .mv-row .grow { grid-column: 1 / -1; }
 }
+.sold-today { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; border-left: 4px solid; }
+.sold-today.up { background: var(--orange-soft); border-color: var(--orange); }
+.sold-today.down { background: var(--green-soft); border-color: var(--green); }

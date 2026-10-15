@@ -17,7 +17,7 @@ const HELDER_VERSION = 3; // = Store.VERSION in js/store.js
 const SESSION_DAYS = 120;
 const MAX_BODY = 30 * 1024 * 1024;
 const TOMBSTONE_TTL = 400 * 86400000;
-const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions', 'metals'];
+const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions', 'metals', 'watchlist'];
 const SYNC_SINGLETONS = ['settings', 'investments'];
 const USER_AGENT = 'Helder-persoonlijke-boekhouding/2.0 (self-hosted)';
 

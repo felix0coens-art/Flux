@@ -91,6 +91,22 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'watch-new': () => openModal({ type: 'watch', isNew: true, edit: { id: C.uid('wl'), name: '', query: '', startDate: today } }),
+    'watch-edit': el => { const w = (state.watchlist || []).find(x => x.id === el.dataset.id); if (w) openModal({ type: 'watch', edit: Object.assign({}, w) }); },
+    'watch-save': saveWatch,
+    'watch-delete': () => {
+      const w = modal.edit;
+      if (!confirm(`${w.name} niet meer volgen?`)) return;
+      state.watchlist = (state.watchlist || []).filter(x => x.id !== w.id);
+      closeModal();
+      commit('Niet meer gevolgd');
+    },
+    'watch-refresh': () => fetchWatchQuotes(true),
+    'watch-from-sold': el => {
+      const p = Invest.soldVsToday(inv()).find(x => x.key === el.dataset.key);
+      if (!p) return;
+      openModal({ type: 'watch', isNew: true, edit: { id: C.uid('wl'), name: p.name, query: p.isin || p.name, startDate: p.lastSell, startPrice: p.sellPrice ? Math.round(p.sellPrice) : undefined, note: 'verkocht op ' + fmtDate(p.lastSell) } });
+    },
     'metal-new': () => openModal({ type: 'metal', isNew: true, edit: { id: C.uid('mt'), origin: 'bought', metal: 'gold', count: 1 } }),
     'metal-edit': el => {
       const x = (state.metals || []).find(m => m.id === el.dataset.id);

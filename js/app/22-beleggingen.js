@@ -18,6 +18,7 @@
 
   function renderInvest() {
     maybeAutoFetchMetals();
+    maybeFetchWatch();
     const iv = inv();
     const server = Sync && Sync.mode === 'server' && !demo;
     const connect = `<div class="card">
@@ -43,6 +44,7 @@
     if (!iv) {
       return `<div class="page-head"><h1>Beleggingen</h1></div>
         ${metalsCard()}
+        ${watchCard()}
         <p class="muted">Koppel je Degiro- of Saxo-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar je broker tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
         ${connect}
         <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`;
@@ -104,6 +106,7 @@
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Geen posities.</p>'}
       </div>
       ${soldCard(iv)}
+      ${watchCard()}
       ${metalsCard()}
       ${connect}
       ${files.length ? `<div class="card" style="margin-top:16px"><h2>Opgeladen Degiro-bestanden</h2><div class="list">${files.slice().reverse().map(f => `<div class="list-row"><div class="grow">📄 ${esc(f.name)}<div class="small muted">${esc({ portfolio: 'Portefeuille', transactions: 'Transacties', account: 'Rekeningoverzicht' }[f.type] || f.type)}${f.date ? ' — stand op ' + fmtDate(f.date) : ''} · opgeladen ${esc(fmtDateTime(f.importedAt))}</div></div></div>`).join('')}</div></div>` : ''}
@@ -118,23 +121,142 @@
     if (!r.positions.length) {
       return (iv.trades || []).length ? `<div class="card" style="margin-bottom:16px"><h2>Verkochte aandelen</h2><p class="muted">Je hebt nog niets verkocht.</p></div>` : '';
     }
+    const list = Invest.soldVsToday(iv);
     const qty = v => String(Math.round(v * 10000) / 10000).replace('.', ',');
+    const known = list.filter(p => p.todayValue != null);
+    const proceedsKnown = known.reduce((a, p) => a + p.proceeds, 0);
+    const todayTotal = known.reduce((a, p) => a + p.todayValue, 0);
+    const diffTotal = todayTotal - proceedsKnown;
+    const server = Sync && Sync.mode === 'server' && !demo;
     return `<div class="card" style="margin-bottom:16px">
       <div class="card-head"><h2>Verkochte aandelen</h2>
         <span class="badge ${r.total >= 0 ? 'ok' : 'over'}">${r.total >= 0 ? '▲' : '▼'} gerealiseerd ${money(r.total)}</span></div>
-      <p class="small muted">Wat je ooit kocht en (deels) verkocht, met het resultaat van die verkoop: verkoopopbrengst − aankoopprijs, telkens met de transactiekosten inbegrepen. Bij aankopen in schijven rekent Helder met je gemiddelde aankoopprijs.</p>
+      <p class="small muted">Wat je ooit kocht en (deels) verkocht, met het resultaat van die verkoop (opbrengst − aankoopprijs, kosten inbegrepen; bij aankopen in schijven met je gemiddelde aankoopprijs).
+        En wat diezelfde stuks <strong>vandaag</strong> waard zouden zijn, tegenover wat je bij de verkoop kreeg.</p>
+      ${known.length ? `<div class="sold-today ${diffTotal >= 0 ? 'up' : 'down'}">Had je alles gehouden, dan was het vandaag <strong>${money(todayTotal)}</strong> waard — dat is <strong>${diffTotal >= 0 ? money(diffTotal) + ' meer' : money(-diffTotal) + ' minder'}</strong> dan de ${money(proceedsKnown)} die je kreeg${proceedsKnown ? ` (${pct(diffTotal / proceedsKnown)})` : ''}. ${diffTotal >= 0 ? 'Ze zijn sindsdien gestegen.' : 'Goed verkocht: ze zijn sindsdien gedaald.'}</div>`
+        : `<p class="small muted">${server ? 'Nog geen koers van vandaag. <a href="#" data-action="fetch-prices">Koersen ophalen</a>' : 'De koers van vandaag kan Helder enkel ophalen als het op je eigen server draait.'}</p>`}
       <div class="table-wrap"><table>
-        <thead><tr><th>Product</th><th>Periode</th><th class="right">Verkocht</th><th class="right">Aankoopprijs</th><th class="right">Opbrengst</th><th class="right">Winst / verlies</th><th class="right">Dividend</th></tr></thead>
-        <tbody>${r.positions.map(p => `<tr>
-          <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin)}${p.closed ? ' · volledig verkocht' : ' · nog ' + qty(p.qty) + ' in bezit'}</div></td>
+        <thead><tr><th>Product</th><th>Periode</th><th class="right">Verkocht</th><th class="right">Aankoopprijs</th><th class="right">Opbrengst</th><th class="right">Winst / verlies</th><th class="right">Vandaag waard</th><th class="right">Sinds verkoop</th><th></th></tr></thead>
+        <tbody>${list.map(p => `<tr>
+          <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin)}${p.closed ? ' · volledig verkocht' : ' · nog ' + qty(p.qty) + ' in bezit'}${p.dividends ? ' · dividend ' + money(p.dividends) : ''}</div></td>
           <td class="nowrap small">${p.firstBuy ? fmtDate(p.firstBuy) : '?'} → ${fmtDate(p.lastSell)}</td>
-          <td class="right">${qty(p.soldQty)}</td>
+          <td class="right">${qty(p.soldQty)}${p.sellPrice ? `<div class="small muted">à ${money(Math.round(p.sellPrice))}</div>` : ''}</td>
           <td class="amount">${money(p.costSold)}</td>
           <td class="amount">${money(p.proceeds)}</td>
           <td class="amount ${p.result >= 0 ? 'pos' : 'negv'}"><strong>${p.result >= 0 ? '▲ ' : '▼ '}${money(p.result)}</strong><div class="small">${p.pct != null ? pct(p.pct) : ''}</div></td>
-          <td class="amount small">${p.dividends ? money(p.dividends) : '—'}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="5"><strong>Totaal gerealiseerd</strong></td><td class="amount ${r.total >= 0 ? 'pos' : 'negv'}"><strong>${money(r.total)}</strong></td><td class="amount small">${r.totalDividends ? money(r.totalDividends) : '—'}</td></tr></tfoot>
-      </table></div></div>`;
+          <td class="amount">${p.todayValue != null ? money(p.todayValue) + `<div class="small muted">à ${money(Math.round(p.lastPrice))} · ${fmtDate(p.lastDate)}</div>` : '—'}</td>
+          <td class="amount ${p.diff == null ? '' : p.diff >= 0 ? 'pos' : 'negv'}">${p.diff != null ? `<strong>${p.diff >= 0 ? '▲ ' : '▼ '}${money(p.diff)}</strong><div class="small">${pct(p.diffPct)}</div>` : '—'}</td>
+          <td><button class="btn small ghost" data-action="watch-from-sold" data-key="${esc(p.key)}" title="Volgen bij je favorieten, met je verkoopkoers als start">⭐</button></td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="5"><strong>Totaal</strong></td><td class="amount ${r.total >= 0 ? 'pos' : 'negv'}"><strong>${money(r.total)}</strong></td>
+          <td class="amount">${known.length ? money(todayTotal) : '—'}</td><td class="amount ${diffTotal >= 0 ? 'pos' : 'negv'}">${known.length ? `<strong>${money(diffTotal)}</strong>` : '—'}</td><td></td></tr></tfoot>
+      </table></div>
+      <p class="small muted">“Sinds verkoop” = wat de verkochte stuks vandaag waard zijn − wat je ervoor kreeg. Dividenden die je sindsdien gemist hebt en kosten zitten er niet in.</p></div>`;
+  }
+
+  // ----- Favoriete aandelen -----
+
+  const watchQuotes = () => (state.settings && state.settings.watchQuotes) || {};
+  let watchBusy = false, watchAuto = false;
+
+  /** Koersen voor je favorieten ophalen (sinds hun startdatum) via de server. */
+  async function fetchWatchQuotes(force, onlyIds) {
+    const list = (state.watchlist || []).filter(w => !onlyIds || onlyIds.includes(w.id));
+    if (!list.length || watchBusy || demo || !(Sync && Sync.mode === 'server')) { if (force && !(Sync && Sync.mode === 'server' && !demo)) toast('Koersen ophalen kan enkel als Helder op je eigen server draait. Vul de koers van vandaag dan zelf in.'); return; }
+    watchBusy = true;
+    try {
+      const isIsin = v => /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(String(v || '').trim().toUpperCase());
+      const r = await Sync.prices(list.map(w => ({ key: w.id, isin: isIsin(w.query) ? w.query.trim().toUpperCase() : '', name: w.query || w.name, currency: 'EUR', from: w.startDate })));
+      const q = Object.assign({}, watchQuotes());
+      for (const w of list) {
+        const sr = r.series && r.series[w.id];
+        if (sr) {
+          // Enkel bewaren wat nodig is: de koers rond de startdatum en de laatste
+          const pts = sr.points.filter(p => p.eur > 0);
+          let atStart = null;
+          for (const p of pts) { if (p.date <= w.startDate) atStart = p; else break; }
+          const keep = [atStart || pts[0], pts[pts.length - 1]].filter(Boolean);
+          q[w.id] = { symbol: sr.symbol, currency: sr.currency, points: keep.filter((p, i) => keep.findIndex(x => x.date === p.date) === i), startDate: w.startDate, at: new Date().toISOString() };
+        } else q[w.id] = { error: (r.errors && r.errors[w.id]) || 'niet gevonden', at: new Date().toISOString() };
+      }
+      for (const id of Object.keys(q)) if (!(state.watchlist || []).some(w => w.id === id)) delete q[id];
+      state.settings = Object.assign({}, state.settings, { watchQuotes: q });
+      commit(force ? 'Koersen van je favorieten bijgewerkt' : undefined);
+    } catch (e) {
+      if (force) toast('Koersen ophalen lukte niet: ' + e.message);
+    } finally { watchBusy = false; }
+  }
+
+  function maybeFetchWatch() {
+    if (watchAuto || !(state.watchlist || []).length) return;
+    const q = watchQuotes();
+    const stale = (state.watchlist || []).some(w => !q[w.id] || q[w.id].startDate !== w.startDate || Date.now() - Date.parse(q[w.id].at || 0) > 12 * 3600000);
+    if (!stale) return;
+    watchAuto = true;
+    fetchWatchQuotes(false);
+  }
+
+  function watchCard() {
+    const rows = Invest.watchSummary(state.watchlist || [], watchQuotes()).sort((a, b) => (b.changePct ?? -1e9) - (a.changePct ?? -1e9));
+    const server = Sync && Sync.mode === 'server' && !demo;
+    const lastAt = Object.values(watchQuotes()).map(x => x.at).filter(Boolean).sort().pop();
+    return `<div class="card" style="margin-bottom:16px">
+      <div class="metals-head">
+        <div><h2>⭐ Favoriete aandelen</h2>
+          <div class="small muted">Volg aandelen of fondsen vanaf een startkoers die je zelf kiest${lastAt ? ` · koersen van ${esc(fmtDateTime(lastAt))}` : ''}${server && rows.length ? ' · <a href="#" data-action="watch-refresh">bijwerken</a>' : ''}</div></div>
+        <span class="spacer"></span>
+        <button class="btn primary" data-action="watch-new">+ Aandeel volgen</button>
+      </div>
+      ${rows.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Aandeel</th><th class="right">Start</th><th class="right">Vandaag</th><th class="right">Wijziging</th></tr></thead>
+        <tbody>${rows.map(w => `<tr class="clickable" data-action="watch-edit" data-id="${esc(w.id)}">
+          <td><strong>${esc(w.name)}</strong><div class="small muted">${esc([w.symbol || w.query, w.note].filter(Boolean).join(' · '))}${w.error ? ` · <span class="warn-text">${esc(w.error)}</span>` : ''}</div></td>
+          <td class="amount">${w.start != null ? money(Math.round(w.start)) : '—'}<div class="small muted">${fmtDate(w.startDate)}${w.startSource === 'manual' ? ' · zelf gekozen' : ''}</div></td>
+          <td class="amount">${w.now != null ? money(Math.round(w.now)) : '—'}<div class="small muted">${w.nowDate ? fmtDate(w.nowDate) : ''}${w.nowSource === 'manual' ? ' · zelf ingevuld' : ''}</div></td>
+          <td class="amount ${w.change == null ? '' : w.change >= 0 ? 'pos' : 'negv'}">${w.change != null ? `<strong>${w.change >= 0 ? '▲ ' : '▼ '}${pct(w.changePct)}</strong><div class="small">${w.change >= 0 ? '+' : ''}${money(Math.round(w.change))} per stuk</div>` : '—'}</td>
+        </tr>`).join('')}</tbody></table></div>
+        <p class="small muted">Koersen in euro (weekkoersen van Yahoo Finance; aandelen in een andere munt worden omgerekend). Een eigen startkoers gaat voor op de koers van die datum.</p>`
+        : `<p class="muted">Hou aandelen in het oog die je niet (meer) hebt: kies een startdatum en eventueel een eigen startkoers, en Helder toont hoeveel ze sindsdien stegen of daalden.</p>`}
+    </div>`;
+  }
+
+  function watchModal() {
+    const m = modal;
+    const w = m.edit;
+    const server = Sync && Sync.mode === 'server' && !demo;
+    const v = c => c ? (c / 100).toFixed(2).replace('.', ',') : '';
+    return modalShell(m.isNew ? 'Aandeel volgen' : 'Favoriet bewerken', `
+      <div class="form-grid">
+        <label class="field full"><span>Naam</span><input type="text" id="wl-name" maxlength="60" value="${esc(w.name || '')}" placeholder="bv. Apple"></label>
+        <label class="field full"><span>ISIN, ticker of naam om de koers te zoeken</span><input type="text" id="wl-query" maxlength="60" value="${esc(w.query || '')}" placeholder="bv. US0378331005, AAPL of Apple"></label>
+        <label class="field"><span>Startdatum</span><input type="date" id="wl-date" value="${esc(w.startDate || today)}" max="${today}"></label>
+        <label class="field"><span>Startkoers per stuk in € <span class="muted small">(optioneel)</span></span><input type="text" id="wl-start" inputmode="decimal" value="${esc(v(w.startPrice))}" placeholder="leeg = koers op die datum"></label>
+        ${server ? '' : `<label class="field full"><span>Koers vandaag in € <span class="muted small">(zelf invullen — online ophalen kan enkel op je eigen server)</span></span><input type="text" id="wl-now" inputmode="decimal" value="${esc(v(w.nowPrice))}"></label>`}
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="wl-note" maxlength="100" value="${esc(w.note || '')}" placeholder="bv. verkocht in 2021, of: wil ik kopen onder € 150"></label>
+      </div>
+      <div class="errors" id="wl-errors"></div>`,
+      `${m.isNew ? '' : '<button class="btn danger" data-action="watch-delete">Niet meer volgen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="watch-save">Opslaan</button>`);
+  }
+
+  function saveWatch() {
+    const w = Object.assign({}, modal.edit);
+    w.name = $('#wl-name').value.trim();
+    w.query = $('#wl-query').value.trim() || w.name;
+    w.startDate = $('#wl-date').value;
+    const sp = C.parseAmount($('#wl-start').value);
+    const errors = [];
+    if (!w.name) errors.push('Geef een naam.');
+    if (!C.parseDate(w.startDate)) errors.push('Kies een startdatum.');
+    if ($('#wl-start').value.trim() && (isNaN(sp) || sp <= 0)) errors.push('De startkoers is geen geldig bedrag.');
+    if (errors.length) { $('#wl-errors').innerHTML = errors.map(esc).join('<br>'); return; }
+    if ($('#wl-start').value.trim()) w.startPrice = Math.abs(sp); else delete w.startPrice;
+    if ($('#wl-now')) { const np = C.parseAmount($('#wl-now').value); if ($('#wl-now').value.trim() && np > 0) { w.nowPrice = np; w.nowDate = today; } else { delete w.nowPrice; delete w.nowDate; } }
+    w.note = $('#wl-note').value.trim();
+    state.watchlist = state.watchlist || [];
+    const i = state.watchlist.findIndex(x => x.id === w.id);
+    if (i >= 0) state.watchlist[i] = w; else state.watchlist.push(Object.assign(w, { createdAt: new Date().toISOString() }));
+    closeModal();
+    commit(i >= 0 ? 'Bewaard' : `${w.name} wordt gevolgd`);
+    fetchWatchQuotes(false, [w.id]);
   }
 
   function investChart(perf) {

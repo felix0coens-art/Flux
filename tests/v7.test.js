@@ -238,6 +238,36 @@ test('munten: meer soorten en een eigen waardegeschiedenis (verzamelwaarde) die 
   assert.equal(m.premium, n.premium * 2 + (55000 - m.items[1].metalUnit));
 });
 
+test('verkochte aandelen tegenover vandaag, en favorieten met een eigen startkoers', () => {
+  const Invest = require('../js/invest.js');
+  const inv = {
+    trades: [
+      { id: 'b', date: '2023-01-10', isin: 'US0000000001', name: 'Voorbeeld NV', quantity: 10, totalEur: -100000, feesEur: 0 },
+      { id: 's', date: '2024-06-01', isin: 'US0000000001', name: 'Voorbeeld NV', quantity: -10, totalEur: 150000, feesEur: 0 }
+    ],
+    market: { series: { US0000000001: { points: [{ date: '2024-06-03', eur: 15000 }, { date: '2026-10-12', eur: 20000 }] } } }
+  };
+  const [p] = Invest.soldVsToday(inv);
+  assert.equal(p.sellPrice, 15000, 'verkocht à 150 euro');
+  assert.equal(p.todayValue, 200000, '10 stuks à 200 euro vandaag');
+  assert.equal(p.diff, 50000); assert.equal(p.diffPct, 50000 / 150000);
+  assert.equal(p.lastDate, '2026-10-12');
+  // Favorieten
+  const list = [
+    { id: 'a', name: 'A', startDate: '2025-01-15' },
+    { id: 'b', name: 'B', startDate: '2025-01-15', startPrice: 9000 },
+    { id: 'c', name: 'C', startDate: '2025-01-15', startPrice: 1000, nowPrice: 1500, nowDate: '2026-10-15' }
+  ];
+  const pts = { points: [{ date: '2025-01-13', eur: 10000 }, { date: '2026-10-12', eur: 12500 }], symbol: 'X' };
+  const [a, b, c] = Invest.watchSummary(list, { a: pts, b: pts });
+  assert.equal(a.start, 10000, 'zonder eigen startkoers: de koers rond de startdatum');
+  assert.equal(a.now, 12500); assert.equal(a.changePct, 0.25);
+  assert.equal(b.start, 9000, 'eigen startkoers gaat voor'); assert.equal(b.startSource, 'manual');
+  assert.equal(Math.round(b.changePct * 1000) / 1000, 0.389);
+  assert.equal(c.now, 1500); assert.equal(c.changePct, 0.5, 'zelf ingevulde koers van vandaag');
+  assert.ok(C.SYNC_COLLECTIONS.includes('watchlist'));
+});
+
 test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const { build } = require('../scripts/build-app.js');
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
