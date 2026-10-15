@@ -2854,6 +2854,8 @@
     fetchWatchQuotes(false, [w.id]);
   }
 
+  /** Grafiek: portefeuillewaarde (lijn) en totale inleg (trap), met elke bijstorting als punt. */
+  let chartData = null;
   function investChart(perf) {
     // Echte waarderingen + reconstructie op elk maandeinde (of per week bij een korte historiek)
     const actualVals = Invest.valuations(inv()).filter(v => v.date >= perf.start);
