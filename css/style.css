@@ -1042,3 +1042,5 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .fg-reason { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 .fg-reason:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
 .fg-reason > span { display: flex; flex-direction: column; gap: 2px; }
+.fg-cat > span { font-weight: 600; color: var(--text); }
+.fg-cat select:invalid { border-color: var(--orange); }

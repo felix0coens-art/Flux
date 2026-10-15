@@ -549,6 +549,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       commit('Indeling bewaard');
       return;
     }
+    if (el.name === 'fg-reason') {
+      const l = $('#fg-cat-label');
+      if (l) l.textContent = el.value === 'gift' ? 'Telt als uitgave in (bv. Cadeaus)' : 'Waarvoor was het? Dit wordt je uitgave (bv. 🍽️ Eten)';
+      return;
+    }
     if (el.dataset.investShow) { toggleInvestSection(el.dataset.investShow, el.checked); return; }
     if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }

@@ -331,7 +331,7 @@
     const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
     const max = m.max != null ? m.max : st.open;
     return modalShell('Verrekenen — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
-      <p class="small muted"><strong>${esc(m.person)}</strong> betaalt dit niet in geld terug. Dan is het geen voorschot meer maar <strong>jouw uitgave</strong>: kies in welke categorie het telt.</p>
+      <p class="small muted"><strong>${esc(m.person)}</strong> betaalt dit niet in geld terug. Dan is het geen voorschot meer maar <strong>jouw uitgave</strong>, in de categorie die je hieronder kiest.</p>
       <div class="fg-reasons">
         <label class="fg-reason"><input type="radio" name="fg-reason" value="settled" ${m.reason !== 'gift' ? 'checked' : ''}><span><strong>🔄 Verrekend</strong><span class="small muted">bv. via Tricount, of ${esc(m.person)} betaalde iets voor jou (zoals je eten)</span></span></label>
         <label class="fg-reason"><input type="radio" name="fg-reason" value="gift" ${m.reason === 'gift' ? 'checked' : ''}><span><strong>🎁 Kwijtgescholden</strong><span class="small muted">je vraagt het niet meer terug, bv. een cadeau of je trakteerde</span></span></label>
@@ -339,7 +339,7 @@
       <div class="form-grid">
         <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(max)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, max) / 100).toFixed(2).replace('.', ','))}"></label>
         <label class="field"><span>Datum</span><input type="date" id="fg-date" value="${esc(today)}" max="${today}"></label>
-        <label class="field full"><span>Telt als uitgave in <span class="muted small">(bij verrekenen: waarvoor betaalden zij? bv. Eten)</span></span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
+        <label class="field full fg-cat"><span id="fg-cat-label">${m.reason === 'gift' ? 'Telt als uitgave in (bv. Cadeaus)' : 'Waarvoor was het? Dit wordt je uitgave (bv. 🍽️ Eten)'}</span><select id="fg-category" required>${categoryOptions(m.categoryId || null, { kind: 'expense', emptyLabel: '— Kies de uitgave —' })}</select></label>
         <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. Tricount weekend Ardennen, of verjaardagscadeau" value="${esc(m.title || '')}"></label>
       </div>
       <div class="errors" id="fg-errors"></div>`,
@@ -357,7 +357,7 @@
     if (isNaN(amount) || amount <= 0) errors.push('Geef een bedrag groter dan 0.');
     else if (amount > max) errors.push('Dat is meer dan wat nog open staat (' + money(max) + ').');
     if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
-    if (!categoryId) errors.push('Kies in welke categorie het als uitgave telt.');
+    if (!categoryId) errors.push(($('input[name=fg-reason]:checked') || {}).value === 'gift' ? 'Kies in welke categorie het als uitgave telt.' : 'Kies waarvoor het was (bv. Eten): dat wordt je uitgave.');
     else if (C.SYS_ADVANCE === categoryId || (cat(categoryId) && cat(categoryId).kind !== 'expense')) errors.push('Kies een uitgavencategorie.');
     if (errors.length) { $('#fg-errors').innerHTML = errors.map(esc).join('<br>'); return; }
     const p = ensurePerson(m.person);
