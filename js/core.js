@@ -1119,7 +1119,18 @@
     if (copy.categorySource === 'rule' || copy.categorySource === 'system') { delete copy.categoryId; delete copy.categorySource; }
     if (copy.categorySource == null) delete copy.categorySource;
     if (copy.categoryId == null) delete copy.categoryId;
-    return JSON.stringify(copy, Object.keys(copy).sort());
+    return stableJson(copy);
+  }
+
+  /**
+   * JSON met gesorteerde sleutels op elk niveau. (Een sleutellijst als tweede argument van
+   * JSON.stringify geldt ook voor geneste objecten en liet daar velden weg, waardoor wijzigingen
+   * binnenin, zoals een andere goudprijs of weergave, niet als wijziging werden gezien.)
+   */
+  function stableJson(v) {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+    if (Array.isArray(v)) return '[' + v.map(x => x === undefined || typeof x === 'function' ? 'null' : stableJson(x)).join(',') + ']';
+    return '{' + Object.keys(v).sort().filter(k => v[k] !== undefined && typeof v[k] !== 'function').map(k => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
   }
 
   /** Momentopname van alle objecten (id -> hash) om wijzigingen te herkennen. */

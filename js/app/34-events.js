@@ -91,6 +91,10 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'invest-edit': () => { ui.investEdit = !ui.investEdit; render(); },
+    'invest-move': el => moveInvestSection(el.dataset.id, Number(el.dataset.dir)),
+    'invest-show': el => toggleInvestSection(el.dataset.id, true),
+    'invest-reset': () => setInvestLayout({ order: INVEST_SECTIONS.map(x => x.id), hidden: [] }, 'Standaardweergave hersteld'),
     'watch-new': () => openModal({ type: 'watch', isNew: true, edit: { id: C.uid('wl'), name: '', query: '', startDate: today } }),
     'watch-edit': el => { const w = (state.watchlist || []).find(x => x.id === el.dataset.id); if (w) openModal({ type: 'watch', edit: Object.assign({}, w) }); },
     'watch-save': saveWatch,
@@ -523,6 +527,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
+    if (el.dataset.investShow) { toggleInvestSection(el.dataset.investShow, el.checked); return; }
     if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }
     if (el.dataset.bulkAction != null) {

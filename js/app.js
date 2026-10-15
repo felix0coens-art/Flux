@@ -2548,6 +2548,43 @@
     </ol>
     <p class="small muted">Menunamen kunnen licht verschillen per taal of app-versie. Helder herkent zelf welk soort bestand je oplaadt; hetzelfde bestand twee keer opladen voegt niets dubbel toe.</p>`;
 
+  /** Blokken op de pagina Beleggingen; je kiest zelf welke je ziet en in welke volgorde. */
+  const INVEST_SECTIONS = [
+    { id: 'kpis', icon: '💶', label: 'Kerncijfers', hint: 'waarde, inleg, winst, dividend' },
+    { id: 'returns', icon: '📈', label: 'Rendement', hint: 'TWR en MWR' },
+    { id: 'chart', icon: '📉', label: 'Grafiek door de jaren' },
+    { id: 'years', icon: '🗓', label: 'Rendement per jaar' },
+    { id: 'positions', icon: '📋', label: 'Posities' },
+    { id: 'sold', icon: '💸', label: 'Verkochte aandelen', hint: 'en wat ze vandaag waard zijn' },
+    { id: 'watch', icon: '⭐', label: 'Favoriete aandelen' },
+    { id: 'metals', icon: '🪙', label: 'Goud en zilver' },
+    { id: 'connect', icon: '🔗', label: 'Gegevens ophalen', hint: 'Degiro, Saxo, exportbestanden' }
+  ];
+
+  function investLayout() {
+    const l = (state.settings && state.settings.investLayout) || {};
+    const ids = INVEST_SECTIONS.map(x => x.id);
+    const order = (l.order || []).filter(id => ids.includes(id));
+    for (const id of ids) if (!order.includes(id)) order.splice(Math.min(ids.indexOf(id), order.length), 0, id);
+    return { order, hidden: (l.hidden || []).filter(id => ids.includes(id)) };
+  }
+  function setInvestLayout(l, msg) {
+    state.settings = Object.assign({}, state.settings, { investLayout: { order: l.order, hidden: l.hidden } });
+    commit(msg);
+  }
+  function toggleInvestSection(id, show) {
+    const l = investLayout();
+    l.hidden = show ? l.hidden.filter(x => x !== id) : Array.from(new Set(l.hidden.concat(id)));
+    setInvestLayout(l);
+  }
+  function moveInvestSection(id, dir) {
+    const l = investLayout();
+    const i = l.order.indexOf(id), j = i + dir;
+    if (i < 0 || j < 0 || j >= l.order.length) return;
+    [l.order[i], l.order[j]] = [l.order[j], l.order[i]];
+    setInvestLayout(l);
+  }
+
   function renderInvest() {
     maybeAutoFetchMetals();
     maybeFetchWatch();
@@ -2573,28 +2610,20 @@
         </div>
       </div>
       ${saxoCard()}`;
-    if (!iv) {
-      return `<div class="page-head"><h1>Beleggingen</h1></div>
-        ${metalsCard()}
-        ${watchCard()}
-        <p class="muted">Koppel je Degiro- of Saxo-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar je broker tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
-        ${connect}
-        <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`;
-    }
-    const s = Invest.summary(iv);
-    const perf = Invest.performance(iv);
-    const files = iv.files || [];
-    return `
-      <div class="page-head"><h1>Beleggingen</h1><span class="spacer"></span>
-        <button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>
-        <span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span></div>
+    const s = iv ? Invest.summary(iv) : null;
+    const perf = iv ? Invest.performance(iv) : null;
+    const files = iv ? iv.files || [] : [];
+    const blocks = {
+      kpis: () => !iv ? '' : `
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">stand ${fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
         <div class="card kpi"><div class="label">Netto ingelegd</div><div class="value">${s.hasDeposits ? money(s.netDeposits) : '—'}</div><div class="hint">${s.hasDeposits ? 'stortingen ' + money(s.deposits) + (s.withdrawals ? ' − opnames ' + money(s.withdrawals) : '') : 'laad het rekeningoverzicht op'}</div></div>
         <div class="card kpi"><div class="label">Winst / verlies</div><div class="value ${s.gainEur >= 0 ? 'pos' : 'negv'}">${s.gainEur != null ? money(s.gainEur) : '—'}</div><div class="hint">waarde − netto inleg</div></div>
         <div class="card kpi"><div class="label">Dividend (netto)</div><div class="value">${money(s.netDividends)}</div><div class="hint">kosten: ${money(s.fees)}</div></div>
       </div>
-      ${perf ? `<div class="grid kpis">
+`,
+      returns: () => !iv ? '' : !perf ? `<div class="notice info">Voor TWR en MWR heeft Helder je stortingen (Rekeningoverzicht) en minstens één portefeuillewaarde nodig.</div>` : `
+      <div class="grid kpis">
         <div class="card kpi" title="Time-weighted return">
           <div class="label">TWR — tijdgewogen</div><div class="value">${pct(perf.twrAnnual)} <span class="small muted">per jaar</span></div>
           <div class="hint">${pct(perf.twr)} in totaal sinds ${fmtDate(perf.start)}. Het rendement van je beleggingen zelf, los van wanneer en hoeveel je stortte — vergelijkbaar met een fonds of index.</div></div>
@@ -2604,10 +2633,14 @@
       </div>
       ${perf.missingYearEnds.length ? `<div class="notice">Voor een rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>, en er zijn geen transacties om ze uit te reconstrueren.</div>` : ''}
       ${perf.ignoredFlows.length ? `<div class="notice info">${perf.ignoredFlows.length} storting(en) na ${fmtDate(perf.end)} tellen nog niet mee, omdat er nog geen recentere waardering is.</div>` : ''}
+`,
+      chart: () => !perf ? '' : `
       <div class="card" style="margin-bottom:16px">
         <h2>Portefeuille door de jaren</h2>
         ${investChart(perf)}
       </div>
+`,
+      years: () => !perf ? '' : `
       <div class="card" style="margin-bottom:16px">
         <h2>Rendement per jaar</h2>
         <div class="table-wrap"><table>
@@ -2623,7 +2656,8 @@
             <td class="amount">${money(y.dividends)}</td></tr>`).join('')}</tbody></table></div>
         <p class="small muted"><strong>Resultaat</strong> = eindwaarde − beginwaarde − netto stortingen. <strong>TWR</strong> meet hoe goed je beleggingen het deden (vergelijk met een index).
           <strong>MWR</strong> is jouw eigen rendement: stortte je vlak voor een daling, dan is je MWR lager dan je TWR. Voor het lopende jaar: rendement tot nu, niet op jaarbasis.</p>
-      </div>` : `<div class="notice info">Voor TWR en MWR heeft Helder je stortingen (Rekeningoverzicht) en minstens één portefeuillewaarde nodig.</div>`}
+      </div>`,
+      positions: () => !iv ? '' : `
       <div class="card" style="margin-bottom:16px">
         <h2>Posities</h2>
         ${s.positions.length ? `<div class="table-wrap"><table>
@@ -2637,17 +2671,46 @@
             <td style="min-width:90px"><div class="track"><span class="fill" style="display:block;width:${(p.share * 100).toFixed(1)}%;background:var(--series-1)"></span></div><span class="small muted">${(p.share * 100).toFixed(1).replace('.', ',')}%</span></td>
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Geen posities.</p>'}
       </div>
-      ${soldCard(iv)}
-      ${watchCard()}
-      ${metalsCard()}
-      ${connect}
+`,
+      sold: () => iv ? soldCard(iv) : '',
+      watch: () => watchCard(),
+      metals: () => metalsCard(),
+      connect: () => iv ? `${connect}
       ${files.length ? `<div class="card" style="margin-top:16px"><h2>Opgeladen Degiro-bestanden</h2><div class="list">${files.slice().reverse().map(f => `<div class="list-row"><div class="grow">📄 ${esc(f.name)}<div class="small muted">${esc({ portfolio: 'Portefeuille', transactions: 'Transacties', account: 'Rekeningoverzicht' }[f.type] || f.type)}${f.date ? ' — stand op ' + fmtDate(f.date) : ''} · opgeladen ${esc(fmtDateTime(f.importedAt))}</div></div></div>`).join('')}</div></div>` : ''}
-      <p style="margin-top:16px">${iv.brokers ? Invest.brokers(iv).map(b => `<button class="btn small danger" data-action="invest-remove-broker" data-id="${esc(b.id)}">Gegevens van ${esc(b.name)} wissen</button> `).join('') : ''}<button class="btn small danger" data-action="degiro-clear">Alle beleggingsgegevens wissen</button></p>`;
+      <p style="margin-top:16px">${iv.brokers ? Invest.brokers(iv).map(b => `<button class="btn small danger" data-action="invest-remove-broker" data-id="${esc(b.id)}">Gegevens van ${esc(b.name)} wissen</button> `).join('') : ''}<button class="btn small danger" data-action="degiro-clear">Alle beleggingsgegevens wissen</button></p>` : `<p class="muted">Koppel je Degiro- of Saxo-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar je broker tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
+        ${connect}
+        <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`
+    };
+    const l = investLayout();
+    const edit = !!ui.investEdit;
+    const meta = id => INVEST_SECTIONS.find(x => x.id === id);
+    const hiddenList = l.order.filter(id => l.hidden.includes(id));
+    const body = l.order.map((id, i) => {
+      const m = meta(id);
+      const hidden = l.hidden.includes(id);
+      if (!edit) return hidden ? '' : blocks[id]();
+      const html = hidden ? '' : blocks[id]();
+      return `<section class="iv-sec ${hidden ? 'is-hidden' : ''}">
+        <div class="iv-bar">
+          <label class="switch" title="${hidden ? 'Tonen' : 'Verbergen'}"><input type="checkbox" data-invest-show="${id}" ${hidden ? '' : 'checked'}><span></span></label>
+          <span class="grow"><strong>${m.icon} ${esc(m.label)}</strong>${m.hint ? ` <span class="small muted">${esc(m.hint)}</span>` : ''}${!hidden && !html.trim() ? ' <span class="small muted">· nog geen gegevens</span>' : ''}</span>
+          <button class="btn small ghost" data-action="invest-move" data-id="${id}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Hoger" aria-label="Hoger">↑</button>
+          <button class="btn small ghost" data-action="invest-move" data-id="${id}" data-dir="1" ${i === l.order.length - 1 ? 'disabled' : ''} title="Lager" aria-label="Lager">↓</button>
+        </div>
+        ${hidden ? '' : `<div class="iv-preview">${html}</div>`}
+      </section>`;
+    }).join('');
+    return `
+      <div class="page-head"><h1>Beleggingen</h1><span class="spacer"></span>
+        ${iv ? `<button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>` : ''}
+        <button class="btn ${edit ? 'primary' : ''}" data-action="invest-edit">${edit ? '✓ Klaar' : '⚙ Weergave aanpassen'}</button>
+        ${iv ? `<span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span>` : ''}</div>
+      ${edit ? `<div class="iv-edit-help">Zet aan wat je wil zien en kies met ↑ ↓ de volgorde. Je keuze wordt bewaard (ook op je andere toestellen). <span class="spacer"></span>
+        <button class="btn small ghost" data-action="invest-reset">Standaard herstellen</button><button class="btn small primary" data-action="invest-edit">✓ Klaar</button></div>` : ''}
+      <div class="${edit ? 'iv-editing' : ''}">${body}</div>
+      ${!edit && hiddenList.length ? `<div class="iv-hidden-note small muted">Verborgen: ${hiddenList.map(id => `<button class="chip" data-action="invest-show" data-id="${id}" title="Terug tonen">+ ${meta(id).icon} ${esc(meta(id).label)}</button>`).join(' ')} <a href="#" data-action="invest-edit">Weergave aanpassen</a></div>` : ''}`;
   }
 
-  /** Grafiek: portefeuillewaarde (lijn) en totale inleg (trap), met elke bijstorting als punt. */
-  let chartData = null;
-  /** Verkochte (of deels verkochte) aandelen met gerealiseerde winst of verlies. */
   function soldCard(iv) {
     const r = Invest.realized(iv);
     if (!r.positions.length) {
@@ -2665,7 +2728,7 @@
         <span class="badge ${r.total >= 0 ? 'ok' : 'over'}">${r.total >= 0 ? '▲' : '▼'} gerealiseerd ${money(r.total)}</span></div>
       <p class="small muted">Wat je ooit kocht en (deels) verkocht, met het resultaat van die verkoop (opbrengst − aankoopprijs, kosten inbegrepen; bij aankopen in schijven met je gemiddelde aankoopprijs).
         En wat diezelfde stuks <strong>vandaag</strong> waard zouden zijn, tegenover wat je bij de verkoop kreeg.</p>
-      ${known.length ? `<div class="sold-today ${diffTotal >= 0 ? 'up' : 'down'}">Had je alles gehouden, dan was het vandaag <strong>${money(todayTotal)}</strong> waard — dat is <strong>${diffTotal >= 0 ? money(diffTotal) + ' meer' : money(-diffTotal) + ' minder'}</strong> dan de ${money(proceedsKnown)} die je kreeg${proceedsKnown ? ` (${pct(diffTotal / proceedsKnown)})` : ''}. ${diffTotal >= 0 ? 'Ze zijn sindsdien gestegen.' : 'Goed verkocht: ze zijn sindsdien gedaald.'}</div>`
+      ${known.length ? ''
         : `<p class="small muted">${server ? 'Nog geen koers van vandaag. <a href="#" data-action="fetch-prices">Koersen ophalen</a>' : 'De koers van vandaag kan Helder enkel ophalen als het op je eigen server draait.'}</p>`}
       <div class="table-wrap"><table>
         <thead><tr><th>Product</th><th>Periode</th><th class="right">Verkocht</th><th class="right">Aankoopprijs</th><th class="right">Opbrengst</th><th class="right">Winst / verlies</th><th class="right">Vandaag waard</th><th class="right">Sinds verkoop</th><th></th></tr></thead>
@@ -4567,6 +4630,10 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'invest-edit': () => { ui.investEdit = !ui.investEdit; render(); },
+    'invest-move': el => moveInvestSection(el.dataset.id, Number(el.dataset.dir)),
+    'invest-show': el => toggleInvestSection(el.dataset.id, true),
+    'invest-reset': () => setInvestLayout({ order: INVEST_SECTIONS.map(x => x.id), hidden: [] }, 'Standaardweergave hersteld'),
     'watch-new': () => openModal({ type: 'watch', isNew: true, edit: { id: C.uid('wl'), name: '', query: '', startDate: today } }),
     'watch-edit': el => { const w = (state.watchlist || []).find(x => x.id === el.dataset.id); if (w) openModal({ type: 'watch', edit: Object.assign({}, w) }); },
     'watch-save': saveWatch,
@@ -4999,6 +5066,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }
+    if (el.dataset.investShow) { toggleInvestSection(el.dataset.investShow, el.checked); return; }
     if (el.dataset.settle) { setSettle(el.dataset.settle, el.value); return; }
     if (el.id === 'tax-year' && modal && modal.type === 'taxYear') { modal.year = el.value; renderModal(); return; }
     if (el.dataset.bulkAction != null) {

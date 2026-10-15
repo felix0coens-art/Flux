@@ -268,6 +268,27 @@ test('verkochte aandelen tegenover vandaag, en favorieten met een eigen startkoe
   assert.ok(C.SYNC_COLLECTIONS.includes('watchlist'));
 });
 
+test('synchronisatie ziet ook wijzigingen binnenin een object (bv. instellingen, bonnetjes)', () => {
+  const s = Store.defaultState();
+  s.settings.investLayout = { order: ['a', 'b'], hidden: ['a'] };
+  s.transactions.push(tx('t1', '2026-10-01', -100, 'X', { attachments: [{ id: 'f1', name: 'bon.jpg', type: 'image/jpeg', size: 10 }] }));
+  const snap = C.snapshot(s);
+  s.settings = Object.assign({}, s.settings, { investLayout: { order: ['a', 'b'], hidden: [] } });
+  s.transactions[0].attachments[0].name = 'kasticket.jpg';
+  const changed = C.stampChanges(snap, s);
+  assert.ok(changed.includes('settings:'), 'geneste instelling gewijzigd');
+  assert.ok(changed.includes('transactions:t1'), 'naam van een bonnetje gewijzigd');
+  // Zelfde inhoud in een andere volgorde = geen wijziging
+  const snap2 = C.snapshot(s);
+  s.settings = Object.assign({}, s.settings, { investLayout: { hidden: [], order: ['a', 'b'] } });
+  assert.deepEqual(C.stampChanges(snap2, s), []);
+});
+
+test('js/app.js is geldig JavaScript', () => {
+  const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+});
+
 test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const { build } = require('../scripts/build-app.js');
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
