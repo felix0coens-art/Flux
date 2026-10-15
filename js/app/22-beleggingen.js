@@ -29,16 +29,27 @@
     { id: 'connect', icon: '🔗', label: 'Gegevens ophalen', hint: 'Degiro, Saxo, exportbestanden' }
   ];
 
+  /** Breedte per blok: volle breedte, of enkel de linker- of rechterhelft (naast elkaar op een groot scherm). */
+  const INVEST_WIDTH_DEFAULT = { watch: 'left', metals: 'right' };
+  const WIDTHS = [['full', '▭', 'Volle breedte'], ['left', '◧', 'Links'], ['right', '◨', 'Rechts']];
+
   function investLayout() {
     const l = (state.settings && state.settings.investLayout) || {};
     const ids = INVEST_SECTIONS.map(x => x.id);
     const order = (l.order || []).filter(id => ids.includes(id));
     for (const id of ids) if (!order.includes(id)) order.splice(Math.min(ids.indexOf(id), order.length), 0, id);
-    return { order, hidden: (l.hidden || []).filter(id => ids.includes(id)) };
+    const width = Object.assign({}, INVEST_WIDTH_DEFAULT, l.width || {});
+    for (const k of Object.keys(width)) if (!ids.includes(k) || !['full', 'left', 'right'].includes(width[k])) delete width[k];
+    return { order, hidden: (l.hidden || []).filter(id => ids.includes(id)), width };
   }
   function setInvestLayout(l, msg) {
-    state.settings = Object.assign({}, state.settings, { investLayout: { order: l.order, hidden: l.hidden } });
+    state.settings = Object.assign({}, state.settings, { investLayout: { order: l.order, hidden: l.hidden, width: l.width || {} } });
     commit(msg);
+  }
+  function setInvestWidth(id, w) {
+    const l = investLayout();
+    l.width[id] = w;
+    setInvestLayout(l);
   }
   function toggleInvestSection(id, show) {
     const l = investLayout();
@@ -156,12 +167,14 @@
     const body = l.order.map((id, i) => {
       const m = meta(id);
       const hidden = l.hidden.includes(id);
-      if (!edit) return hidden ? '' : blocks[id]();
+      const w = l.width[id] || 'full';
+      if (!edit) { const html = hidden ? '' : blocks[id](); return html.trim() ? `<div class="iv-cell w-${w}">${html}</div>` : ''; }
       const html = hidden ? '' : blocks[id]();
-      return `<section class="iv-sec ${hidden ? 'is-hidden' : ''}">
+      return `<section class="iv-sec iv-cell w-${hidden ? 'full' : w} ${hidden ? 'is-hidden' : ''}">
         <div class="iv-bar">
           <label class="switch" title="${hidden ? 'Tonen' : 'Verbergen'}"><input type="checkbox" data-invest-show="${id}" ${hidden ? '' : 'checked'}><span></span></label>
           <span class="grow"><strong>${m.icon} ${esc(m.label)}</strong>${m.hint ? ` <span class="small muted">${esc(m.hint)}</span>` : ''}${!hidden && !html.trim() ? ' <span class="small muted">· nog geen gegevens</span>' : ''}</span>
+          ${hidden ? '' : `<div class="seg iv-width" role="group" aria-label="Breedte">${WIDTHS.map(([k, icon, label]) => `<button class="${w === k ? 'active' : ''}" data-action="invest-width" data-id="${id}" data-w="${k}" title="${label}" aria-pressed="${w === k}">${icon}<span class="iv-wlabel"> ${label}</span></button>`).join('')}</div>`}
           <button class="btn small ghost" data-action="invest-move" data-id="${id}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Hoger" aria-label="Hoger">↑</button>
           <button class="btn small ghost" data-action="invest-move" data-id="${id}" data-dir="1" ${i === l.order.length - 1 ? 'disabled' : ''} title="Lager" aria-label="Lager">↓</button>
         </div>
@@ -173,9 +186,9 @@
         ${iv ? `<button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>` : ''}
         <button class="btn ${edit ? 'primary' : ''}" data-action="invest-edit">${edit ? '✓ Klaar' : '⚙ Weergave aanpassen'}</button>
         ${iv ? `<span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span>` : ''}</div>
-      ${edit ? `<div class="iv-edit-help">Zet aan wat je wil zien en kies met ↑ ↓ de volgorde. Je keuze wordt bewaard (ook op je andere toestellen). <span class="spacer"></span>
+      ${edit ? `<div class="iv-edit-help">Zet aan wat je wil zien, kies met ↑ ↓ de volgorde en met ▭ ◧ ◨ of een blok de volle breedte krijgt of enkel links of rechts staat (twee halve blokken komen naast elkaar). Je keuze wordt bewaard (ook op je andere toestellen). <span class="spacer"></span>
         <button class="btn small ghost" data-action="invest-reset">Standaard herstellen</button><button class="btn small primary" data-action="invest-edit">✓ Klaar</button></div>` : ''}
-      <div class="${edit ? 'iv-editing' : ''}">${body}</div>
+      <div class="iv-grid ${edit ? 'iv-editing' : ''}">${body}</div>
       ${!edit && hiddenList.length ? `<div class="iv-hidden-note small muted">Verborgen: ${hiddenList.map(id => `<button class="chip" data-action="invest-show" data-id="${id}" title="Terug tonen">+ ${meta(id).icon} ${esc(meta(id).label)}</button>`).join(' ')} <a href="#" data-action="invest-edit">Weergave aanpassen</a></div>` : ''}`;
   }
 
