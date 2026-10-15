@@ -89,6 +89,7 @@ function bank_status(string $user): array {
         'shared' => !empty($c['shared']),
         'appId' => $c['appId'] ?? null,
         'appName' => $c['appName'] ?? null,
+        'environment' => $c['environment'] ?? null,
         'redirectUrl' => redirect_url(),
         'connections' => bank_public_connections(bank_data($user)['connections']),
     ];
@@ -109,6 +110,7 @@ function bank_save_config(callable $fetch, string $user, array $b): array {
     $c = ['appId' => $appId, 'privateKey' => $pem];
     $app = eb_call($fetch, $c, 'GET', '/application'); // controleert meteen of app-ID en sleutel kloppen
     $c['appName'] = (string) ($app['name'] ?? '');
+    $c['environment'] = !empty($app['environment']) ? strtoupper((string) $app['environment']) : null;
     $c['savedAt'] = gmdate('c');
     if ($owner) write_json('enablebanking.json', $c); else set_user_key($user, 'eb', $c);
     return ['configured' => true, 'appId' => $appId, 'appName' => $c['appName'], 'environment' => $app['environment'] ?? null, 'active' => $app['active'] ?? null];
@@ -122,7 +124,8 @@ function require_eb(string $user): array {
 
 function bank_aspsps(callable $fetch, string $user, string $country): array {
     $country = strtoupper(preg_replace('/[^A-Za-z]/', '', $country) ?: 'BE');
-    $r = eb_call($fetch, require_eb($user), 'GET', '/aspsps?country=' . rawurlencode($country));
+    $c = require_eb($user);
+    $r = eb_call($fetch, $c, 'GET', '/aspsps?country=' . rawurlencode($country));
     $out = [];
     foreach (($r['aspsps'] ?? []) as $a) {
         if (isset($a['psu_types']) && is_array($a['psu_types']) && !in_array('personal', $a['psu_types'], true)) continue;
@@ -130,7 +133,10 @@ function bank_aspsps(callable $fetch, string $user, string $country): array {
             'maxDays' => isset($a['maximum_consent_validity']) ? (int) floor($a['maximum_consent_validity'] / 86400) : null];
     }
     usort($out, fn($x, $y) => strcasecmp($x['name'], $y['name']));
-    return ['aspsps' => $out];
+    // Testapp (sandbox)? Dan kan je enkel nepbanken koppelen: zeg dat duidelijk.
+    $env = $c['environment'] ?? null;
+    if (!$env) { try { $app = eb_call($fetch, $c, 'GET', '/application'); $env = !empty($app['environment']) ? strtoupper((string) $app['environment']) : null; } catch (Throwable $e) { $env = null; } }
+    return ['aspsps' => $out, 'environment' => $env];
 }
 
 function bank_connect(callable $fetch, string $user, array $b): array {

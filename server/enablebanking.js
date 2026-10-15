@@ -78,7 +78,7 @@ function create(store) {
 
   async function status(req, user) {
     const c = await config(user);
-    return { configured: !!c, shared: !!(c && c.shared), appId: c ? c.appId : null, appName: c ? c.appName || null : null, redirectUrl: redirectUrl(req), connections: publicConnections((await bankData(user)).connections) };
+    return { configured: !!c, shared: !!(c && c.shared), appId: c ? c.appId : null, appName: c ? c.appName || null : null, environment: c ? c.environment || null : null, redirectUrl: redirectUrl(req), connections: publicConnections((await bankData(user)).connections) };
   }
 
   async function saveConfig(fetchFn, user, b) {
@@ -97,6 +97,7 @@ function create(store) {
     const c = { appId, privateKey: pem };
     const app = await call(fetchFn, c, 'GET', '/application');
     c.appName = String(app.name || '');
+    c.environment = app.environment ? String(app.environment).toUpperCase() : null;
     c.savedAt = new Date().toISOString();
     if (owner) await store.writeJson('enablebanking.json', c); else await store.setUserKey(user, 'eb', c);
     return { configured: true, appId, appName: c.appName, environment: app.environment == null ? null : app.environment, active: app.active == null ? null : app.active };
@@ -104,12 +105,16 @@ function create(store) {
 
   async function aspsps(fetchFn, user, country) {
     country = (String(country || 'BE').replace(/[^A-Za-z]/g, '') || 'BE').toUpperCase();
-    const r = await call(fetchFn, await requireEb(user), 'GET', '/aspsps?country=' + encodeURIComponent(country));
+    const c = await requireEb(user);
+    const r = await call(fetchFn, c, 'GET', '/aspsps?country=' + encodeURIComponent(country));
     const out = (r.aspsps || [])
       .filter(a => !Array.isArray(a.psu_types) || a.psu_types.includes('personal'))
       .map(a => ({ name: String(a.name), country: String(a.country || country), logo: a.logo || null, maxDays: a.maximum_consent_validity != null ? Math.floor(a.maximum_consent_validity / 86400) : null }));
     out.sort((x, y) => x.name.localeCompare(y.name, undefined, { sensitivity: 'base' }));
-    return { aspsps: out };
+    // Testapp (sandbox)? Dan kan je enkel nepbanken koppelen: zeg dat duidelijk.
+    let environment = c.environment || null;
+    if (!environment) { try { const app = await call(fetchFn, c, 'GET', '/application'); environment = app.environment ? String(app.environment).toUpperCase() : null; } catch (e) { environment = null; } }
+    return { aspsps: out, environment };
   }
 
   async function connect(fetchFn, req, user, b) {

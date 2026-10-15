@@ -133,6 +133,7 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       const asp = await call('GET', '/api/bank/aspsps?country=BE', null, cookie);
       assert.deepEqual(asp.json.aspsps.map(a => a.name), ['Argenta', 'Belfius', 'KBC'], 'enkel banken voor particulieren, alfabetisch');
       assert.equal(asp.json.aspsps.find(a => a.name === 'KBC').maxDays, 180);
+      assert.equal(asp.json.environment, 'PRODUCTION', 'omgeving van de app (testapp = SANDBOX)');
 
       // Koppelen: Helder geeft de link naar de bank
       const con = await call('POST', '/api/bank/connect', { aspsp: 'KBC', country: 'BE', maxDays: 180 }, cookie);

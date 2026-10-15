@@ -2271,7 +2271,7 @@
     const st = bankLink.status || {};
     return modalShell('Bankkoppeling instellen', `
       ${st.shared ? `<div class="notice info small">✓ Je gebruikt de bankapp van deze Helder (gedeeld door de beheerder). Je hoeft niets in te stellen; wil je toch je eigen app gebruiken, vul ze dan hieronder in.</div>`
-        : st.configured ? `<div class="notice info small">✓ Ingesteld met app <strong>${esc(st.appName || st.appId)}</strong> (${esc(st.appId)}).</div>` : ''}
+        : st.configured ? `<div class="notice info small">✓ Ingesteld met app <strong>${esc(st.appName || st.appId)}</strong> (${esc(st.appId)})${st.environment ? ' · ' + (st.environment === 'SANDBOX' ? '<span class="warn-text">testapp (Sandbox): enkel nepbanken — maak een Production-app voor je echte bank</span>' : esc(st.environment.toLowerCase())) : ''}.</div>` : ''}
       <p>Helder gebruikt <strong>Enable Banking</strong> om je rekeningen bij KBC, CBC, Argenta en andere banken te lezen. Je stelt dit één keer in:</p>
       <ol class="steps">
         <li>Maak een account op <a href="https://enablebanking.com" target="_blank" rel="noopener">enablebanking.com</a> en open het <strong>Control Panel</strong>.</li>
@@ -2314,7 +2314,7 @@
       m.pem = null;
       await loadBankLink();
       closeModal();
-      toast('Bankkoppeling ingesteld' + (r.appName ? ' (' + r.appName + ')' : '') + '. Koppel nu je bank.');
+      toast(r.environment === 'SANDBOX' ? '⚠️ Dit is een testapp (Sandbox): enkel nepbanken. Maak in Enable Banking een Production-app voor je echte bank.' : 'Bankkoppeling ingesteld' + (r.appName ? ' (' + r.appName + ')' : '') + '. Koppel nu je bank.');
       render();
     } catch (e) {
       if (modal !== m) return;
@@ -2333,6 +2333,14 @@
       <p class="small muted">Je gaat naar je eigen bank om aan te melden (itsme, kaartlezer of bank-app) en geeft Helder leestoegang tot je rekeningen. Daarna kom je vanzelf terug.</p>
       <div class="filters"><select id="eb-country">${[['BE', 'België'], ['NL', 'Nederland'], ['LU', 'Luxemburg'], ['FR', 'Frankrijk'], ['DE', 'Duitsland']].map(([v, l]) => `<option value="${v}" ${m.country === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <input type="search" id="eb-search" placeholder="Zoek je bank…" value="${esc(m.search || '')}"></div>
+      ${m.environment === 'SANDBOX' ? `<div class="notice">
+          <strong>⚠️ Je Enable Banking-app is een testapp (Sandbox).</strong> Daarmee kan je enkel <em>nepbanken</em> koppelen (zoals “Mock ASPSP”), geen echte bank zoals KBC of Belfius.
+          <ol class="steps small">
+            <li>Ga naar <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener">enablebanking.com → Control Panel → API applications</a> en kies bij <em>Add a new application</em> voor <strong>Production</strong>.</li>
+            <li>Vul dezelfde gegevens in, met als redirect URL <code>${esc((bankLink.status && bankLink.status.redirectUrl) || location.origin + '/api/bank/callback')}</code>, en bewaar het nieuwe <code>.pem</code>-bestand.</li>
+            <li>Klik bij die nieuwe app op <strong>Activate by linking accounts</strong> en duid je eigen rekeningen aan.</li>
+            <li>In Helder: <strong>Bank → Instellingen</strong> → laad het nieuwe <code>.pem</code>-bestand op (het app-ID wordt vanzelf ingevuld).</li>
+          </ol></div>` : ''}
       ${m.error && m.errorKind === 'inactive' ? `<div class="notice">
           <strong>Je Enable Banking-app moet nog geactiveerd worden.</strong>
           <ol class="steps small">
@@ -2356,7 +2364,7 @@
     const m = modal;
     m.aspsps = null; m.error = '';
     renderModal();
-    try { const r = await Sync.bank.aspsps(m.country); if (modal === m) { m.aspsps = r.aspsps; renderModal(); } }
+    try { const r = await Sync.bank.aspsps(m.country); if (modal === m) { m.aspsps = r.aspsps; m.environment = r.environment || null; renderModal(); } }
     catch (e) { if (modal === m) { m.aspsps = []; m.error = e.message; m.errorKind = e.code || ''; renderModal(); } }
   }
 

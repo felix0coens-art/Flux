@@ -42,7 +42,7 @@ function start(opts) {
       calls.push({ method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams), headers: req.headers, body: body ? JSON.parse(body) : null, jwtOk: ok });
       if (!ok) return json(401, { error: 'UNAUTHORIZED', message: 'Invalid JWT' });
 
-      if (url.pathname === '/application' && req.method === 'GET') return json(200, { name: 'Helder test', environment: 'PRODUCTION', active: true, redirect_urls: [] });
+      if (url.pathname === '/application' && req.method === 'GET') return json(200, { name: 'Helder test', environment: opts.environment || 'PRODUCTION', active: true, redirect_urls: [] });
       if (url.pathname === '/aspsps' && req.method === 'GET') {
         return json(200, { aspsps: [
           { name: 'KBC', country: 'BE', psu_types: ['personal', 'business'], maximum_consent_validity: 180 * 86400 },
