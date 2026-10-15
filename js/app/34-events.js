@@ -91,6 +91,18 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'toggle-theme': () => {
+      const dark = !isDark();
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      try { localStorage.setItem('helder-theme', dark ? 'dark' : 'light'); } catch (e) { /* enkel voor deze keer */ }
+      renderTopButtons();
+    },
+    'toggle-privacy': () => {
+      const on = document.documentElement.classList.toggle('privacy');
+      try { localStorage.setItem('helder-privacy', on ? '1' : '0'); } catch (e) { /* enkel voor deze keer */ }
+      renderTopButtons();
+      toast(on ? '👁 Bedragen verborgen voor meekijkers' : 'Bedragen weer zichtbaar');
+    },
     'invest-edit': () => { ui.investEdit = !ui.investEdit; render(); },
     'invest-move': el => moveInvestSection(el.dataset.id, Number(el.dataset.dir)),
     'invest-show': el => toggleInvestSection(el.dataset.id, true),

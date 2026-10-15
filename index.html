@@ -15,6 +15,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/theme.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -31,6 +32,8 @@
     <span class="spacer"></span>
     <button id="topbar-search" class="btn small ghost" data-action="search-open" aria-label="Zoeken" title="Zoeken in al je transacties (/)">🔍<span class="search-label"> Zoeken</span></button>
     <span id="sync-badge" class="badge sync muted" role="status"></span>
+    <button id="topbar-privacy" class="btn small ghost icon-btn" data-action="toggle-privacy" aria-pressed="false" aria-label="Bedragen verbergen" title="Bedragen verbergen voor meekijkers">👁</button>
+    <button id="topbar-theme" class="btn small ghost icon-btn" data-action="toggle-theme" aria-label="Donkere modus" title="Donker of licht">🌙</button>
     <button id="topbar-logout" class="btn small ghost" data-action="logout" hidden>Afmelden</button>
   </header>
   <main id="main"></main>

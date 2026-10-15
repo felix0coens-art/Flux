@@ -45,6 +45,8 @@
   const $ = (sel, el) => (el || document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
   const money = C.formatMoney;
+  /** Bedrag in een zin, zodat het mee vervaagt als je 👁 'bedragen verbergen' aanzet. Enkel in HTML gebruiken. */
+  const moneyHtml = v => '<span class="money">' + money(v) + '</span>';
   const pct = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1).replace('.', ',') + '%';
 
   function esc(s) {
@@ -279,8 +281,27 @@
 
   // ---------- Rendering ----------
 
+  /** Volgt de app het donkere thema (zelf gekozen, of via het toestel)? */
+  function isDark() {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t ? t === 'dark' : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function renderTopButtons() {
+    const th = $('#topbar-theme');
+    if (th) { const d = isDark(); th.textContent = d ? '☀️' : '🌙'; th.title = d ? 'Lichte modus' : 'Donkere modus'; th.setAttribute('aria-label', th.title); }
+    const pv = $('#topbar-privacy');
+    if (pv) {
+      const on = document.documentElement.classList.contains('privacy');
+      pv.textContent = on ? '🙈' : '👁';
+      pv.title = on ? 'Bedragen weer tonen' : 'Bedragen verbergen voor meekijkers';
+      pv.setAttribute('aria-label', pv.title); pv.setAttribute('aria-pressed', String(on));
+      pv.hidden = !!ui.auth;
+    }
+  }
+
   function render() {
     renderSyncBadge();
+    renderTopButtons();
     $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
     const more = $('#tabbar [data-tab-more]');
     if (more) more.classList.toggle('active', ['income', 'invest', 'settings'].includes(ui.view));
@@ -377,8 +398,8 @@
     const todoItems = [
       todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
       cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
-      ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${money(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
-      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${money(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
+      ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${moneyHtml(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
+      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
       actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
       ...budgets.map(b => `<div class="todo-row"><span class="todo-icon">${b.status === 'over' ? '⚠️' : '⏳'}</span><span class="grow"><strong>Budget ${esc(catLabel(b.budget.categoryId))} ${b.status === 'over' ? 'overschreden' : 'bijna op'}</strong><span class="small muted">${Math.round(b.pct * 100)}% · ${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</span></span></div>`),
       ...upcoming.slice(0, 4).map(r => `<div class="todo-row"><span class="todo-icon">🔁</span><span class="grow"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</span></span><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`)
@@ -426,14 +447,14 @@
     const expected = goal ? Math.round(goal * dayOfYear / yearDays) : 0;
     const pct = goal ? Math.max(0, Math.min(1, sv.total / goal)) : 0;
     const editing = ui.editGoal || !goal;
-    const parts = [sv.invested ? `${money(sv.invested)} naar je beleggingsrekening` : '', sv.toSavings ? `${money(sv.toSavings)} naar je spaarrekening${state.accounts.filter(a => a.type === 'spaar').length > 1 ? 'en' : ''}` : ''].filter(Boolean);
+    const parts = [sv.invested ? `${moneyHtml(sv.invested)} naar je beleggingsrekening` : '', sv.toSavings ? `${moneyHtml(sv.toSavings)} naar je spaarrekening${state.accounts.filter(a => a.type === 'spaar').length > 1 ? 'en' : ''}` : ''].filter(Boolean);
     const pace = !goal ? '' : sv.total >= goal ? '🎉 Doel gehaald!' : sv.total >= expected ? `✓ Je ligt op schema (verwacht tegen vandaag: ${money(expected)}).` : `Je ligt ${money(expected - sv.total)} achter op schema.`;
     return `<div class="card savings">
       <div class="sv-head"><h2>💰 Gespaard in ${y}</h2><span class="spacer"></span>${goal && !ui.editGoal ? '<button class="btn small ghost" data-action="goal-edit">Doel wijzigen</button>' : ''}</div>
       <div class="sv-main">
         <div><div class="sv-amount ${sv.total >= 0 ? '' : 'negv'}">${money(sv.total)}</div>
-          <div class="small muted">${parts.length ? parts.join(' + ') : 'Nog niets naar je beleggings- of spaarrekening dit jaar.'}${prev.total ? ` · vorig jaar rond deze tijd: ${money(prev.total)}` : ''}</div></div>
-        ${goal ? `<div class="sv-goal"><div class="small muted">Doel: <strong>${money(goal)}</strong> per jaar · ${Math.round(pct * 100)}%</div>
+          <div class="small muted">${parts.length ? parts.join(' + ') : 'Nog niets naar je beleggings- of spaarrekening dit jaar.'}${prev.total ? ` · vorig jaar rond deze tijd: ${moneyHtml(prev.total)}` : ''}</div></div>
+        ${goal ? `<div class="sv-goal"><div class="small muted">Doel: <strong>${moneyHtml(goal)}</strong> per jaar · ${Math.round(pct * 100)}%</div>
           <div class="sv-track"><span class="sv-fill" style="width:${(pct * 100).toFixed(1)}%"></span><span class="sv-pace" style="left:${(Math.min(1, dayOfYear / yearDays) * 100).toFixed(1)}%" title="Waar je vandaag zou moeten staan"></span></div>
           <div class="small">${pace}${sv.total < goal ? ` Nog ${money(goal - sv.total)} te gaan.` : ''}</div></div>` : ''}
       </div>
@@ -4644,6 +4665,18 @@
       if (op === 'disable' && !confirm(`${u.displayName} blokkeren? Die wordt meteen afgemeld en kan niet meer aanmelden tot je deblokkeert.`)) return;
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
+    },
+    'toggle-theme': () => {
+      const dark = !isDark();
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      try { localStorage.setItem('helder-theme', dark ? 'dark' : 'light'); } catch (e) { /* enkel voor deze keer */ }
+      renderTopButtons();
+    },
+    'toggle-privacy': () => {
+      const on = document.documentElement.classList.toggle('privacy');
+      try { localStorage.setItem('helder-privacy', on ? '1' : '0'); } catch (e) { /* enkel voor deze keer */ }
+      renderTopButtons();
+      toast(on ? '👁 Bedragen verborgen voor meekijkers' : 'Bedragen weer zichtbaar');
     },
     'invest-edit': () => { ui.investEdit = !ui.investEdit; render(); },
     'invest-move': el => moveInvestSection(el.dataset.id, Number(el.dataset.dir)),

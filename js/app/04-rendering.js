@@ -1,7 +1,26 @@
   // ---------- Rendering ----------
 
+  /** Volgt de app het donkere thema (zelf gekozen, of via het toestel)? */
+  function isDark() {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t ? t === 'dark' : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function renderTopButtons() {
+    const th = $('#topbar-theme');
+    if (th) { const d = isDark(); th.textContent = d ? '☀️' : '🌙'; th.title = d ? 'Lichte modus' : 'Donkere modus'; th.setAttribute('aria-label', th.title); }
+    const pv = $('#topbar-privacy');
+    if (pv) {
+      const on = document.documentElement.classList.contains('privacy');
+      pv.textContent = on ? '🙈' : '👁';
+      pv.title = on ? 'Bedragen weer tonen' : 'Bedragen verbergen voor meekijkers';
+      pv.setAttribute('aria-label', pv.title); pv.setAttribute('aria-pressed', String(on));
+      pv.hidden = !!ui.auth;
+    }
+  }
+
   function render() {
     renderSyncBadge();
+    renderTopButtons();
     $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
     const more = $('#tabbar [data-tab-more]');
     if (more) more.classList.toggle('active', ['income', 'invest', 'settings'].includes(ui.view));

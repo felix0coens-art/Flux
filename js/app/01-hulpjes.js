@@ -3,6 +3,8 @@
   const $ = (sel, el) => (el || document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
   const money = C.formatMoney;
+  /** Bedrag in een zin, zodat het mee vervaagt als je 👁 'bedragen verbergen' aanzet. Enkel in HTML gebruiken. */
+  const moneyHtml = v => '<span class="money">' + money(v) + '</span>';
   const pct = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1).replace('.', ',') + '%';
 
   function esc(s) {
