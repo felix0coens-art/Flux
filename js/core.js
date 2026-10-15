@@ -1283,25 +1283,53 @@
    * Munten en baren met hun gewicht en zuiverheid. Bekende munten vullen gewicht en zuiverheid in;
    * 'fine' = gram fijn metaal per stuk.
    */
-  const METAL_PRESETS = [
-    { id: 'krugerrand', name: 'Krugerrand 1 oz', metal: 'gold', weight: 33.93, purity: 916.7 },
-    { id: 'krugerrand-eq', name: 'Krugerrand-equivalent (schatting)', metal: 'gold', weight: 33.93, purity: 916.7, estimated: true },
-    { id: 'maple', name: 'Maple Leaf 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
-    { id: 'philharmoniker', name: 'Wiener Philharmoniker 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
-    { id: 'britannia', name: 'Britannia 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
-    { id: 'eagle', name: 'American Eagle 1 oz', metal: 'gold', weight: 33.93, purity: 916.7 },
-    { id: 'napoleon', name: '20 frank (Napoleon / Leopold)', metal: 'gold', weight: 6.45, purity: 900 },
-    { id: 'vreneli', name: 'Vreneli 20 Zwitserse frank', metal: 'gold', weight: 6.45, purity: 900 },
-    { id: 'sovereign', name: 'Sovereign', metal: 'gold', weight: 7.99, purity: 916.7 },
-    { id: 'ducaat4', name: '4 dukaten (Oostenrijk)', metal: 'gold', weight: 13.96, purity: 986 },
-    { id: 'ducaat1', name: '1 dukaat (Oostenrijk / Nederland)', metal: 'gold', weight: 3.49, purity: 986 },
-    { id: 'bar1', name: 'Goudbaar 1 g', metal: 'gold', weight: 1, purity: 999.9 },
-    { id: 'bar10', name: 'Goudbaar 10 g', metal: 'gold', weight: 10, purity: 999.9 },
-    { id: 'bar100', name: 'Goudbaar 100 g', metal: 'gold', weight: 100, purity: 999.9 },
-    { id: 'silver-maple', name: 'Zilveren Maple Leaf 1 oz', metal: 'silver', weight: 31.10, purity: 999.9 },
-    { id: 'silver-phil', name: 'Zilveren Philharmoniker 1 oz', metal: 'silver', weight: 31.10, purity: 999 },
-    { id: 'silver-bar1k', name: 'Zilverbaar 1 kg', metal: 'silver', weight: 1000, purity: 999 }
-  ];
+  const OZ = 31.1035;
+  const METAL_PRESETS = [];
+  const preset = (group, metal, list) => list.forEach(([id, name, weight, purity, extra]) => METAL_PRESETS.push(Object.assign({ id, name, group, metal, weight, purity }, extra || {})));
+  preset('Beleggingsmunten goud', 'gold', [
+    ['krugerrand', 'Krugerrand 1 oz', 33.93, 916.7], ['krugerrand-eq', 'Krugerrand-equivalent (schatting)', 33.93, 916.7, { estimated: true }],
+    ['krugerrand-12', 'Krugerrand 1/2 oz', 16.97, 916.7], ['krugerrand-14', 'Krugerrand 1/4 oz', 8.48, 916.7], ['krugerrand-110', 'Krugerrand 1/10 oz', 3.39, 916.7],
+    ['maple', 'Maple Leaf 1 oz', OZ, 999.9], ['maple-12', 'Maple Leaf 1/2 oz', OZ / 2, 999.9], ['maple-14', 'Maple Leaf 1/4 oz', OZ / 4, 999.9], ['maple-110', 'Maple Leaf 1/10 oz', OZ / 10, 999.9],
+    ['philharmoniker', 'Wiener Philharmoniker 1 oz', OZ, 999.9], ['philharmoniker-12', 'Wiener Philharmoniker 1/2 oz', OZ / 2, 999.9], ['philharmoniker-14', 'Wiener Philharmoniker 1/4 oz', OZ / 4, 999.9], ['philharmoniker-110', 'Wiener Philharmoniker 1/10 oz', OZ / 10, 999.9],
+    ['britannia', 'Britannia 1 oz', OZ, 999.9], ['britannia-14', 'Britannia 1/4 oz', OZ / 4, 999.9],
+    ['eagle', 'American Eagle 1 oz', 33.93, 916.7], ['eagle-110', 'American Eagle 1/10 oz', 3.39, 916.7], ['buffalo', 'American Buffalo 1 oz', OZ, 999.9],
+    ['kangaroo', 'Kangaroo / Nugget 1 oz', OZ, 999.9], ['panda30', 'Panda 30 g', 30, 999], ['libertad', 'Libertad 1 oz', OZ, 999], ['lunar', 'Lunar (Perth Mint) 1 oz', OZ, 999.9]
+  ]);
+  preset('Historische goudmunten', 'gold', [
+    ['fr5', '5 frank (Napoleon III / Leopold II)', 1.613, 900], ['fr10', '10 frank (halve Napoleon)', 3.226, 900],
+    ['napoleon', '20 frank (Napoleon / Leopold / Albert / Marianne)', 6.452, 900], ['fr40', '40 frank (dubbele Napoleon)', 12.903, 900],
+    ['fr50', '50 frank (Napoleon III)', 16.129, 900], ['fr100', '100 frank (Napoleon III / Genius)', 32.258, 900],
+    ['vreneli', 'Vreneli 20 Zwitserse frank', 6.452, 900], ['vreneli10', 'Vreneli 10 Zwitserse frank', 3.226, 900],
+    ['lire20', '20 lire (Italië)', 6.452, 900], ['ptas20', '20 pesetas (Spanje)', 6.452, 900], ['drachme20', '20 drachmen (Griekenland)', 6.452, 900],
+    ['sovereign', 'Sovereign', 7.988, 916.7], ['halfsovereign', 'Halve Sovereign', 3.994, 916.7],
+    ['gulden10', '10 gulden (Nederland, Tientje)', 6.729, 900], ['gulden5', '5 gulden (Nederland)', 3.365, 900],
+    ['dukaat', '1 dukaat (Nederland / Oostenrijk)', 3.494, 983], ['ducaat4', '4 dukaten (Oostenrijk)', 13.964, 986],
+    ['mark20', '20 Mark (Duitse keizerrijk)', 7.965, 900], ['mark10', '10 Mark (Duitse keizerrijk)', 3.982, 900],
+    ['kronen100', '100 kronen (Oostenrijk)', 33.875, 900], ['kronen20', '20 kronen (Oostenrijk)', 6.775, 900], ['kronen10', '10 kronen (Oostenrijk)', 3.388, 900],
+    ['florin8', '8 florijn / 20 frank (Oostenrijk)', 6.452, 900], ['florin4', '4 florijn / 10 frank (Oostenrijk)', 3.226, 900],
+    ['roebel10', '10 roebel (Rusland, Nicolaas II)', 8.603, 900], ['roebel5', '5 roebel (Rusland, Nicolaas II)', 4.301, 900],
+    ['pesos50', '50 pesos (Mexico, Centenario)', 41.667, 900], ['pesos20', '20 pesos (Mexico)', 16.667, 900],
+    ['eagle-hist20', '20 dollar Double Eagle (VS, historisch)', 33.436, 900], ['eagle-hist10', '10 dollar Eagle (VS, historisch)', 16.718, 900]
+  ]);
+  preset('Goudbaren', 'gold', [
+    ['bar1', 'Goudbaar 1 g', 1, 999.9], ['bar2', 'Goudbaar 2,5 g', 2.5, 999.9], ['bar5', 'Goudbaar 5 g', 5, 999.9], ['bar10', 'Goudbaar 10 g', 10, 999.9],
+    ['bar20', 'Goudbaar 20 g', 20, 999.9], ['baroz', 'Goudbaar 1 oz', OZ, 999.9], ['bar50', 'Goudbaar 50 g', 50, 999.9], ['bar100', 'Goudbaar 100 g', 100, 999.9],
+    ['bar250', 'Goudbaar 250 g', 250, 999.9], ['bar500', 'Goudbaar 500 g', 500, 999.9], ['bar1k', 'Goudbaar 1 kg', 1000, 999.9]
+  ]);
+  preset('Zilver', 'silver', [
+    ['silver-maple', 'Zilveren Maple Leaf 1 oz', OZ, 999.9], ['silver-phil', 'Zilveren Philharmoniker 1 oz', OZ, 999], ['silver-krugerrand', 'Zilveren Krugerrand 1 oz', OZ, 999],
+    ['silver-britannia', 'Zilveren Britannia 1 oz', OZ, 999], ['silver-eagle', 'Zilveren American Eagle 1 oz', OZ, 999], ['silver-kangaroo', 'Zilveren Kangaroo 1 oz', OZ, 999.9],
+    ['silver-fr5', '5 frank zilver (Latijnse Muntunie)', 25, 900], ['silver-fr50be', '50 frank zilver (België, 1948–1954)', 12.5, 835], ['silver-fr100be', '100 frank zilver (België, 1948–1954)', 18, 835],
+    ['silver-fr250be', '250 frank zilver (België, 1976)', 25, 835], ['silver-gulden', '1 gulden zilver (Nederland, vóór 1967)', 10, 720],
+    ['silver-bar100', 'Zilverbaar 100 g', 100, 999], ['silver-bar250', 'Zilverbaar 250 g', 250, 999], ['silver-bar500', 'Zilverbaar 500 g', 500, 999], ['silver-bar1k', 'Zilverbaar 1 kg', 1000, 999]
+  ]);
+
+  /** Laatste eigen waardering per stuk (verzamelwaarde): de jongste in valuations, anders sellValue (oud veld). */
+  function metalMarketValue(m) {
+    const list = (m.valuations || []).filter(v => v && v.value > 0 && parseDate(v.date)).sort((a, b) => a.date.localeCompare(b.date));
+    if (list.length) return list[list.length - 1];
+    return Number.isFinite(m.sellValue) && m.sellValue > 0 ? { value: m.sellValue, date: null, source: '' } : null;
+  }
 
   /**
    * Waarde van je munten en baren. Per stuk: een eigen verkoopwaarde (als je die invulde) gaat vóór de
@@ -1315,13 +1343,16 @@
       const count = Number(m.count) || 0;
       const fine = (Number(m.weight) || 0) * (Number(m.purity) || 0) / 1000;
       const perGram = Number(prices[m.metal === 'silver' ? 'silver' : 'gold']) || 0;
-      const manual = Number.isFinite(m.sellValue) && m.sellValue > 0 ? m.sellValue : null;
-      const unitValue = manual != null ? manual : perGram ? Math.round(fine * perGram) : null;
+      const metalUnit = perGram && fine ? Math.round(fine * perGram) : null;
+      const market = metalMarketValue(m);
+      const unitValue = market ? market.value : metalUnit;
       const value = unitValue != null ? Math.round(unitValue * count) : null;
       const gift = m.origin === 'gift';
       const cost = !gift && Number.isFinite(m.buyPrice) && m.buyPrice > 0 ? m.buyPrice : null;
       return Object.assign({}, m, {
-        count, fine, fineTotal: fine * count, unitValue, value, valueSource: manual != null ? 'manual' : unitValue != null ? 'price' : 'none',
+        count, fine, fineTotal: fine * count, metalUnit, metalValue: metalUnit != null ? Math.round(metalUnit * count) : null,
+        market, unitValue, value, valueSource: market ? 'manual' : unitValue != null ? 'price' : 'none',
+        premium: market && metalUnit ? market.value - metalUnit : null,
         gift, cost, gain: cost != null && value != null ? value - cost : null
       });
     });
@@ -1336,7 +1367,8 @@
       gain: bought.some(x => x.gain != null) ? sum(bought.filter(x => x.gain != null), x => x.gain) : null,
       goldGrams: sum(items.filter(x => x.metal !== 'silver'), x => x.fineTotal),
       silverGrams: sum(items.filter(x => x.metal === 'silver'), x => x.fineTotal),
-      missing: items.filter(x => x.value == null).length
+      missing: items.filter(x => x.value == null).length,
+      premium: sum(items.filter(x => x.premium != null), x => x.premium * x.count)
     };
   }
 
@@ -1351,7 +1383,7 @@
     recompute, detectInvestments, txKind, advancesOverview, accountBalance, balanceAt, accountStart, SYS_ADVANCE, SYS_INVEST,
     categoryIcon, ICON_CHOICES, personList, suggestRepayments,
     SYNC_COLLECTIONS, SYNC_SINGLETONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
-    categoryTags, matchCategory, lookupCandidates, METAL_PRESETS, metalsSummary
+    categoryTags, matchCategory, lookupCandidates, METAL_PRESETS, metalsSummary, metalMarketValue
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

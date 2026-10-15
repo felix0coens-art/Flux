@@ -92,7 +92,17 @@
       loadAdmin();
     },
     'metal-new': () => openModal({ type: 'metal', isNew: true, edit: { id: C.uid('mt'), origin: 'bought', metal: 'gold', count: 1 } }),
-    'metal-edit': el => { const x = (state.metals || []).find(m => m.id === el.dataset.id); if (x) openModal({ type: 'metal', edit: Object.assign({}, x) }); },
+    'metal-edit': el => {
+      const x = (state.metals || []).find(m => m.id === el.dataset.id);
+      if (!x) return;
+      const edit = Object.assign({}, x, { valuations: (x.valuations || []).slice() });
+      // Oude "eigen verkoopwaarde" wordt een gewone waardering
+      if (edit.sellValue && !edit.valuations.length) edit.valuations.push({ id: C.uid('mv'), date: (edit.createdAt || today).slice(0, 10), value: edit.sellValue, source: 'eigen verkoopwaarde' });
+      delete edit.sellValue;
+      openModal({ type: 'metal', edit });
+    },
+    'metal-val-add': metalValAdd,
+    'metal-val-remove': el => metalValRemove(el.dataset.id),
     'metal-origin': el => { readMetalForm(); modal.edit.origin = el.dataset.v; renderModal(); },
     'metal-save': saveMetal,
     'metal-delete': () => {

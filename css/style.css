@@ -941,3 +941,13 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .metals-kpis .label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .metals-kpis .value { font-size: 22px; font-weight: 800; }
 .metals-head .spacer { flex: 1; }
+.metal-vals .mv-list { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; overflow: hidden; }
+.mv-row { display: grid; grid-template-columns: 90px auto auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 10px; font-size: 14px; }
+.mv-row + .mv-row { border-top: 1px solid var(--border); }
+.mv-row:not(.latest) { opacity: .7; }
+.mv-add { display: grid; grid-template-columns: 150px 1fr 1.4fr auto; gap: 8px; margin-top: 8px; }
+@media (max-width: 700px) {
+  .mv-add { grid-template-columns: 1fr 1fr; }
+  .mv-row { grid-template-columns: auto auto 1fr auto; }
+  .mv-row .grow { grid-column: 1 / -1; }
+}

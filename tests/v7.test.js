@@ -219,6 +219,25 @@ test('fysiek goud: cadeaus tellen als vermogen zonder inleg, eigen verkoopwaarde
   assert.ok(C.SYNC_COLLECTIONS.includes('metals'), 'munten worden gesynchroniseerd');
 });
 
+test('munten: meer soorten en een eigen waardegeschiedenis (verzamelwaarde) die voorgaat', () => {
+  const P = id => C.METAL_PRESETS.find(p => p.id === id);
+  for (const id of ['fr10', 'napoleon', 'fr40', 'fr50', 'fr100']) assert.ok(P(id), 'Napoleon-variant ' + id);
+  assert.equal(Math.round(P('fr40').weight * P('fr40').purity / 10) / 100, 11.61, '40 frank: 11,61 g fijn goud');
+  assert.ok(new Set(C.METAL_PRESETS.map(p => p.id)).size === C.METAL_PRESETS.length, 'unieke id\'s');
+  const s = Store.defaultState();
+  s.metals.push({ id: 'n', name: '20 frank 1870', metal: 'gold', weight: 6.452, purity: 900, count: 2, origin: 'gift', year: '1870', grade: 'PR',
+    valuations: [{ id: 'v2', date: '2026-09-01', value: 70000, source: 'veiling' }, { id: 'v1', date: '2025-01-10', value: 50000, source: 'catalogus' }] });
+  s.metals.push({ id: 'o', name: 'oud', metal: 'gold', weight: 6.452, purity: 900, count: 1, origin: 'gift', sellValue: 55000 });
+  const m = C.metalsSummary(s, { gold: 10000 });
+  const n = m.items[0];
+  assert.equal(n.market.date, '2026-09-01', 'de jongste waardering geldt');
+  assert.equal(n.value, 140000);
+  assert.equal(n.metalUnit, Math.round(6.452 * 0.9 * 10000));
+  assert.equal(n.premium, 70000 - n.metalUnit, 'meerwaarde boven het goud');
+  assert.equal(m.items[1].value, 55000, 'oude eigen verkoopwaarde blijft gelden');
+  assert.equal(m.premium, n.premium * 2 + (55000 - m.items[1].metalUnit));
+});
+
 test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const { build } = require('../scripts/build-app.js');
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');

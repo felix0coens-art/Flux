@@ -2847,15 +2847,20 @@
     const priceLine = p && p.gold
       ? `Goud ${money(Math.round(p.gold))}/g · zilver ${money(Math.round(p.silver || 0))}/g <span class="muted">· ${p.source === 'manual' ? 'zelf ingevuld' : 'koers van ' + fmtDateTime(p.at)}</span>`
       : '<span class="warn-text">Nog geen goudprijs</span>';
-    const row = x => `<tr class="clickable" data-action="metal-edit" data-id="${esc(x.id)}">
-        <td><strong>${x.estimated ? '≈ ' : ''}${esc(x.name || 'Munt')}</strong>
+    const row = x => {
+      const facts = [x.year, x.mint, COIN_GRADES[x.grade] ? COIN_GRADES[x.grade].split(' — ')[0] : ''].filter(Boolean).map(esc).join(' · ');
+      return `<tr class="clickable" data-action="metal-edit" data-id="${esc(x.id)}">
+        <td><strong>${x.estimated ? '≈ ' : ''}${esc(x.name || 'Munt')}</strong>${facts ? ` <span class="small">${facts}</span>` : ''}
           <div class="small muted">${x.gift ? '🎁 cadeau' : '🛒 gekocht' + (x.buyDate ? ' ' + fmtDate(x.buyDate) : '')}${x.estimated ? ' · schatting' : ''}${x.note ? ' · ' + esc(x.note) : ''}</div></td>
         <td class="right">${x.estimated ? '≈ ' : ''}${countFmt(x.count)}</td>
         <td class="right">${grams(x.fineTotal)}<div class="small muted">${x.metal === 'silver' ? 'zilver' : 'goud'}</div></td>
-        <td class="amount">${x.unitValue != null ? money(x.unitValue) : '—'}${x.valueSource === 'manual' ? '<div class="small muted" title="Je eigen verkoopwaarde gaat voor op de prijs per gram">✎ eigen waarde</div>' : ''}</td>
+        <td class="amount">${x.unitValue != null ? money(x.unitValue) : '—'}
+          ${x.market ? `<div class="small muted" title="Je eigen waardering (verzamelwaarde) gaat voor op de prijs per gram">✎ ${x.market.date ? fmtDate(x.market.date) : 'eigen waarde'}${x.market.source ? ' · ' + esc(x.market.source) : ''}</div>` : ''}
+          ${x.premium != null ? `<div class="small ${x.premium >= 0 ? 'pos' : 'negv'}" title="Verschil met de waarde van het goud zelf (${money(x.metalUnit)})">${x.premium >= 0 ? '+' : ''}${x.metalUnit ? Math.round(x.premium / x.metalUnit * 100) : 0}% t.o.v. goud</div>` : ''}</td>
         <td class="amount"><strong>${x.value != null ? money(x.value) : '—'}</strong></td>
         <td class="amount">${x.gift ? '<span class="small muted">geen inleg</span>' : x.cost != null ? money(x.cost) + (x.gain != null ? `<div class="small ${x.gain >= 0 ? 'pos' : 'negv'}">${x.gain >= 0 ? '+' : ''}${money(x.gain)}</div>` : '') : '—'}</td>
       </tr>`;
+    };
     return `<div class="card metals-card" style="margin-bottom:16px">
       <div class="metals-head">
         <div><h2>🪙 Goud en zilver <span class="muted small">(fysiek)</span></h2>
@@ -2867,43 +2872,78 @@
       <div class="metals-kpis">
         <div><div class="label">Waarde</div><div class="value">${money(s.value)}</div><div class="small muted">${grams(s.goldGrams)} fijn goud${s.silverGrams ? ' · ' + grams(s.silverGrams) + ' zilver' : ''}</div></div>
         ${s.cost ? `<div><div class="label">Gekocht</div><div class="value">${money(s.boughtValue)}</div><div class="small muted">ingelegd ${money(s.cost)}${s.gain != null ? ` · <span class="${s.gain >= 0 ? 'pos' : 'negv'}">${s.gain >= 0 ? '+' : ''}${money(s.gain)}</span>` : ''}</div></div>` : ''}
+        ${s.premium ? `<div><div class="label">Verzamelwaarde</div><div class="value ${s.premium >= 0 ? 'pos' : 'negv'}">${s.premium >= 0 ? '+' : ''}${money(s.premium)}</div><div class="small muted">boven de waarde van het goud zelf</div></div>` : ''}
         ${s.giftValue ? `<div><div class="label">Cadeaus</div><div class="value">${money(s.giftValue)}</div><div class="small muted">telt als vermogen, niet als inleg of uitgave</div></div>` : ''}
       </div>
       ${s.missing ? `<div class="notice small">Voor ${s.missing} lijn${s.missing === 1 ? '' : 'en'} is er nog geen waarde: ${p && p.gold ? 'vul het gewicht en de zuiverheid in' : 'haal de goudprijs op of vul hem zelf in'}, of geef een eigen verkoopwaarde.</div>` : ''}
       <div class="table-wrap"><table>
         <thead><tr><th>Wat</th><th class="right">Aantal</th><th class="right">Fijn metaal</th><th class="right">Per stuk</th><th class="right">Waarde</th><th class="right">Aankoop</th></tr></thead>
         <tbody>${s.items.map(row).join('')}</tbody></table></div>
-      <p class="small muted">Waarde = gram fijn metaal × prijs per gram, tenzij je per munt een eigen verkoopwaarde invulde (die gaat voor). Een munthandelaar betaalt meestal iets minder dan de goudprijs.</p>`
+      <p class="small muted">Waarde = gram fijn metaal × prijs per gram. Is een munt meer waard door haar jaar, zeldzaamheid of staat, geef ze dan een eigen waardering (bv. van een veiling, catalogus of handelaar): die gaat voor, en Helder houdt de geschiedenis bij.</p>`
       : `<p class="muted">Heb je gouden of zilveren munten of baren thuis (gekocht of gekregen)? Voeg ze toe: Helder rekent hun waarde uit met de actuele goudprijs en telt ze mee in je vermogen.</p>`}
     </div>`;
   }
 
+  const COIN_GRADES = {
+    '': '—', ZG: 'ZG — zeer goed (sterk gesleten)', F: 'F — fraai', ZF: 'ZF — zeer fraai', PR: 'PR — prachtig',
+    FDC: 'FDC / UNC — ongecirculeerd', PP: 'PP — proof (spiegelglans)'
+  };
+
   function metalModal() {
     const m = modal;
     const x = m.edit;
-    const presets = C.METAL_PRESETS;
+    const groups = Array.from(new Set(C.METAL_PRESETS.map(p => p.group)));
+    const fine = (x.weight || 0) * (x.purity || 0) / 1000;
+    const pr = metalPrice();
+    const perGram = pr ? (x.metal === 'silver' ? pr.silver : pr.gold) : 0;
+    const metalUnit = fine && perGram ? Math.round(fine * perGram) : null;
+    const vals = (x.valuations || []).slice().sort((a, b) => b.date.localeCompare(a.date));
     return modalShell(m.isNew ? 'Munt of baar toevoegen' : 'Bewerken', `
       <div class="form-grid">
         <label class="field full"><span>Soort</span><select id="mt-preset">
-          <option value="">— Kies een bekende munt of baar (vult gewicht en zuiverheid in) —</option>
-          ${presets.map(p => `<option value="${esc(p.id)}" ${x.preset === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-          <option value="other" ${x.preset === 'other' ? 'selected' : ''}>Iets anders…</option></select></label>
-        <label class="field full"><span>Naam</span><input type="text" id="mt-name" maxlength="60" value="${esc(x.name || '')}" placeholder="bv. Krugerrand 1 oz"></label>
+          <option value="">— Kies een munt of baar (vult gewicht en zuiverheid in) —</option>
+          ${groups.map(g => `<optgroup label="${esc(g)}">${C.METAL_PRESETS.filter(p => p.group === g).map(p => `<option value="${esc(p.id)}" ${x.preset === p.id ? 'selected' : ''}>${esc(p.name)} · ${String(Math.round(p.weight * 100) / 100).replace('.', ',')} g</option>`).join('')}</optgroup>`).join('')}
+          <option value="other" ${x.preset === 'other' ? 'selected' : ''}>Iets anders (zelf invullen)…</option></select></label>
+        <label class="field full"><span>Naam</span><input type="text" id="mt-name" maxlength="60" value="${esc(x.name || '')}" placeholder="bv. 20 frank Leopold II"></label>
         <label class="field"><span>Aantal</span><input type="text" id="mt-count" inputmode="decimal" value="${esc(x.count != null ? countFmt(x.count) : '1')}"></label>
         <label class="field"><span>Metaal</span><select id="mt-metal"><option value="gold" ${x.metal !== 'silver' ? 'selected' : ''}>Goud</option><option value="silver" ${x.metal === 'silver' ? 'selected' : ''}>Zilver</option></select></label>
-        <label class="field"><span>Gewicht per stuk (gram)</span><input type="text" id="mt-weight" inputmode="decimal" value="${esc(x.weight != null ? String(x.weight).replace('.', ',') : '')}"></label>
-        <label class="field"><span>Zuiverheid (‰)</span><input type="text" id="mt-purity" inputmode="decimal" value="${esc(x.purity != null ? String(x.purity).replace('.', ',') : '')}" placeholder="bv. 916,7 of 999,9"></label>
+        <label class="field"><span>Gewicht per stuk (gram)</span><input type="text" id="mt-weight" inputmode="decimal" value="${esc(x.weight != null ? String(Math.round(x.weight * 1000) / 1000).replace('.', ',') : '')}"></label>
+        <label class="field"><span>Zuiverheid (‰)</span><input type="text" id="mt-purity" inputmode="decimal" value="${esc(x.purity != null ? String(x.purity).replace('.', ',') : '')}" placeholder="bv. 900 of 999,9"></label>
+        <label class="field"><span>Jaar <span class="muted small">(optioneel)</span></span><input type="text" id="mt-year" maxlength="12" value="${esc(x.year || '')}" placeholder="bv. 1870"></label>
+        <label class="field"><span>Staat <span class="muted small">(optioneel)</span></span><select id="mt-grade">${Object.entries(COIN_GRADES).map(([k, v]) => `<option value="${k}" ${(x.grade || '') === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+        <label class="field full"><span>Land, vorst of muntteken <span class="muted small">(optioneel)</span></span><input type="text" id="mt-mint" maxlength="60" value="${esc(x.mint || '')}" placeholder="bv. België, Leopold II, Brussel"></label>
         <label class="check full"><input type="checkbox" id="mt-est" ${x.estimated ? 'checked' : ''}> Dit is een schatting <span class="muted small">(bv. de extra munten samen als één Krugerrand-equivalent)</span></label>
         <div class="field full"><span>Hoe kreeg je het?</span>
           <div class="seg"><button type="button" class="${x.origin !== 'gift' ? 'active' : ''}" data-action="metal-origin" data-v="bought">🛒 Gekocht</button><button type="button" class="${x.origin === 'gift' ? 'active' : ''}" data-action="metal-origin" data-v="gift">🎁 Cadeau gekregen</button></div>
           <span class="small muted">${x.origin === 'gift' ? 'Een cadeau telt als vermogen, maar niet als uitgave of als eigen inleg (dus ook niet in winst of verlies).' : 'Je aankoopprijs is je inleg; Helder toont dan je winst of verlies.'}</span></div>
         ${x.origin !== 'gift' ? `<label class="field"><span>Aankoopprijs (samen)</span><input type="text" id="mt-buy" inputmode="decimal" value="${esc(x.buyPrice ? C.centsToInput(x.buyPrice) : '')}" placeholder="bv. 2450,00"></label>
         <label class="field"><span>Aankoopdatum</span><input type="date" id="mt-date" value="${esc(x.buyDate || '')}" max="${today}"></label>` : ''}
-        <label class="field full"><span>Eigen verkoopwaarde per stuk <span class="muted small">(optioneel — gaat voor op de goudprijs)</span></span><input type="text" id="mt-sell" inputmode="decimal" value="${esc(x.sellValue ? C.centsToInput(x.sellValue) : '')}" placeholder="bv. wat de munthandelaar biedt"></label>
+        <div class="field full metal-vals"><span>Waarde van de munt zelf <span class="muted small">(verzamelwaarde per stuk — gaat voor op de goudprijs)</span></span>
+          <div class="small muted">Waarde van het ${x.metal === 'silver' ? 'zilver' : 'goud'} alleen: <strong>${metalUnit != null ? money(metalUnit) : '—'}</strong> per stuk${fine ? ` (${String(Math.round(fine * 100) / 100).replace('.', ',')} g fijn)` : ''}. Is de munt meer waard door het jaar, de zeldzaamheid of de staat? Noteer dan wat ze waard is, telkens met datum en bron.</div>
+          ${vals.length ? `<div class="mv-list">${vals.map((v, i) => `<div class="mv-row ${i === 0 ? 'latest' : ''}"><span>${fmtDate(v.date)}</span><strong>${money(v.value)}</strong>${metalUnit ? `<span class="small ${v.value >= metalUnit ? 'pos' : 'negv'}">${v.value >= metalUnit ? '+' : ''}${Math.round((v.value - metalUnit) / metalUnit * 100)}% t.o.v. goud</span>` : '<span></span>'}<span class="small muted grow">${esc(v.source || '')}${i === 0 ? ' · <b>geldt nu</b>' : ''}</span><button type="button" class="btn small ghost" data-action="metal-val-remove" data-id="${esc(v.id)}" aria-label="Verwijderen">✕</button></div>`).join('')}</div>` : ''}
+          <div class="mv-add"><input type="date" id="mv-date" value="${today}" max="${today}" aria-label="Datum"><input type="text" id="mv-value" inputmode="decimal" placeholder="Waarde per stuk, bv. 650" aria-label="Waarde per stuk">
+            <input type="text" id="mv-source" maxlength="60" placeholder="Bron, bv. veiling, catalogus, handelaar" aria-label="Bron"><button type="button" class="btn small" data-action="metal-val-add">+ Waardering</button></div>
+          ${vals.length ? '<span class="small muted">Wil je terug naar de goudprijs? Verwijder dan alle waarderingen.</span>' : ''}</div>
         <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="mt-note" maxlength="100" value="${esc(x.note || '')}" placeholder="bv. van oma, ligt in de kluis"></label>
       </div>
       <div class="errors" id="mt-errors"></div>`,
       `${m.isNew ? '' : '<button class="btn danger" data-action="metal-delete">Verwijderen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="metal-save">Opslaan</button>`);
+  }
+
+  /** Waardering toevoegen of verwijderen in het venster (pas bewaard bij Opslaan). */
+  function metalValAdd() {
+    readMetalForm();
+    const v = C.parseAmount($('#mv-value').value);
+    const date = $('#mv-date').value;
+    if (isNaN(v) || v <= 0 || !C.parseDate(date)) { $('#mt-errors').textContent = 'Geef een datum en een waarde per stuk.'; return; }
+    const x = modal.edit;
+    x.valuations = (x.valuations || []).concat([{ id: C.uid('mv'), date, value: Math.abs(v), source: $('#mv-source').value.trim() }]);
+    renderModal();
+  }
+  function metalValRemove(id) {
+    readMetalForm();
+    modal.edit.valuations = (modal.edit.valuations || []).filter(v => v.id !== id);
+    renderModal();
   }
 
   /** Velden van het venster in modal.edit bewaren (voor we het venster opnieuw tekenen). */
@@ -2919,7 +2959,9 @@
     x.purity = num('#mt-purity');
     x.estimated = $('#mt-est').checked;
     if ($('#mt-buy')) { x.buyPrice = money_('#mt-buy'); x.buyDate = $('#mt-date').value || ''; }
-    x.sellValue = money_('#mt-sell');
+    x.year = $('#mt-year').value.trim();
+    x.mint = $('#mt-mint').value.trim();
+    x.grade = $('#mt-grade').value;
     x.note = $('#mt-note').value.trim();
     return x;
   }
@@ -2940,13 +2982,14 @@
     const errors = [];
     if (!x.name) errors.push('Geef een naam.');
     if (!(x.count > 0)) errors.push('Geef een aantal groter dan 0.');
-    if (!x.sellValue && !(x.weight > 0 && x.purity > 0 && x.purity <= 1000)) errors.push('Vul gewicht en zuiverheid in (zuiverheid in ‰, max. 1000), of een eigen verkoopwaarde.');
+    if (!(x.valuations || []).length && !(x.weight > 0 && x.purity > 0 && x.purity <= 1000)) errors.push('Vul gewicht en zuiverheid in (zuiverheid in ‰, max. 1000), of geef een waardering.');
     if (errors.length) { $('#mt-errors').innerHTML = errors.map(esc).join('<br>'); return; }
     const item = { id: x.id, name: x.name, metal: x.metal === 'silver' ? 'silver' : 'gold', count: x.count, weight: x.weight || 0, purity: x.purity || 0,
       origin: x.origin === 'gift' ? 'gift' : 'bought', estimated: !!x.estimated, note: x.note || '', preset: x.preset || '' };
     if (item.origin === 'bought' && x.buyPrice) item.buyPrice = Math.round(x.buyPrice);
     if (item.origin === 'bought' && x.buyDate) item.buyDate = x.buyDate;
-    if (x.sellValue) item.sellValue = Math.round(x.sellValue);
+    for (const k of ['year', 'mint', 'grade']) if (x[k]) item[k] = x[k];
+    if ((x.valuations || []).length) item.valuations = x.valuations.map(v => ({ id: v.id, date: v.date, value: Math.round(v.value), source: v.source || '' }));
     state.metals = state.metals || [];
     const i = state.metals.findIndex(m => m.id === item.id);
     if (i >= 0) state.metals[i] = Object.assign(item, { createdAt: state.metals[i].createdAt });
@@ -4403,7 +4446,17 @@
       loadAdmin();
     },
     'metal-new': () => openModal({ type: 'metal', isNew: true, edit: { id: C.uid('mt'), origin: 'bought', metal: 'gold', count: 1 } }),
-    'metal-edit': el => { const x = (state.metals || []).find(m => m.id === el.dataset.id); if (x) openModal({ type: 'metal', edit: Object.assign({}, x) }); },
+    'metal-edit': el => {
+      const x = (state.metals || []).find(m => m.id === el.dataset.id);
+      if (!x) return;
+      const edit = Object.assign({}, x, { valuations: (x.valuations || []).slice() });
+      // Oude "eigen verkoopwaarde" wordt een gewone waardering
+      if (edit.sellValue && !edit.valuations.length) edit.valuations.push({ id: C.uid('mv'), date: (edit.createdAt || today).slice(0, 10), value: edit.sellValue, source: 'eigen verkoopwaarde' });
+      delete edit.sellValue;
+      openModal({ type: 'metal', edit });
+    },
+    'metal-val-add': metalValAdd,
+    'metal-val-remove': el => metalValRemove(el.dataset.id),
     'metal-origin': el => { readMetalForm(); modal.edit.origin = el.dataset.v; renderModal(); },
     'metal-save': saveMetal,
     'metal-delete': () => {
