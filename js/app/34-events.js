@@ -91,6 +91,21 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'metal-new': () => openModal({ type: 'metal', isNew: true, edit: { id: C.uid('mt'), origin: 'bought', metal: 'gold', count: 1 } }),
+    'metal-edit': el => { const x = (state.metals || []).find(m => m.id === el.dataset.id); if (x) openModal({ type: 'metal', edit: Object.assign({}, x) }); },
+    'metal-origin': el => { readMetalForm(); modal.edit.origin = el.dataset.v; renderModal(); },
+    'metal-save': saveMetal,
+    'metal-delete': () => {
+      const x = modal.edit;
+      if (!confirm(`“${x.name || 'Deze lijn'}” verwijderen?`)) return;
+      state.metals = (state.metals || []).filter(m => m.id !== x.id);
+      closeModal();
+      commit('Verwijderd');
+    },
+    'metal-price-fetch': () => fetchMetalPrice(false),
+    'metal-price-manual': () => openModal({ type: 'metalPrice' }),
+    'metal-price-online': () => { closeModal(); fetchMetalPrice(false); },
+    'metal-price-save': saveMetalPrice,
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
     'owed-filter': el => { ui.owed = el.dataset.f; render(); },
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
@@ -499,6 +514,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx' && el.id === 'tx-action-add') { txAddAction(el); return; }
+    if (modal.type === 'metal' && el.id === 'mt-preset') { metalPresetChosen(el.value); return; }
     if (modal.type === 'tx' && el.id === 'tx-file') { uploadTxFile(el); return; }
     if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); if (el.id === 'tx-category') updateTitleSuggestion(); return; }
     if (modal.type === 'rule') { updateRulePreview(); return; }

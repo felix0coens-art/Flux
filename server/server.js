@@ -617,6 +617,15 @@ async function handleApi(req, res, pathname, query) {
     return send(res, 200, await syncUser(dataUser, b.changes || null, b.rev));
   }
 
+  if (pathname === '/api/metals' && req.method === 'GET') {
+    let m = priceCache.get('metals|v1');
+    if (!m) {
+      try { m = await Prices.metalPrices(fetch); } catch (e) { throw httpError(502, 'Kon de goudprijs niet ophalen: ' + e.message); }
+      priceCache.set('metals|v1', m);
+    }
+    return send(res, 200, m);
+  }
+
   if (pathname === '/api/prices' && req.method === 'POST') {
     const b = await readBody(req);
     const list = (Array.isArray(b.instruments) ? b.instruments : []).slice(0, 40).map(i => ({

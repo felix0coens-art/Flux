@@ -248,6 +248,9 @@
   }
 
   /** Historische koersen (via de server) om de waarde van je beleggingen te reconstrueren. */
+  /** Goud- en zilverprijs (eurocent per gram fijn metaal). */
+  function metals() { return api('GET', '/api/metals'); }
+
   async function prices(instruments) {
     return api('POST', '/api/prices', { instruments });
   }
@@ -337,7 +340,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, household, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, metals, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, household, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

@@ -368,7 +368,8 @@
     const invSum = inv() ? Invest.summary(inv()) : null;
     const open = adv.people.filter(p => p.open !== 0);
 
-    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen);
+    const metalSum = metals();
+    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen);
     const cancels = C.cancellationPairs(state).length;
     const actionsOpen = actionLists().open;
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
@@ -390,7 +391,7 @@
         <div class="hero-stat"><div class="label">Binnen</div><div class="value pos">${money(sum.netIncome)}</div><div class="hint">netto inkomsten${sum.incomeCosts ? ' (na ' + money(sum.incomeCosts) + ' kosten)' : ''}</div></div>
         <div class="hero-stat"><div class="label">Buiten</div><div class="value">${money(sum.expenses)}</div><div class="hint">uitgaven, na terugbetalingen</div></div>
         <div class="hero-stat main"><div class="label">${sum.net >= 0 ? 'Over' : 'Tekort'}</div><div class="value ${sum.net >= 0 ? 'pos' : 'negv'}">${money(Math.abs(sum.net))}</div><div class="hint">${sum.net >= 0 && sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : sum.net < 0 ? 'meer uitgegeven dan verdiend' : ''}</div></div>
-        <div class="hero-stat"><div class="label">Vermogen</div><div class="value">${money(worth)}</div><div class="hint">rekeningen${invSum ? ' + beleggingen' : ''}</div></div>
+        <div class="hero-stat"><div class="label">Vermogen</div><div class="value">${money(worth)}</div><div class="hint">rekeningen${invSum ? ' + beleggingen' : ''}${metalSum.value ? ' + goud' : ''}</div></div>
       </div>
       <div class="grid two dash-top">
         <div class="card todo-card"><h2>Te doen</h2>${todoItems.length ? `<div class="todo-list">${todoItems.join('')}</div>` : '<p class="muted">🎉 Niets te doen. Alles is verwerkt.</p>'}</div>
@@ -405,6 +406,7 @@
           <div class="list">
             ${balances.map(x => `<div class="list-row"><div class="grow">${esc(x.a.name)}<div class="small muted">gekend saldo van ${fmtDate(x.b.since)} + latere transacties</div></div><span class="amount">${money(x.b.amount)}</span></div>`).join('')}
             ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
+            ${metalSum.value ? `<div class="list-row"><div class="grow">Goud en zilver (fysiek)<div class="small muted">${metalSum.giftValue ? 'waarvan ' + money(metalSum.giftValue) + ' gekregen als cadeau' : 'aan de huidige goudprijs'}</div></div><span class="amount">${money(metalSum.value)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
@@ -2547,6 +2549,7 @@
     <p class="small muted">Menunamen kunnen licht verschillen per taal of app-versie. Helder herkent zelf welk soort bestand je oplaadt; hetzelfde bestand twee keer opladen voegt niets dubbel toe.</p>`;
 
   function renderInvest() {
+    maybeAutoFetchMetals();
     const iv = inv();
     const server = Sync && Sync.mode === 'server' && !demo;
     const connect = `<div class="card">
@@ -2571,6 +2574,7 @@
       ${saxoCard()}`;
     if (!iv) {
       return `<div class="page-head"><h1>Beleggingen</h1></div>
+        ${metalsCard()}
         <p class="muted">Koppel je Degiro- of Saxo-rekening om je portefeuille, je stortingen en je rendement (TWR en MWR) te zien. Overschrijvingen van je bank naar je broker tellen in Helder als <em>belegging</em>, niet als uitgave.</p>
         ${connect}
         <div class="card" style="margin-top:16px"><h2>Wat moet ik exporteren uit Degiro?</h2>${DEGIRO_EXPORT_HELP}</div>`;
@@ -2632,6 +2636,7 @@
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Geen posities.</p>'}
       </div>
       ${soldCard(iv)}
+      ${metalsCard()}
       ${connect}
       ${files.length ? `<div class="card" style="margin-top:16px"><h2>Opgeladen Degiro-bestanden</h2><div class="list">${files.slice().reverse().map(f => `<div class="list-row"><div class="grow">📄 ${esc(f.name)}<div class="small muted">${esc({ portfolio: 'Portefeuille', transactions: 'Transacties', account: 'Rekeningoverzicht' }[f.type] || f.type)}${f.date ? ' — stand op ' + fmtDate(f.date) : ''} · opgeladen ${esc(fmtDateTime(f.importedAt))}</div></div></div>`).join('')}</div></div>` : ''}
       <p style="margin-top:16px">${iv.brokers ? Invest.brokers(iv).map(b => `<button class="btn small danger" data-action="invest-remove-broker" data-id="${esc(b.id)}">Gegevens van ${esc(b.name)} wissen</button> `).join('') : ''}<button class="btn small danger" data-action="degiro-clear">Alle beleggingsgegevens wissen</button></p>`;
@@ -2810,6 +2815,167 @@
     } finally { pricesBusy = false; }
   }
 
+
+  // ----- Fysiek goud en zilver -----
+
+  const metalPrice = () => (state.settings && state.settings.metalPrice) || null;
+  const metals = () => C.metalsSummary(state, metalPrice());
+  const grams = g => (Math.round(g * 100) / 100).toLocaleString('nl-BE', { maximumFractionDigits: 2 }) + ' g';
+  const countFmt = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  let metalAutoFetched = false;
+
+  /** Goud- en zilverprijs ophalen (via de server; één keer per sessie vanzelf als ze ouder is dan 12 uur). */
+  function fetchMetalPrice(silent) {
+    if (!(Sync && Sync.mode === 'server' && !demo)) { if (!silent) openModal({ type: 'metalPrice' }); return; }
+    Sync.metals().then(p => {
+      state.settings = Object.assign({}, state.settings, { metalPrice: { gold: p.gold, silver: p.silver, at: p.at || new Date().toISOString(), source: p.source || 'online' } });
+      commit(silent ? undefined : 'Goudprijs bijgewerkt: ' + money(Math.round(p.gold)) + ' per gram');
+    }).catch(e => { if (!silent) toast(e.message); });
+  }
+
+  function maybeAutoFetchMetals() {
+    const p = metalPrice();
+    if (metalAutoFetched || !(state.metals || []).length || (p && p.source === 'manual')) return;
+    if (p && p.at && Date.now() - Date.parse(p.at) < 12 * 3600000) return;
+    metalAutoFetched = true;
+    fetchMetalPrice(true);
+  }
+
+  function metalsCard() {
+    const s = metals();
+    const p = metalPrice();
+    const priceLine = p && p.gold
+      ? `Goud ${money(Math.round(p.gold))}/g · zilver ${money(Math.round(p.silver || 0))}/g <span class="muted">· ${p.source === 'manual' ? 'zelf ingevuld' : 'koers van ' + fmtDateTime(p.at)}</span>`
+      : '<span class="warn-text">Nog geen goudprijs</span>';
+    const row = x => `<tr class="clickable" data-action="metal-edit" data-id="${esc(x.id)}">
+        <td><strong>${x.estimated ? '≈ ' : ''}${esc(x.name || 'Munt')}</strong>
+          <div class="small muted">${x.gift ? '🎁 cadeau' : '🛒 gekocht' + (x.buyDate ? ' ' + fmtDate(x.buyDate) : '')}${x.estimated ? ' · schatting' : ''}${x.note ? ' · ' + esc(x.note) : ''}</div></td>
+        <td class="right">${x.estimated ? '≈ ' : ''}${countFmt(x.count)}</td>
+        <td class="right">${grams(x.fineTotal)}<div class="small muted">${x.metal === 'silver' ? 'zilver' : 'goud'}</div></td>
+        <td class="amount">${x.unitValue != null ? money(x.unitValue) : '—'}${x.valueSource === 'manual' ? '<div class="small muted" title="Je eigen verkoopwaarde gaat voor op de prijs per gram">✎ eigen waarde</div>' : ''}</td>
+        <td class="amount"><strong>${x.value != null ? money(x.value) : '—'}</strong></td>
+        <td class="amount">${x.gift ? '<span class="small muted">geen inleg</span>' : x.cost != null ? money(x.cost) + (x.gain != null ? `<div class="small ${x.gain >= 0 ? 'pos' : 'negv'}">${x.gain >= 0 ? '+' : ''}${money(x.gain)}</div>` : '') : '—'}</td>
+      </tr>`;
+    return `<div class="card metals-card" style="margin-bottom:16px">
+      <div class="metals-head">
+        <div><h2>🪙 Goud en zilver <span class="muted small">(fysiek)</span></h2>
+          <div class="small">${priceLine} · <a href="#" data-action="metal-price-fetch">${Sync && Sync.mode === 'server' && !demo ? 'nu ophalen' : 'prijs invullen'}</a>${Sync && Sync.mode === 'server' && !demo ? ' · <a href="#" data-action="metal-price-manual">zelf invullen</a>' : ''}</div></div>
+        <span class="spacer"></span>
+        <button class="btn primary" data-action="metal-new">+ Munt of baar</button>
+      </div>
+      ${s.items.length ? `
+      <div class="metals-kpis">
+        <div><div class="label">Waarde</div><div class="value">${money(s.value)}</div><div class="small muted">${grams(s.goldGrams)} fijn goud${s.silverGrams ? ' · ' + grams(s.silverGrams) + ' zilver' : ''}</div></div>
+        ${s.cost ? `<div><div class="label">Gekocht</div><div class="value">${money(s.boughtValue)}</div><div class="small muted">ingelegd ${money(s.cost)}${s.gain != null ? ` · <span class="${s.gain >= 0 ? 'pos' : 'negv'}">${s.gain >= 0 ? '+' : ''}${money(s.gain)}</span>` : ''}</div></div>` : ''}
+        ${s.giftValue ? `<div><div class="label">Cadeaus</div><div class="value">${money(s.giftValue)}</div><div class="small muted">telt als vermogen, niet als inleg of uitgave</div></div>` : ''}
+      </div>
+      ${s.missing ? `<div class="notice small">Voor ${s.missing} lijn${s.missing === 1 ? '' : 'en'} is er nog geen waarde: ${p && p.gold ? 'vul het gewicht en de zuiverheid in' : 'haal de goudprijs op of vul hem zelf in'}, of geef een eigen verkoopwaarde.</div>` : ''}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Wat</th><th class="right">Aantal</th><th class="right">Fijn metaal</th><th class="right">Per stuk</th><th class="right">Waarde</th><th class="right">Aankoop</th></tr></thead>
+        <tbody>${s.items.map(row).join('')}</tbody></table></div>
+      <p class="small muted">Waarde = gram fijn metaal × prijs per gram, tenzij je per munt een eigen verkoopwaarde invulde (die gaat voor). Een munthandelaar betaalt meestal iets minder dan de goudprijs.</p>`
+      : `<p class="muted">Heb je gouden of zilveren munten of baren thuis (gekocht of gekregen)? Voeg ze toe: Helder rekent hun waarde uit met de actuele goudprijs en telt ze mee in je vermogen.</p>`}
+    </div>`;
+  }
+
+  function metalModal() {
+    const m = modal;
+    const x = m.edit;
+    const presets = C.METAL_PRESETS;
+    return modalShell(m.isNew ? 'Munt of baar toevoegen' : 'Bewerken', `
+      <div class="form-grid">
+        <label class="field full"><span>Soort</span><select id="mt-preset">
+          <option value="">— Kies een bekende munt of baar (vult gewicht en zuiverheid in) —</option>
+          ${presets.map(p => `<option value="${esc(p.id)}" ${x.preset === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+          <option value="other" ${x.preset === 'other' ? 'selected' : ''}>Iets anders…</option></select></label>
+        <label class="field full"><span>Naam</span><input type="text" id="mt-name" maxlength="60" value="${esc(x.name || '')}" placeholder="bv. Krugerrand 1 oz"></label>
+        <label class="field"><span>Aantal</span><input type="text" id="mt-count" inputmode="decimal" value="${esc(x.count != null ? countFmt(x.count) : '1')}"></label>
+        <label class="field"><span>Metaal</span><select id="mt-metal"><option value="gold" ${x.metal !== 'silver' ? 'selected' : ''}>Goud</option><option value="silver" ${x.metal === 'silver' ? 'selected' : ''}>Zilver</option></select></label>
+        <label class="field"><span>Gewicht per stuk (gram)</span><input type="text" id="mt-weight" inputmode="decimal" value="${esc(x.weight != null ? String(x.weight).replace('.', ',') : '')}"></label>
+        <label class="field"><span>Zuiverheid (‰)</span><input type="text" id="mt-purity" inputmode="decimal" value="${esc(x.purity != null ? String(x.purity).replace('.', ',') : '')}" placeholder="bv. 916,7 of 999,9"></label>
+        <label class="check full"><input type="checkbox" id="mt-est" ${x.estimated ? 'checked' : ''}> Dit is een schatting <span class="muted small">(bv. de extra munten samen als één Krugerrand-equivalent)</span></label>
+        <div class="field full"><span>Hoe kreeg je het?</span>
+          <div class="seg"><button type="button" class="${x.origin !== 'gift' ? 'active' : ''}" data-action="metal-origin" data-v="bought">🛒 Gekocht</button><button type="button" class="${x.origin === 'gift' ? 'active' : ''}" data-action="metal-origin" data-v="gift">🎁 Cadeau gekregen</button></div>
+          <span class="small muted">${x.origin === 'gift' ? 'Een cadeau telt als vermogen, maar niet als uitgave of als eigen inleg (dus ook niet in winst of verlies).' : 'Je aankoopprijs is je inleg; Helder toont dan je winst of verlies.'}</span></div>
+        ${x.origin !== 'gift' ? `<label class="field"><span>Aankoopprijs (samen)</span><input type="text" id="mt-buy" inputmode="decimal" value="${esc(x.buyPrice ? C.centsToInput(x.buyPrice) : '')}" placeholder="bv. 2450,00"></label>
+        <label class="field"><span>Aankoopdatum</span><input type="date" id="mt-date" value="${esc(x.buyDate || '')}" max="${today}"></label>` : ''}
+        <label class="field full"><span>Eigen verkoopwaarde per stuk <span class="muted small">(optioneel — gaat voor op de goudprijs)</span></span><input type="text" id="mt-sell" inputmode="decimal" value="${esc(x.sellValue ? C.centsToInput(x.sellValue) : '')}" placeholder="bv. wat de munthandelaar biedt"></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="mt-note" maxlength="100" value="${esc(x.note || '')}" placeholder="bv. van oma, ligt in de kluis"></label>
+      </div>
+      <div class="errors" id="mt-errors"></div>`,
+      `${m.isNew ? '' : '<button class="btn danger" data-action="metal-delete">Verwijderen</button>'}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="metal-save">Opslaan</button>`);
+  }
+
+  /** Velden van het venster in modal.edit bewaren (voor we het venster opnieuw tekenen). */
+  function readMetalForm() {
+    const x = modal.edit;
+    const num = id => { const el = $(id); if (!el) return undefined; const v = parseFloat(el.value.replace(/\s/g, '').replace(',', '.')); return isFinite(v) ? v : null; };
+    const money_ = id => { const el = $(id); if (!el) return undefined; const v = C.parseAmount(el.value); return el.value.trim() && !isNaN(v) ? Math.abs(v) : null; };
+    x.preset = $('#mt-preset').value || x.preset;
+    x.name = $('#mt-name').value.trim();
+    x.count = num('#mt-count');
+    x.metal = $('#mt-metal').value;
+    x.weight = num('#mt-weight');
+    x.purity = num('#mt-purity');
+    x.estimated = $('#mt-est').checked;
+    if ($('#mt-buy')) { x.buyPrice = money_('#mt-buy'); x.buyDate = $('#mt-date').value || ''; }
+    x.sellValue = money_('#mt-sell');
+    x.note = $('#mt-note').value.trim();
+    return x;
+  }
+
+  function metalPresetChosen(id) {
+    const p = C.METAL_PRESETS.find(x => x.id === id);
+    const x = readMetalForm();
+    x.preset = id;
+    if (p) {
+      Object.assign(x, { name: p.name, metal: p.metal, weight: p.weight, purity: p.purity, estimated: !!p.estimated });
+      if (p.estimated) { x.count = 1; x.origin = x.origin || 'gift'; }
+    }
+    renderModal();
+  }
+
+  function saveMetal() {
+    const x = readMetalForm();
+    const errors = [];
+    if (!x.name) errors.push('Geef een naam.');
+    if (!(x.count > 0)) errors.push('Geef een aantal groter dan 0.');
+    if (!x.sellValue && !(x.weight > 0 && x.purity > 0 && x.purity <= 1000)) errors.push('Vul gewicht en zuiverheid in (zuiverheid in ‰, max. 1000), of een eigen verkoopwaarde.');
+    if (errors.length) { $('#mt-errors').innerHTML = errors.map(esc).join('<br>'); return; }
+    const item = { id: x.id, name: x.name, metal: x.metal === 'silver' ? 'silver' : 'gold', count: x.count, weight: x.weight || 0, purity: x.purity || 0,
+      origin: x.origin === 'gift' ? 'gift' : 'bought', estimated: !!x.estimated, note: x.note || '', preset: x.preset || '' };
+    if (item.origin === 'bought' && x.buyPrice) item.buyPrice = Math.round(x.buyPrice);
+    if (item.origin === 'bought' && x.buyDate) item.buyDate = x.buyDate;
+    if (x.sellValue) item.sellValue = Math.round(x.sellValue);
+    state.metals = state.metals || [];
+    const i = state.metals.findIndex(m => m.id === item.id);
+    if (i >= 0) state.metals[i] = Object.assign(item, { createdAt: state.metals[i].createdAt });
+    else state.metals.push(Object.assign(item, { createdAt: new Date().toISOString() }));
+    closeModal();
+    commit(i >= 0 ? 'Bewaard' : 'Toegevoegd');
+    maybeAutoFetchMetals();
+  }
+
+  function metalPriceModal() {
+    const p = metalPrice() || {};
+    const v = c => c ? (c / 100).toFixed(2).replace('.', ',') : '';
+    return modalShell('Goud- en zilverprijs', `
+      <p class="small muted">Prijs per gram <strong>fijn</strong> metaal, in euro. Je vindt de actuele prijs bij elke munthandelaar of op een site met goudkoersen.${Sync && Sync.mode === 'server' && !demo ? ' Of laat Helder hem ophalen.' : ''}</p>
+      <div class="form-grid">
+        <label class="field"><span>Goud (€ per gram)</span><input type="text" id="mp-gold" inputmode="decimal" value="${esc(v(p.gold))}" placeholder="bv. 118,50"></label>
+        <label class="field"><span>Zilver (€ per gram)</span><input type="text" id="mp-silver" inputmode="decimal" value="${esc(v(p.silver))}" placeholder="bv. 1,35"></label>
+      </div>
+      <div class="errors" id="mp-errors"></div>`,
+      `${Sync && Sync.mode === 'server' && !demo ? '<button class="btn" data-action="metal-price-online">Online ophalen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="metal-price-save">Opslaan</button>`);
+  }
+
+  function saveMetalPrice() {
+    const g = C.parseAmount($('#mp-gold').value), s = C.parseAmount($('#mp-silver').value || '0');
+    if (isNaN(g) || g <= 0) { $('#mp-errors').textContent = 'Geef een goudprijs per gram.'; return; }
+    state.settings = Object.assign({}, state.settings, { metalPrice: { gold: g, silver: isNaN(s) ? 0 : Math.max(0, s), at: new Date().toISOString(), source: 'manual' } });
+    closeModal();
+    commit('Goudprijs bewaard');
+  }
   // ----- Instellingen -----
 
   // Eigen Anthropic API-sleutel: de sleutel zelf staat enkel op de server
@@ -2982,7 +3148,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { metal: metalModal, metalPrice: metalPriceModal, taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -4236,6 +4402,21 @@
       try { await Sync.admin.user(u.user, op); toast('Bijgewerkt'); } catch (e) { toast(e.message); }
       loadAdmin();
     },
+    'metal-new': () => openModal({ type: 'metal', isNew: true, edit: { id: C.uid('mt'), origin: 'bought', metal: 'gold', count: 1 } }),
+    'metal-edit': el => { const x = (state.metals || []).find(m => m.id === el.dataset.id); if (x) openModal({ type: 'metal', edit: Object.assign({}, x) }); },
+    'metal-origin': el => { readMetalForm(); modal.edit.origin = el.dataset.v; renderModal(); },
+    'metal-save': saveMetal,
+    'metal-delete': () => {
+      const x = modal.edit;
+      if (!confirm(`“${x.name || 'Deze lijn'}” verwijderen?`)) return;
+      state.metals = (state.metals || []).filter(m => m.id !== x.id);
+      closeModal();
+      commit('Verwijderd');
+    },
+    'metal-price-fetch': () => fetchMetalPrice(false),
+    'metal-price-manual': () => openModal({ type: 'metalPrice' }),
+    'metal-price-online': () => { closeModal(); fetchMetalPrice(false); },
+    'metal-price-save': saveMetalPrice,
     'person-new': () => openModal({ type: 'person', person: { name: '', ibans: [] } }),
     'owed-filter': el => { ui.owed = el.dataset.f; render(); },
     'person-edit': el => { const e = personEntity(el.dataset.person); openModal({ type: 'person', original: el.dataset.person, person: e ? Object.assign({}, e) : { name: el.dataset.person, ibans: [] } }); },
@@ -4644,6 +4825,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx' && el.id === 'tx-action-add') { txAddAction(el); return; }
+    if (modal.type === 'metal' && el.id === 'mt-preset') { metalPresetChosen(el.value); return; }
     if (modal.type === 'tx' && el.id === 'tx-file') { uploadTxFile(el); return; }
     if (modal.type === 'tx') { updateSplitRemaining(); updateTxSections(); if (el.id === 'tx-category') updateTitleSuggestion(); return; }
     if (modal.type === 'rule') { updateRulePreview(); return; }

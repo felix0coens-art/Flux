@@ -50,6 +50,21 @@ test('php: zoektermen voor tegenpartijen zoals js/lookup.js', { skip }, async ()
   assert.deepEqual(r.result, cases.map(([n, d]) => Lookup.searchTerms(n, d)));
 });
 
+test('php: goud- en zilverprijs zoals server/prices.js', { skip }, async () => {
+  const t = Date.parse('2026-10-14T20:00:00Z') / 1000;
+  const fake = [
+    ['/chart/GC%3DF', 200, { chart: { result: [{ meta: { regularMarketPrice: 4000, regularMarketTime: t } }] } }],
+    ['/chart/SI%3DF', 200, { chart: { result: [{ meta: { regularMarketPrice: 50, regularMarketTime: t } }] } }],
+    ['/chart/EURUSD%3DX', 200, { chart: { result: [{ meta: { regularMarketPrice: 1.25, regularMarketTime: t } }] } }]
+  ];
+  const r = await php('metal_prices', [], fake);
+  const expected = await Prices.metalPrices(nodeFetch(fake));
+  assert.deepEqual(r.result, expected);
+  // 4000 dollar per troy ounce / 1,25 = 3200 euro per 31,1035 g = 102,88 euro per gram
+  assert.equal(expected.gold, 10288.24);
+  assert.equal(expected.at, '2026-10-14T20:00:00.000Z');
+});
+
 test('php: historische koersen zoals server/prices.js', { skip }, async () => {
   const ts = [Date.parse('2026-01-05T00:00:00Z') / 1000, Date.parse('2026-01-12T00:00:00Z') / 1000];
   const fake = [

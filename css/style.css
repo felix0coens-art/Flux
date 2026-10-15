@@ -933,3 +933,11 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 }
 #tabbar .tab-count.act-count { background: var(--green); }
 .act-row > .grow { flex: 1; min-width: 0; }
+
+/* ----- Goud en zilver ----- */
+.metals-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.metals-head h2 { margin-bottom: 4px; }
+.metals-kpis { display: flex; flex-wrap: wrap; gap: 12px 32px; margin-bottom: 12px; }
+.metals-kpis .label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.metals-kpis .value { font-size: 22px; font-weight: 800; }
+.metals-head .spacer { flex: 1; }

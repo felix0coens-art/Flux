@@ -280,6 +280,11 @@ function handle(string $method, string $path): void {
         return;
     }
 
+    if ($path === '/api/metals' && $method === 'GET') {
+        send(200, metal_prices('http_fetch'));
+        return;
+    }
+
     if ($path === '/api/prices' && $method === 'POST') {
         $b = body();
         $list = [];

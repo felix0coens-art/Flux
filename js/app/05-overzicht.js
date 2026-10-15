@@ -26,7 +26,8 @@
     const invSum = inv() ? Invest.summary(inv()) : null;
     const open = adv.people.filter(p => p.open !== 0);
 
-    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + Math.max(0, adv.totalOpen);
+    const metalSum = metals();
+    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen);
     const cancels = C.cancellationPairs(state).length;
     const actionsOpen = actionLists().open;
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
@@ -48,7 +49,7 @@
         <div class="hero-stat"><div class="label">Binnen</div><div class="value pos">${money(sum.netIncome)}</div><div class="hint">netto inkomsten${sum.incomeCosts ? ' (na ' + money(sum.incomeCosts) + ' kosten)' : ''}</div></div>
         <div class="hero-stat"><div class="label">Buiten</div><div class="value">${money(sum.expenses)}</div><div class="hint">uitgaven, na terugbetalingen</div></div>
         <div class="hero-stat main"><div class="label">${sum.net >= 0 ? 'Over' : 'Tekort'}</div><div class="value ${sum.net >= 0 ? 'pos' : 'negv'}">${money(Math.abs(sum.net))}</div><div class="hint">${sum.net >= 0 && sum.netIncome ? Math.round(sum.net / sum.netIncome * 100) + '% van je netto inkomen' : sum.net < 0 ? 'meer uitgegeven dan verdiend' : ''}</div></div>
-        <div class="hero-stat"><div class="label">Vermogen</div><div class="value">${money(worth)}</div><div class="hint">rekeningen${invSum ? ' + beleggingen' : ''}</div></div>
+        <div class="hero-stat"><div class="label">Vermogen</div><div class="value">${money(worth)}</div><div class="hint">rekeningen${invSum ? ' + beleggingen' : ''}${metalSum.value ? ' + goud' : ''}</div></div>
       </div>
       <div class="grid two dash-top">
         <div class="card todo-card"><h2>Te doen</h2>${todoItems.length ? `<div class="todo-list">${todoItems.join('')}</div>` : '<p class="muted">🎉 Niets te doen. Alles is verwerkt.</p>'}</div>
@@ -63,6 +64,7 @@
           <div class="list">
             ${balances.map(x => `<div class="list-row"><div class="grow">${esc(x.a.name)}<div class="small muted">gekend saldo van ${fmtDate(x.b.since)} + latere transacties</div></div><span class="amount">${money(x.b.amount)}</span></div>`).join('')}
             ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
+            ${metalSum.value ? `<div class="list-row"><div class="grow">Goud en zilver (fysiek)<div class="small muted">${metalSum.giftValue ? 'waarvan ' + money(metalSum.giftValue) + ' gekregen als cadeau' : 'aan de huidige goudprijs'}</div></div><span class="amount">${money(metalSum.value)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>

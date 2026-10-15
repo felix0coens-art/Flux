@@ -76,6 +76,27 @@ function price_cache_set(array $entries): void {
     });
 }
 
+/** Laatste koers van een Yahoo-symbool: [prijs, tijdstip]. */
+function last_price(callable $fetch, string $symbol): array {
+    $r = prices_json($fetch, 'https://query1.finance.yahoo.com/v8/finance/chart/' . rawurlencode($symbol) . '?range=5d&interval=1d');
+    $meta = $r['chart']['result'][0]['meta'] ?? [];
+    $p = $meta['regularMarketPrice'] ?? null;
+    if (!is_numeric($p) || $p <= 0) throw new HttpError(502, 'Geen koers gevonden voor ' . $symbol);
+    return [(float) $p, gmdate('Y-m-d\\TH:i:s.000\\Z', (int) ($meta['regularMarketTime'] ?? time()))];
+}
+
+/** Goud en zilver in eurocent per gram fijn metaal (zelfde als metalPrices in server/prices.js). */
+function metal_prices(callable $fetch, bool $useCache = true): array {
+    if ($useCache && ($hit = price_cache_get('metals|v1'))) return $hit;
+    [$gold, $at] = last_price($fetch, 'GC=F');
+    [$silver] = last_price($fetch, 'SI=F');
+    [$fx] = last_price($fetch, 'EURUSD=X');
+    $perGram = fn($usd) => round($usd / $fx / 31.1034768 * 10000) / 100;
+    $out = ['gold' => $perGram($gold), 'silver' => $perGram($silver), 'at' => $at, 'source' => 'Yahoo Finance'];
+    if ($useCache) price_cache_set(['metals|v1' => $out]);
+    return $out;
+}
+
 function fetch_prices(callable $fetch, array $instruments, bool $useCache = true): array {
     $out = ['series' => new stdClass(), 'errors' => new stdClass()];
     $fxCache = [];

@@ -1109,7 +1109,7 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions', 'metals'];
   const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 
@@ -1277,6 +1277,69 @@
     }).sort((a, b) => b.count - a.count || Math.abs(b.total) - Math.abs(a.total));
   }
 
+  // ---------- Fysiek goud en zilver ----------
+
+  /**
+   * Munten en baren met hun gewicht en zuiverheid. Bekende munten vullen gewicht en zuiverheid in;
+   * 'fine' = gram fijn metaal per stuk.
+   */
+  const METAL_PRESETS = [
+    { id: 'krugerrand', name: 'Krugerrand 1 oz', metal: 'gold', weight: 33.93, purity: 916.7 },
+    { id: 'krugerrand-eq', name: 'Krugerrand-equivalent (schatting)', metal: 'gold', weight: 33.93, purity: 916.7, estimated: true },
+    { id: 'maple', name: 'Maple Leaf 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
+    { id: 'philharmoniker', name: 'Wiener Philharmoniker 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
+    { id: 'britannia', name: 'Britannia 1 oz', metal: 'gold', weight: 31.10, purity: 999.9 },
+    { id: 'eagle', name: 'American Eagle 1 oz', metal: 'gold', weight: 33.93, purity: 916.7 },
+    { id: 'napoleon', name: '20 frank (Napoleon / Leopold)', metal: 'gold', weight: 6.45, purity: 900 },
+    { id: 'vreneli', name: 'Vreneli 20 Zwitserse frank', metal: 'gold', weight: 6.45, purity: 900 },
+    { id: 'sovereign', name: 'Sovereign', metal: 'gold', weight: 7.99, purity: 916.7 },
+    { id: 'ducaat4', name: '4 dukaten (Oostenrijk)', metal: 'gold', weight: 13.96, purity: 986 },
+    { id: 'ducaat1', name: '1 dukaat (Oostenrijk / Nederland)', metal: 'gold', weight: 3.49, purity: 986 },
+    { id: 'bar1', name: 'Goudbaar 1 g', metal: 'gold', weight: 1, purity: 999.9 },
+    { id: 'bar10', name: 'Goudbaar 10 g', metal: 'gold', weight: 10, purity: 999.9 },
+    { id: 'bar100', name: 'Goudbaar 100 g', metal: 'gold', weight: 100, purity: 999.9 },
+    { id: 'silver-maple', name: 'Zilveren Maple Leaf 1 oz', metal: 'silver', weight: 31.10, purity: 999.9 },
+    { id: 'silver-phil', name: 'Zilveren Philharmoniker 1 oz', metal: 'silver', weight: 31.10, purity: 999 },
+    { id: 'silver-bar1k', name: 'Zilverbaar 1 kg', metal: 'silver', weight: 1000, purity: 999 }
+  ];
+
+  /**
+   * Waarde van je munten en baren. Per stuk: een eigen verkoopwaarde (als je die invulde) gaat vóór de
+   * prijs per gram fijn metaal. Cadeaus (origin 'gift') tellen als vermogen, maar niet als aankoop of
+   * inleg, en dus ook niet in winst/verlies.
+   * @param prices { gold, silver } in eurocent per gram fijn metaal (mag ontbreken)
+   */
+  function metalsSummary(state, prices) {
+    prices = prices || {};
+    const items = (state.metals || []).filter(m => m && Number(m.count) > 0).map(m => {
+      const count = Number(m.count) || 0;
+      const fine = (Number(m.weight) || 0) * (Number(m.purity) || 0) / 1000;
+      const perGram = Number(prices[m.metal === 'silver' ? 'silver' : 'gold']) || 0;
+      const manual = Number.isFinite(m.sellValue) && m.sellValue > 0 ? m.sellValue : null;
+      const unitValue = manual != null ? manual : perGram ? Math.round(fine * perGram) : null;
+      const value = unitValue != null ? Math.round(unitValue * count) : null;
+      const gift = m.origin === 'gift';
+      const cost = !gift && Number.isFinite(m.buyPrice) && m.buyPrice > 0 ? m.buyPrice : null;
+      return Object.assign({}, m, {
+        count, fine, fineTotal: fine * count, unitValue, value, valueSource: manual != null ? 'manual' : unitValue != null ? 'price' : 'none',
+        gift, cost, gain: cost != null && value != null ? value - cost : null
+      });
+    });
+    const sum = (list, f) => list.reduce((a, x) => a + (f(x) || 0), 0);
+    const bought = items.filter(x => !x.gift);
+    return {
+      items,
+      value: sum(items, x => x.value),
+      giftValue: sum(items.filter(x => x.gift), x => x.value),
+      boughtValue: sum(bought, x => x.value),
+      cost: sum(bought, x => x.cost),
+      gain: bought.some(x => x.gain != null) ? sum(bought.filter(x => x.gain != null), x => x.gain) : null,
+      goldGrams: sum(items.filter(x => x.metal !== 'silver'), x => x.fineTotal),
+      silverGrams: sum(items.filter(x => x.metal === 'silver'), x => x.fineTotal),
+      missing: items.filter(x => x.value == null).length
+    };
+  }
+
   const api = {
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
@@ -1288,7 +1351,7 @@
     recompute, detectInvestments, txKind, advancesOverview, accountBalance, balanceAt, accountStart, SYS_ADVANCE, SYS_INVEST,
     categoryIcon, ICON_CHOICES, personList, suggestRepayments,
     SYNC_COLLECTIONS, SYNC_SINGLETONS, snapshot, stampChanges, extractChanges, mergeStates, entityHash,
-    categoryTags, matchCategory, lookupCandidates
+    categoryTags, matchCategory, lookupCandidates, METAL_PRESETS, metalsSummary
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

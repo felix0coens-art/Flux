@@ -190,6 +190,35 @@ test('terug naar te verwerken: een regel vult de categorie niet meteen opnieuw i
   assert.equal((src.match(/value === ''\) \{?\s*resetToTodo\(t\)/g) || []).length, 2, 'lijst en selectie gebruiken allebei resetToTodo');
 });
 
+test('fysiek goud: cadeaus tellen als vermogen zonder inleg, eigen verkoopwaarde gaat voor', () => {
+  const kr = C.METAL_PRESETS.find(p => p.id === 'krugerrand');
+  const eq = C.METAL_PRESETS.find(p => p.id === 'krugerrand-eq');
+  const s = Store.defaultState();
+  s.metals.push(
+    { id: 'm1', name: kr.name, metal: 'gold', weight: kr.weight, purity: kr.purity, count: 2, origin: 'bought', buyPrice: 500000 },
+    { id: 'm2', name: 'Extra munten', metal: 'gold', weight: eq.weight, purity: eq.purity, count: 1, origin: 'gift', estimated: true },
+    { id: 'm3', name: '20 frank', metal: 'gold', weight: 6.45, purity: 900, count: 3, origin: 'gift', sellValue: 60000 }
+  );
+  const m = C.metalsSummary(s, { gold: 10000, silver: 100 }); // 100 euro per gram
+  const [a, b, c] = m.items;
+  assert.equal(Math.round(a.fine * 100) / 100, 31.1, 'Krugerrand: 1 troy ounce fijn goud');
+  assert.equal(a.value, 2 * Math.round(a.fine * 10000));
+  assert.equal(a.gain, a.value - 500000);
+  assert.equal(b.value, Math.round(b.fine * 10000), 'schatting: één Krugerrand-equivalent');
+  assert.equal(b.cost, null); assert.equal(b.gain, null);
+  assert.equal(c.valueSource, 'manual'); assert.equal(c.value, 180000, 'eigen verkoopwaarde per munt gaat voor op de prijs per gram');
+  assert.equal(m.cost, 500000, 'cadeaus zijn geen inleg');
+  assert.equal(m.giftValue, b.value + c.value);
+  assert.equal(m.value, a.value + b.value + c.value);
+  // Zonder goudprijs: enkel wat een eigen waarde heeft
+  const none = C.metalsSummary(s, null);
+  assert.equal(none.value, 180000); assert.equal(none.missing, 2);
+  // Cadeaus zijn geen transacties: geen uitgave en geen belegging
+  const sum = C.summarize(C.recompute(s), { start: '2000-01-01', end: '2100-01-01' });
+  assert.equal(sum.expenses, 0); assert.equal(sum.invested, 0);
+  assert.ok(C.SYNC_COLLECTIONS.includes('metals'), 'munten worden gesynchroniseerd');
+});
+
 test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const { build } = require('../scripts/build-app.js');
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');

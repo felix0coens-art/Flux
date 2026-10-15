@@ -86,4 +86,25 @@ async function fetchPrices(fetchFn, instruments, cache) {
   return out;
 }
 
-module.exports = { fetchPrices, findSymbol, history, toEur };
+const TROY_OZ = 31.1034768;
+
+/** Laatste koers van een Yahoo-symbool. */
+async function lastPrice(fetchFn, symbol) {
+  const r = await getJson(fetchFn, `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`);
+  const res = r.chart && r.chart.result && r.chart.result[0];
+  const p = res && res.meta && res.meta.regularMarketPrice;
+  if (!(p > 0)) throw new Error('geen koers voor ' + symbol);
+  return { price: p, at: new Date(((res.meta.regularMarketTime) || Date.now() / 1000) * 1000).toISOString() };
+}
+
+/**
+ * Prijs van goud en zilver in eurocent per gram fijn metaal (goud- en zilverfutures in dollar per troy ounce,
+ * omgerekend met de euro/dollar-koers). Er wordt niets over de gebruiker verstuurd.
+ */
+async function metalPrices(fetchFn) {
+  const [g, s, fx] = await Promise.all([lastPrice(fetchFn, 'GC=F'), lastPrice(fetchFn, 'SI=F'), lastPrice(fetchFn, 'EURUSD=X')]);
+  const perGram = usd => Math.round(usd / fx.price / TROY_OZ * 10000) / 100;
+  return { gold: perGram(g.price), silver: perGram(s.price), at: g.at, source: 'Yahoo Finance' };
+}
+
+module.exports = { fetchPrices, findSymbol, history, toEur, metalPrices };

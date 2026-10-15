@@ -21,6 +21,7 @@ try {
     $args = $in['args'] ?? [];
     switch ($in['fn']) {
         case 'search_terms': $result = array_map(fn($a) => search_terms($a[0], $a[1] ?? ''), $args); break;
+        case 'metal_prices': $result = metal_prices($fake, false); break;
         case 'fetch_prices': $result = fetch_prices($fake, $args[0], false); break;
         case 'degiro': $result = degiro_fetch_all($fake, ...$args); break;
         case 'lookup_free': $result = lookup_free($fake, $args[0], 'be'); break;
