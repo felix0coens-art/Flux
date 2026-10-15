@@ -232,13 +232,22 @@
    * niet opgesplitst zijn en geen interne overschrijving of terugbetaling zijn.
    * Geeft het aantal gewijzigde transacties terug.
    */
+  /** Deel dat een regel als voorschot boekt (zelfde teken als de transactie), of 0. */
+  function ruleSharePart(share, amount) {
+    if (!share || !String(share.person || '').trim() || !(Number(share.value) > 0)) return 0;
+    const abs = Math.abs(amount);
+    const part = share.mode === 'amount' ? Math.min(abs, Math.round(Number(share.value))) : Math.round(abs * Math.min(100, Number(share.value)) / 100);
+    return part > 0 ? Math.sign(amount) * part : 0;
+  }
+
   function applyRules(state) {
     let changed = 0;
     const rules = sortedRules(state.rules);
     for (const tx of state.transactions) {
-      if (tx.categorySource === 'manual' || tx.categorySource === 'system' || (tx.splits && tx.splits.length) || tx.isTransfer || tx.refundOf) continue;
-      const rule = rules.find(r => ruleMatches(r, tx));
-      const newCat = rule ? rule.categoryId : null;
+      // Een splitsing die een regel maakte, mag die regel ook bijwerken; een eigen splitsing niet
+      if (tx.categorySource === 'manual' || tx.categorySource === 'system' || (tx.splits && tx.splits.length && !tx.splitByRule) || tx.isTransfer || tx.refundOf) continue;
+      const rule = rules.find(r => (r.categoryId || r.share) && ruleMatches(r, tx));
+      const newCat = rule ? rule.categoryId || null : null;
       const newSrc = rule ? 'rule' : null;
       const newRule = rule ? rule.id : null;
       if (tx.categoryId !== newCat || tx.categorySource !== newSrc || tx.ruleId !== newRule) {
@@ -247,12 +256,45 @@
         tx.ruleId = newRule;
         changed++;
       }
+      // Deel als voorschot voor iemand (bv. de helft van Telenet voor je huisgenoot): de rest blijft in de categorie
+      const part = rule ? ruleSharePart(rule.share, tx.amount) : 0;
+      if (part) {
+        const sp = [{ categoryId: SYS_ADVANCE, amount: part, person: String(rule.share.person).trim(), note: rule.share.note || '' }];
+        if (JSON.stringify(tx.splits || []) !== JSON.stringify(sp) || tx.splitByRule !== rule.id) { tx.splits = sp; tx.splitByRule = rule.id; changed++; }
+      } else if (tx.splitByRule) { tx.splits = []; delete tx.splitByRule; changed++; }
       // Voorschot-regels kunnen ook zeggen voor wie (anders: "Onbekend")
       const person = rule && rule.categoryId === SYS_ADVANCE && rule.person ? String(rule.person).trim() : '';
       if (person) {
         if (tx.person !== person) { tx.person = person; tx.personByRule = true; changed++; }
         else if (!tx.personByRule) tx.personByRule = true;
       } else if (tx.personByRule) { delete tx.person; delete tx.personByRule; changed++; }
+    }
+    return changed;
+  }
+
+  /**
+   * Regels die een transactie ook aan een actie koppelen (bv. "Telenet terugvragen", elke maand opnieuw).
+   * De actie krijgt een vaste id (per regel, en per maand als je dat koos), zodat elk toestel dezelfde maakt.
+   * Wat een regel al eens koppelde, wordt onthouden (ruleActions): haal je het er zelf uit, dan blijft het eruit.
+   */
+  function applyRuleActions(state) {
+    state.actions = state.actions || [];
+    let changed = 0;
+    for (const rule of state.rules || []) {
+      const ra = rule && rule.enabled !== false && rule.action;
+      if (!ra || !String(ra.name || '').trim()) continue;
+      for (const tx of state.transactions) {
+        if (tx.isTransfer || (ra.since && tx.date < ra.since) || (tx.ruleActions || []).includes(rule.id) || !ruleMatches(rule, tx)) continue;
+        const month = tx.date.slice(0, 7);
+        const id = 'act_r_' + rule.id + (ra.perMonth ? '_' + month : '');
+        if (!state.actions.some(a => a.id === id)) {
+          const label = MONTH_NAMES[Number(month.slice(5)) - 1] + ' ' + month.slice(0, 4);
+          state.actions.push({ id, name: String(ra.name).trim() + (ra.perMonth ? ' — ' + label : ''), expectBack: !!ra.expectBack, person: ra.person || '', note: '', ruleId: rule.id, createdAt: tx.date + 'T00:00:00.000Z' });
+        }
+        tx.actions = Array.from(new Set((tx.actions || []).concat(id)));
+        tx.ruleActions = (tx.ruleActions || []).concat(rule.id);
+        changed++;
+      }
     }
     return changed;
   }
@@ -357,7 +399,7 @@
         lines.push({ txId: tx.id, date: tx.date, categoryId: l.categoryId, amount: l.amount, refund: false, accountId: tx.accountId, person: l.person });
       }
     }
-    // Kwijtgescholden voorschotten: het voorschot is "terugbetaald" door een uitgave in de gekozen categorie
+    // Verrekende of kwijtgescholden voorschotten (niet in geld terugbetaald): het voorschot is "terugbetaald" door een uitgave in de gekozen categorie
     // Te veel terugbetaald: dat deel wordt een inkomst in de gekozen categorie
     for (const x of surplusList(state)) {
       lines.push({ txId: null, surplusId: x.id, date: x.date, categoryId: SYS_ADVANCE, amount: -x.amount, refund: false, person: x.person, surplus: true });
@@ -859,6 +901,7 @@
     detectTransfers(state);
     detectInvestments(state);
     applyRules(state);
+    applyRuleActions(state);
     return state;
   }
 
@@ -931,7 +974,7 @@
     // Kwijtschelden telt als terugbetaling (zonder geld)
     const forgivenBy = {};
     for (const f of forgivenList(state)) {
-      repayments.push({ kind: 'forgiven', txId: null, ref: 'fg:' + f.id, forgiveId: f.id, date: f.date, person: f.person, amount: f.amount, advanceOf: f.advanceOf || null, forgiven: true, title: f.note || '', categoryId: f.categoryId, settles: [] });
+      repayments.push({ kind: 'forgiven', reason: f.reason === 'settled' ? 'settled' : 'gift', txId: null, ref: 'fg:' + f.id, forgiveId: f.id, date: f.date, person: f.person, amount: f.amount, advanceOf: f.advanceOf || null, forgiven: true, title: f.note || '', categoryId: f.categoryId, settles: [] });
       const k = f.person.toLowerCase();
       forgivenBy[k] = (forgivenBy[k] || 0) + f.amount;
     }
@@ -940,7 +983,7 @@
     const settle = (r, it, take) => {
       it.repaid += take;
       if (r.forgiven) it.forgiven += take;
-      it.settledBy.push({ ref: r.ref, kind: r.kind, date: r.date, amount: take, title: r.title || r.counterparty || '' });
+      it.settledBy.push({ ref: r.ref, kind: r.kind, reason: r.reason, date: r.date, amount: take, title: r.title || r.counterparty || '' });
       r.settles.push({ key: it.key, amount: take, title: it.title || it.counterparty || '' });
     };
     // Eerst wat je zelf koppelde aan een voorschot, dan de rest per persoon (oudste voorschot eerst)
@@ -1117,6 +1160,7 @@
     const copy = Object.assign({}, item);
     delete copy.updatedAt; delete copy.isTransfer; delete copy.transferPairId; delete copy.ruleId;
     if (copy.categorySource === 'rule' || copy.categorySource === 'system') { delete copy.categoryId; delete copy.categorySource; }
+    if (copy.splitByRule) { delete copy.splits; delete copy.splitByRule; } // wordt op elk toestel uit de regel berekend
     if (copy.categorySource == null) delete copy.categorySource;
     if (copy.categoryId == null) delete copy.categoryId;
     return stableJson(copy);
@@ -1386,7 +1430,7 @@
   const api = {
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
-    RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, sortedRules,
+    RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, applyRuleActions, ruleSharePart, sortedRules,
     detectTransfers, splitLines, validateSplits, allocations, forgivenList, surplusList, savingsIn, actionSummary, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,

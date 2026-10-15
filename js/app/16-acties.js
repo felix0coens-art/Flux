@@ -203,7 +203,7 @@
         return `<tr class="lg-adv">
           <td class="nowrap">${fmtDate(row.date)}</td>
           <td><button class="linklike adv-title-sm" data-action="adv-title" data-key="${esc(it.key)}"><strong>${esc(it.title || it.counterparty || 'Voorschot')}</strong>${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
-            <div class="small muted">${left <= 0 ? (it.forgiven >= it.amount ? '🎁 kwijtgescholden' : '✓ vereffend') : left < it.amount ? `deels vereffend · nog ${money(left)} open` : '<span class="warn-text">nog open</span>'}${it.settledBy.length ? ' · door ' + it.settledBy.map(b => esc((b.kind === 'forgiven' ? '🎁 ' : '') + (b.title || 'terugbetaling')) + ' (' + money(b.amount) + ')').join(', ') : ''}</div></td>
+            <div class="small muted">${left <= 0 ? (it.forgiven >= it.amount ? fgLabel(fgReasonOf(it)) : '✓ vereffend') : left < it.amount ? `deels vereffend · nog ${money(left)} open` : '<span class="warn-text">nog open</span>'}${it.settledBy.length ? ' · door ' + it.settledBy.map(b => esc((b.kind === 'forgiven' ? fgLabel(b.reason).slice(0, 2) + ' ' : '') + (b.title || 'terugbetaling')) + ' (' + money(b.amount) + ')').join(', ') : ''}</div></td>
           <td class="amount">${money(it.amount)}</td><td></td>
           <td class="amount lg-bal">${money(row.balance)}</td></tr>`;
       }
@@ -216,7 +216,7 @@
       }
       const r = row.repayment;
       const t = r.txId ? txById(r.txId) : null;
-      const label = r.kind === 'forgiven' ? '🎁 Kwijtgescholden' + (r.title ? ': ' + r.title : '') : (r.title || r.counterparty || 'Terugbetaling');
+      const label = r.kind === 'forgiven' ? fgLabel(r.reason, true) + (r.title ? ': ' + r.title : '') : (r.title || r.counterparty || 'Terugbetaling');
       return `<tr class="lg-rep">
         <td class="nowrap">${fmtDate(row.date)}</td>
         <td>${t ? `<a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(label)}</a>` : esc(label)}
@@ -322,21 +322,28 @@
     commit(v ? 'Titel bewaard' : 'Titel verwijderd');
   }
 
-  /** Een openstaand voorschot kwijtschelden: het wordt een uitgave in een categorie naar keuze. */
+  /**
+   * Een openstaand voorschot dat niet in geld terugkomt: verrekend (bv. via Tricount, of zij betaalden iets
+   * voor jou) of kwijtgescholden (cadeau). In beide gevallen wordt het jouw uitgave in een categorie naar keuze.
+   */
   function forgiveModal() {
     const m = modal;
     const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
     const max = m.max != null ? m.max : st.open;
-    return modalShell('Kwijtschelden — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
-      <p class="small muted">Je vraagt dit geld niet meer terug van <strong>${esc(m.person)}</strong> (bv. je trakteerde, of het was een cadeau). Dan is het geen voorschot meer maar een <strong>uitgave</strong>: kies in welke categorie het moet tellen.</p>
+    return modalShell('Verrekenen — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
+      <p class="small muted"><strong>${esc(m.person)}</strong> betaalt dit niet in geld terug. Dan is het geen voorschot meer maar <strong>jouw uitgave</strong>: kies in welke categorie het telt.</p>
+      <div class="fg-reasons">
+        <label class="fg-reason"><input type="radio" name="fg-reason" value="settled" ${m.reason !== 'gift' ? 'checked' : ''}><span><strong>🔄 Verrekend</strong><span class="small muted">bv. via Tricount, of ${esc(m.person)} betaalde iets voor jou (zoals je eten)</span></span></label>
+        <label class="fg-reason"><input type="radio" name="fg-reason" value="gift" ${m.reason === 'gift' ? 'checked' : ''}><span><strong>🎁 Kwijtgescholden</strong><span class="small muted">je vraagt het niet meer terug, bv. een cadeau of je trakteerde</span></span></label>
+      </div>
       <div class="form-grid">
         <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(max)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, max) / 100).toFixed(2).replace('.', ','))}"></label>
         <label class="field"><span>Datum</span><input type="date" id="fg-date" value="${esc(today)}" max="${today}"></label>
-        <label class="field full"><span>Telt als uitgave in</span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
-        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. verjaardagscadeau" value="${esc(m.title || '')}"></label>
+        <label class="field full"><span>Telt als uitgave in <span class="muted small">(bij verrekenen: waarvoor betaalden zij? bv. Eten)</span></span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. Tricount weekend Ardennen, of verjaardagscadeau" value="${esc(m.title || '')}"></label>
       </div>
       <div class="errors" id="fg-errors"></div>`,
-      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Kwijtschelden</button>`);
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Opslaan</button>`);
   }
 
   function saveForgive() {
@@ -355,18 +362,19 @@
     if (errors.length) { $('#fg-errors').innerHTML = errors.map(esc).join('<br>'); return; }
     const p = ensurePerson(m.person);
     if (!p) { $('#fg-errors').textContent = 'Kies eerst een naam voor deze persoon (Bewerk).'; return; }
-    const entry = Object.assign({ id: C.uid('fg'), date, amount, categoryId, note: $('#fg-note').value.trim() }, m.advanceOf ? { advanceOf: m.advanceOf } : {});
+    const reason = ($('input[name=fg-reason]:checked') || {}).value === 'gift' ? 'gift' : 'settled';
+    const entry = Object.assign({ id: C.uid('fg'), date, amount, categoryId, reason, note: $('#fg-note').value.trim() }, m.advanceOf ? { advanceOf: m.advanceOf } : {});
     p.forgiven = (p.forgiven || []).concat([entry]);
     closeModal();
     commit();
-    toast(`${money(amount)} kwijtgescholden aan ${p.name} → ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeForgive(p.name, entry.id) });
+    toast(`${money(amount)} ${reason === 'gift' ? 'kwijtgescholden aan' : 'verrekend met'} ${p.name} → ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeForgive(p.name, entry.id) });
   }
 
   function removeForgive(person, id) {
     const p = personEntity(person);
     if (!p) return;
     p.forgiven = (p.forgiven || []).filter(f => f.id !== id);
-    commit('Kwijtschelding ongedaan gemaakt');
+    commit('Ongedaan gemaakt: het bedrag staat weer open');
   }
 
   function personModal() {

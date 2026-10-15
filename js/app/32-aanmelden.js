@@ -79,7 +79,7 @@
               <div class="ex-person"><span class="avatar">P</span><strong>Pieter</strong><span class="ex-open">nog € 62,00</span></div>
               <div class="ex-item"><div><strong>Concertticket</strong><div class="small muted">03/10</div></div><b>€ 45,00</b></div>
               <div class="ex-item"><div><strong>Etentje Gent</strong><div class="small muted">09/10</div></div><b>€ 17,00</b></div>
-              <div class="ex-buttons"><span>🔗 Met een transactie</span><span>💶 In cash</span><span>🎁 Kwijtschelden</span></div>
+              <div class="ex-buttons"><span>🔗 Met een transactie</span><span>💶 In cash</span><span>🔄 Verrekenen</span></div>
             </div>
             <figcaption><strong>Wie is je nog iets schuldig?</strong> Elk voorschot met een titel, en met één klik afgehandeld.</figcaption>
           </figure>

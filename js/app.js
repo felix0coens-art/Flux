@@ -1044,7 +1044,7 @@
           <h2>Automatische regels</h2>
           <p class="small muted">Regels koppelen nieuwe transacties vanzelf. Je maakt ze het makkelijkst met <em>⚙ Altijd zo</em> nadat je een transactie koppelde. De bovenste regel die past wint; manuele koppelingen worden nooit overschreven.</p>
           ${rules.length ? `<div class="list scroll">${rules.map((r, i) => `<div class="list-row" style="${r.enabled === false ? 'opacity:.5' : ''}">
-            <div class="grow"><strong>${esc(r.name)}</strong> → ${catBadge(r.categoryId)}${r.categoryId === C.SYS_ADVANCE ? ` <span class="small">${r.person ? 'voor ' + esc(r.person) : '<span class="warn-text">voor wie?</span>'}</span>` : ''}<div class="small muted">${esc(C.RULE_FIELDS[r.field])} ${esc(C.RULE_OPERATORS[r.operator])} “${esc(r.value)}” · ${ruleCount[r.id] || 0} treffers</div></div>
+            <div class="grow"><strong>${esc(r.name)}</strong> → ${r.categoryId ? catBadge(r.categoryId) : ''}${r.share ? ` <span class="badge" title="Deel als voorschot">🤝 ${r.share.mode === 'amount' ? money(r.share.value) : String(r.share.value).replace('.', ',') + '%'} voor ${esc(r.share.person)}</span>` : ''}${r.action ? ` <span class="badge action-badge" title="Koppelt ook aan een actie">✅ ${esc(r.action.name)}${r.action.perMonth ? ' · elke maand' : ''}</span>` : ''}${r.categoryId === C.SYS_ADVANCE ? ` <span class="small">${r.person ? 'voor ' + esc(r.person) : '<span class="warn-text">voor wie?</span>'}</span>` : ''}<div class="small muted">${esc(C.RULE_FIELDS[r.field])} ${esc(C.RULE_OPERATORS[r.operator])} “${esc(r.value)}” · ${ruleCount[r.id] || 0} treffers</div></div>
             <button class="btn small ghost" data-action="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Hoger">▲</button>
             <button class="btn small" data-action="edit-rule" data-id="${esc(r.id)}">Bewerk</button><button class="btn small danger" data-action="delete-rule" data-id="${esc(r.id)}" aria-label="Verwijder">✕</button></div>`).join('')}</div>` : '<p class="muted">Nog geen regels.</p>'}
           <p class="btn-row"><button class="btn" data-action="new-rule">+ Regel</button></p>
@@ -1262,6 +1262,10 @@
    *    bonnetje indienen, …). Je vinkt ze af als het gedaan is. Ze veranderen niets aan de cijfers.
    *  - Voorschotten: geld dat iemand anders jou nog moet (je betaalde voor hen; telt niet als jouw uitgave).
    */
+  /** Niet in geld terugbetaald: verrekend (bv. via Tricount) of kwijtgescholden (cadeau). */
+  const fgLabel = (reason, cap) => reason === 'settled' ? (cap ? '🔄 Verrekend' : '🔄 verrekend') : (cap ? '🎁 Kwijtgescholden' : '🎁 kwijtgescholden');
+  const fgReasonOf = it => { const r = (it.settledBy || []).filter(b => b.kind === 'forgiven'); return r.length && r.every(b => b.reason === 'settled') ? 'settled' : 'gift'; };
+
   function renderAdvances() {
     const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
     const showAdv = f !== 'act', showAct = f !== 'adv';
@@ -1271,7 +1275,7 @@
     const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
     const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
-    const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
+    const settledHow = it => it.forgiven >= it.amount ? fgLabel(fgReasonOf(it)) : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} ${fgLabel(fgReasonOf(it)).slice(3)}` : '✓ terugbetaald';
     const plural = (n, one, more) => n + ' ' + (n === 1 ? one : more);
     const history = (p) => {
       const st = p.stats;
@@ -1284,7 +1288,7 @@
       return `<details class="adv-history"><summary class="small">Afgehandeld en terugbetalingen <span class="muted">(${closed.length + reps.length + forgiven.length})</span></summary>
         ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span></span><span class="amount">${money(it.amount)}</span><span class="small">${settledHow(it)}</span></div>`).join('')}</div>` : ''}
         ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span></div>`).join('')}</div>` : ''}
-        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(fg.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
+        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Verrekend of kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">${fgLabel(fg.reason, true).slice(0, 2)} ${esc(fg.note || fgLabel(fg.reason, true).slice(3))} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
     const personTools = p => `<div class="card-tools">
@@ -1312,7 +1316,7 @@
             <div class="adv-paid"><span class="small muted">Betaald?</span>
               <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
               <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
-              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Niet in geld terugbetaald: verrekend (bv. via Tricount) of kwijtgescholden. Het telt dan als jouw uitgave in een categorie naar keuze.">🔄 Verrekenen</button>
             </div>
           </div>`;
         }).join('')}</div>
@@ -1374,6 +1378,7 @@
    */
   function catTxModal() {
     const m = modal;
+    const forgivenReason = Object.fromEntries(C.forgivenList(state).map(f => [f.id, f.reason]));
     const none = m.cat === '__none__';
     const range = m.all ? null : currentRange();
     const lines = C.allocations(state).filter(l => (none ? !l.categoryId : l.categoryId === m.cat) && (!range || C.inRange(l.date, range)));
@@ -1390,8 +1395,8 @@
     const label = none ? 'Nog niet gekoppeld' : catLabel(m.cat);
     const row = r => {
       const t = r.txId ? txById(r.txId) : null;
-      const what = r.forgiven ? `🎁 Kwijtgescholden aan ${esc(r.person || '')}` : t ? esc(t.title || t.counterparty || t.description || '—') : '—';
-      const sub = r.forgiven ? 'voorschot dat een uitgave werd' : t ? esc([r.refund ? '↩ terugbetaling' : '', t.title ? t.counterparty : '', accName(t.accountId)].filter(Boolean).join(' · ')) : '';
+      const what = r.forgiven ? `${fgLabel((forgivenReason[r.forgiveId] || 'gift'), true)} met ${esc(r.person || '')}` : t ? esc(t.title || t.counterparty || t.description || '—') : '—';
+      const sub = r.forgiven ? 'voorschot dat jouw uitgave werd' : t ? esc([r.refund ? '↩ terugbetaling' : '', t.title ? t.counterparty : '', accName(t.accountId)].filter(Boolean).join(' · ')) : '';
       return `<tr ${t ? `class="clickable" data-action="edit-tx" data-id="${esc(t.id)}"` : ''}>
         <td class="nowrap">${fmtDate(r.date)}</td><td>${what}<div class="desc">${sub}</div></td>
         <td class="amount ${amountClass(r.amount)}">${money(r.amount)}</td></tr>`;
@@ -1855,7 +1860,7 @@
         return `<tr class="lg-adv">
           <td class="nowrap">${fmtDate(row.date)}</td>
           <td><button class="linklike adv-title-sm" data-action="adv-title" data-key="${esc(it.key)}"><strong>${esc(it.title || it.counterparty || 'Voorschot')}</strong>${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
-            <div class="small muted">${left <= 0 ? (it.forgiven >= it.amount ? '🎁 kwijtgescholden' : '✓ vereffend') : left < it.amount ? `deels vereffend · nog ${money(left)} open` : '<span class="warn-text">nog open</span>'}${it.settledBy.length ? ' · door ' + it.settledBy.map(b => esc((b.kind === 'forgiven' ? '🎁 ' : '') + (b.title || 'terugbetaling')) + ' (' + money(b.amount) + ')').join(', ') : ''}</div></td>
+            <div class="small muted">${left <= 0 ? (it.forgiven >= it.amount ? fgLabel(fgReasonOf(it)) : '✓ vereffend') : left < it.amount ? `deels vereffend · nog ${money(left)} open` : '<span class="warn-text">nog open</span>'}${it.settledBy.length ? ' · door ' + it.settledBy.map(b => esc((b.kind === 'forgiven' ? fgLabel(b.reason).slice(0, 2) + ' ' : '') + (b.title || 'terugbetaling')) + ' (' + money(b.amount) + ')').join(', ') : ''}</div></td>
           <td class="amount">${money(it.amount)}</td><td></td>
           <td class="amount lg-bal">${money(row.balance)}</td></tr>`;
       }
@@ -1868,7 +1873,7 @@
       }
       const r = row.repayment;
       const t = r.txId ? txById(r.txId) : null;
-      const label = r.kind === 'forgiven' ? '🎁 Kwijtgescholden' + (r.title ? ': ' + r.title : '') : (r.title || r.counterparty || 'Terugbetaling');
+      const label = r.kind === 'forgiven' ? fgLabel(r.reason, true) + (r.title ? ': ' + r.title : '') : (r.title || r.counterparty || 'Terugbetaling');
       return `<tr class="lg-rep">
         <td class="nowrap">${fmtDate(row.date)}</td>
         <td>${t ? `<a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(label)}</a>` : esc(label)}
@@ -1974,21 +1979,28 @@
     commit(v ? 'Titel bewaard' : 'Titel verwijderd');
   }
 
-  /** Een openstaand voorschot kwijtschelden: het wordt een uitgave in een categorie naar keuze. */
+  /**
+   * Een openstaand voorschot dat niet in geld terugkomt: verrekend (bv. via Tricount, of zij betaalden iets
+   * voor jou) of kwijtgescholden (cadeau). In beide gevallen wordt het jouw uitgave in een categorie naar keuze.
+   */
   function forgiveModal() {
     const m = modal;
     const st = (C.personList(state).find(x => x.name.toLowerCase() === m.person.toLowerCase()) || { stats: { open: 0 } }).stats;
     const max = m.max != null ? m.max : st.open;
-    return modalShell('Kwijtschelden — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
-      <p class="small muted">Je vraagt dit geld niet meer terug van <strong>${esc(m.person)}</strong> (bv. je trakteerde, of het was een cadeau). Dan is het geen voorschot meer maar een <strong>uitgave</strong>: kies in welke categorie het moet tellen.</p>
+    return modalShell('Verrekenen — ' + (m.title ? m.title + ' (' + m.person + ')' : m.person), `
+      <p class="small muted"><strong>${esc(m.person)}</strong> betaalt dit niet in geld terug. Dan is het geen voorschot meer maar <strong>jouw uitgave</strong>: kies in welke categorie het telt.</p>
+      <div class="fg-reasons">
+        <label class="fg-reason"><input type="radio" name="fg-reason" value="settled" ${m.reason !== 'gift' ? 'checked' : ''}><span><strong>🔄 Verrekend</strong><span class="small muted">bv. via Tricount, of ${esc(m.person)} betaalde iets voor jou (zoals je eten)</span></span></label>
+        <label class="fg-reason"><input type="radio" name="fg-reason" value="gift" ${m.reason === 'gift' ? 'checked' : ''}><span><strong>🎁 Kwijtgescholden</strong><span class="small muted">je vraagt het niet meer terug, bv. een cadeau of je trakteerde</span></span></label>
+      </div>
       <div class="form-grid">
         <label class="field"><span>Bedrag <span class="muted small">(nog open: ${money(max)})</span></span><input type="text" id="fg-amount" inputmode="decimal" value="${esc((Math.max(0, max) / 100).toFixed(2).replace('.', ','))}"></label>
         <label class="field"><span>Datum</span><input type="date" id="fg-date" value="${esc(today)}" max="${today}"></label>
-        <label class="field full"><span>Telt als uitgave in</span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
-        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. verjaardagscadeau" value="${esc(m.title || '')}"></label>
+        <label class="field full"><span>Telt als uitgave in <span class="muted small">(bij verrekenen: waarvoor betaalden zij? bv. Eten)</span></span><select id="fg-category">${categoryOptions(m.categoryId || null, { kind: 'expense' })}</select></label>
+        <label class="field full"><span>Notitie <span class="muted small">(optioneel)</span></span><input type="text" id="fg-note" maxlength="80" placeholder="bv. Tricount weekend Ardennen, of verjaardagscadeau" value="${esc(m.title || '')}"></label>
       </div>
       <div class="errors" id="fg-errors"></div>`,
-      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Kwijtschelden</button>`);
+      `<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="forgive-save">Opslaan</button>`);
   }
 
   function saveForgive() {
@@ -2007,18 +2019,19 @@
     if (errors.length) { $('#fg-errors').innerHTML = errors.map(esc).join('<br>'); return; }
     const p = ensurePerson(m.person);
     if (!p) { $('#fg-errors').textContent = 'Kies eerst een naam voor deze persoon (Bewerk).'; return; }
-    const entry = Object.assign({ id: C.uid('fg'), date, amount, categoryId, note: $('#fg-note').value.trim() }, m.advanceOf ? { advanceOf: m.advanceOf } : {});
+    const reason = ($('input[name=fg-reason]:checked') || {}).value === 'gift' ? 'gift' : 'settled';
+    const entry = Object.assign({ id: C.uid('fg'), date, amount, categoryId, reason, note: $('#fg-note').value.trim() }, m.advanceOf ? { advanceOf: m.advanceOf } : {});
     p.forgiven = (p.forgiven || []).concat([entry]);
     closeModal();
     commit();
-    toast(`${money(amount)} kwijtgescholden aan ${p.name} → ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeForgive(p.name, entry.id) });
+    toast(`${money(amount)} ${reason === 'gift' ? 'kwijtgescholden aan' : 'verrekend met'} ${p.name} → ${catName(categoryId)}`, { label: 'Ongedaan maken', run: () => removeForgive(p.name, entry.id) });
   }
 
   function removeForgive(person, id) {
     const p = personEntity(person);
     if (!p) return;
     p.forgiven = (p.forgiven || []).filter(f => f.id !== id);
-    commit('Kwijtschelding ongedaan gemaakt');
+    commit('Ongedaan gemaakt: het bedrag staat weer open');
   }
 
   function personModal() {
@@ -3616,6 +3629,7 @@
       counterpartyIban: C.normalizeIban($('#tx-iban').value), transferMode: $('#tx-transfer').value,
       refundOf, splits, note: $('#tx-note').value.trim()
     });
+    delete t.splitByRule; // zelf bewaard: de regel past de splitsing niet meer aan
     const title = $('#tx-title').value.trim();
     if (title) t.title = title; else delete t.title;
     if (newCat === C.SYS_ADVANCE) { t.person = person || (linked ? linked.person : ''); ensurePerson(t.person, t.amount > 0 ? t.counterpartyIban : ''); } else delete t.person;
@@ -3652,6 +3666,7 @@
    */
   function resetToTodo(t) {
     t.categoryId = null; t.categorySource = 'manual'; t.ruleId = null;
+    if (t.splitByRule) { t.splits = []; delete t.splitByRule; }
     delete t.person; delete t.personByRule; delete t.advanceOf;
     if (t.refundOf) t.refundOf = null;
     if (t.isTransfer || t.transferMode === 'yes') t.transferMode = 'no';
@@ -3720,7 +3735,7 @@
         <label class="field"><span>Als</span><select id="rule-field">${Object.entries(C.RULE_FIELDS).map(([k, v]) => `<option value="${k}" ${r.field === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="field"><span>Voorwaarde</span><select id="rule-operator">${Object.entries(C.RULE_OPERATORS).map(([k, v]) => `<option value="${k}" ${r.operator === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="field full"><span>Waarde</span><input type="text" id="rule-value" value="${esc(r.value)}"></label>
-        <label class="field"><span>Dan koppelen aan</span><select id="rule-category">${categoryOptions(r.categoryId, { special: true })}</select></label>
+        <label class="field"><span>Dan koppelen aan</span><select id="rule-category">${categoryOptions(r.categoryId, { special: true, emptyLabel: '— Geen categorie (enkel een actie) —' })}</select></label>
         <label class="field" id="rule-person-field" ${r.categoryId === C.SYS_ADVANCE ? '' : 'hidden'}><span>Voorschot voor / van wie?</span>
           <input type="text" id="rule-person" list="rule-people" value="${esc(r.person || '')}" placeholder="bv. Jan">
           <datalist id="rule-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
@@ -3730,6 +3745,25 @@
           <option value="in" ${r.direction === 'in' ? 'selected' : ''}>Inkomend</option></select></label>
         <label class="field"><span>Rekening</span><select id="rule-account"><option value="">Alle</option>${accountOptions(r.accountId)}</select></label>
         <label class="check" style="align-self:end"><input type="checkbox" id="rule-enabled" ${r.enabled !== false ? 'checked' : ''}> Actief</label>
+      </div>
+      <div class="section rule-action">
+        <label class="check"><input type="checkbox" id="rule-share-on" ${r.share ? 'checked' : ''}> <strong>🤝 Een deel is een voorschot voor iemand</strong> <span class="small muted">— bv. de helft van Telenet voor je huisgenoot; de rest blijft in de categorie hierboven</span></label>
+        <div id="rule-share-fields" class="form-grid" ${r.share ? '' : 'hidden'} style="margin-top:8px">
+          <label class="field"><span>Voor wie?</span><input type="text" id="rule-share-person" maxlength="40" list="rule-people" value="${esc((r.share && r.share.person) || '')}" placeholder="bv. huisgenoot"></label>
+          <div class="field"><span>Welk deel?</span><span class="input-row"><input type="text" id="rule-share-value" inputmode="decimal" value="${esc(r.share ? String(r.share.mode === 'amount' ? (r.share.value / 100).toFixed(2) : r.share.value).replace('.', ',') : '50')}" style="max-width:110px">
+            <select id="rule-share-mode"><option value="pct" ${!r.share || r.share.mode !== 'amount' ? 'selected' : ''}>% van het bedrag</option><option value="amount" ${r.share && r.share.mode === 'amount' ? 'selected' : ''}>€ vast bedrag</option></select></span></div>
+        </div>
+      </div>
+      <div class="section rule-action">
+        <label class="check"><input type="checkbox" id="rule-act-on" ${r.action ? 'checked' : ''}> <strong>✅ Ook aan een actie koppelen</strong> <span class="small muted">— bv. elke maand de Telenet-rekening terugvragen</span></label>
+        <div id="rule-act-fields" class="form-grid" ${r.action ? '' : 'hidden'} style="margin-top:8px">
+          <label class="field full"><span>Wat moet er gebeuren?</span><input type="text" id="rule-act-name" maxlength="60" value="${esc((r.action && r.action.name) || '')}" placeholder="bv. Telenet terugvragen"></label>
+          <label class="check full"><input type="checkbox" id="rule-act-month" ${!r.action || r.action.perMonth ? 'checked' : ''}> Elke maand een nieuwe actie <span class="small muted">(bv. “Telenet terugvragen — okt 2026”), anders alles in één actie</span></label>
+          <label class="check full"><input type="checkbox" id="rule-act-back" ${!r.action || r.action.expectBack ? 'checked' : ''}> Hier komt geld van terug <span class="small muted">— toon hoeveel nog open staat</span></label>
+          <label class="field"><span>Van wie? <span class="muted small">(optioneel)</span></span><input type="text" id="rule-act-person" maxlength="40" list="rule-people" value="${esc((r.action && r.action.person) || '')}" placeholder="bv. werkgever, huisgenoot"></label>
+          <label class="field"><span>Vanaf</span><select id="rule-act-since">
+            ${(() => { const cur = r.action && r.action.since; const thisM = today.slice(0, 7) + '-01'; const prevM = C.addMonths(thisM, -1).slice(0, 10); return [[thisM, 'Deze maand'], [prevM, 'Vorige maand'], ['', 'Alle bestaande transacties']].map(([v, l]) => `<option value="${v}" ${(cur != null ? cur === v : v === prevM) ? 'selected' : ''}>${l}</option>`).join('') + (cur && cur !== thisM && cur !== prevM ? `<option value="${esc(cur)}" selected>Vanaf ${fmtDate(cur)}</option>` : ''); })()}</select></label>
+        </div>
       </div>
       <div class="section"><h3>Voorbeeld</h3><div id="rule-preview" class="small"></div></div>
       <div class="errors" id="rule-errors"></div>`;
@@ -3742,7 +3776,16 @@
       name: $('#rule-name').value.trim() || $('#rule-value').value.trim(), field: $('#rule-field').value, operator: $('#rule-operator').value,
       value: $('#rule-value').value.trim(), categoryId: $('#rule-category').value || null, direction: dir === 'any' ? null : dir,
       accountId: $('#rule-account').value || null, enabled: $('#rule-enabled').checked,
-      person: $('#rule-category').value === C.SYS_ADVANCE ? ($('#rule-person').value.trim() || null) : null
+      person: $('#rule-category').value === C.SYS_ADVANCE ? ($('#rule-person').value.trim() || null) : null,
+      share: $('#rule-share-on') && $('#rule-share-on').checked ? (() => {
+        const mode = $('#rule-share-mode').value === 'amount' ? 'amount' : 'pct';
+        const raw = mode === 'amount' ? C.parseAmount($('#rule-share-value').value) : parseFloat($('#rule-share-value').value.replace(',', '.'));
+        return { person: $('#rule-share-person').value.trim(), mode, value: isFinite(raw) ? Math.abs(raw) : 0 };
+      })() : null,
+      action: $('#rule-act-on') && $('#rule-act-on').checked ? {
+        name: $('#rule-act-name').value.trim(), perMonth: $('#rule-act-month').checked, expectBack: $('#rule-act-back').checked,
+        person: $('#rule-act-person').value.trim(), since: $('#rule-act-since').value
+      } : null
     });
   }
   function updateRulePreview() {
@@ -3750,6 +3793,10 @@
     if (!el) return;
     const pf = $('#rule-person-field');
     if (pf) pf.hidden = $('#rule-category').value !== C.SYS_ADVANCE;
+    const sf = $('#rule-share-fields');
+    if (sf) sf.hidden = !$('#rule-share-on').checked;
+    const af = $('#rule-act-fields');
+    if (af) af.hidden = !$('#rule-act-on').checked;
     const r = Object.assign(readRuleForm(), { enabled: true });
     if (!r.value) { el.innerHTML = '<span class="muted">Vul een waarde in.</span>'; return; }
     if (r.operator === 'regex') { try { new RegExp(r.value); } catch (e) { el.innerHTML = '<span style="color:var(--red)">Ongeldige reguliere expressie.</span>'; return; } }
@@ -3760,15 +3807,32 @@
     const r = readRuleForm();
     const errors = [];
     if (!r.value) errors.push('Geef een waarde.');
-    if (!r.categoryId) errors.push('Kies waaraan te koppelen.');
+    if (!r.categoryId && !r.action && !r.share) errors.push('Kies waaraan te koppelen, of zet een voorschot of actie aan.');
+    if (r.share && !r.share.person) errors.push('Zeg voor wie het voorschot is.');
+    if (r.share && !(r.share.value > 0)) errors.push('Geef het deel dat een voorschot is (bv. 50 %).');
+    if (r.share && r.share.mode !== 'amount' && r.share.value > 100) errors.push('Een deel kan hoogstens 100 % zijn.');
+    if (r.share && r.categoryId === C.SYS_ADVANCE) errors.push('Kies voor de rest een gewone categorie (bv. Internet), of laat de categorie leeg.');
+    if (!r.share) delete r.share;
+    if (r.action && !r.action.name) errors.push('Schrijf wat er moet gebeuren (de naam van de actie).');
+    if (!r.action) delete r.action;
     if (r.operator === 'regex') { try { new RegExp(r.value); } catch (e) { errors.push('Ongeldige reguliere expressie.'); } }
     if (errors.length) { $('#rule-errors').innerHTML = errors.join('<br>'); return; }
     const idx = state.rules.findIndex(x => x.id === r.id);
     if (idx >= 0) state.rules[idx] = r;
     else { r.priority = Math.max(0, ...state.rules.map(x => x.priority || 0)) + 10; state.rules.push(r); }
     if (r.person) ensurePerson(r.person);
+    if (r.share) ensurePerson(r.share.person);
     // Een nieuwe of aangepaste regel mag ook de transacties invullen die eerder bewust leeg gemaakt werden.
     for (const t of state.transactions) if (t.categorySource === 'manual' && !t.categoryId && C.ruleMatches(r, t)) t.categorySource = null;
+    // Transacties die je al zelf indeelde: enkel als je dat wil (bv. om ook de vorige Telenet-rekeningen te splitsen)
+    if (r.categoryId || r.share) {
+      const since = r.action && r.action.since ? r.action.since : '';
+      const own = state.transactions.filter(t => t.categorySource === 'manual' && t.categoryId && !t.isTransfer && !t.refundOf && !(t.splits && t.splits.length) && t.date >= since && C.ruleMatches(r, t)
+        && (t.categoryId !== r.categoryId || r.share));
+      if (own.length && confirm(`${own.length} transactie${own.length === 1 ? '' : 's'} die bij deze regel past${own.length === 1 ? '' : 'sen'}, deelde je al zelf in${since ? ' (vanaf ' + fmtDate(since) + ')' : ''}.\n\nOok daarop deze regel toepassen${r.share ? ' (met het voorschot voor ' + r.share.person + ')' : ''}?`)) {
+        for (const t of own) { t.categorySource = null; t.categoryId = null; t.ruleId = null; }
+      }
+    }
     closeModal();
     commit('Regel opgeslagen');
   }
@@ -4450,7 +4514,7 @@
               <div class="ex-person"><span class="avatar">P</span><strong>Pieter</strong><span class="ex-open">nog € 62,00</span></div>
               <div class="ex-item"><div><strong>Concertticket</strong><div class="small muted">03/10</div></div><b>€ 45,00</b></div>
               <div class="ex-item"><div><strong>Etentje Gent</strong><div class="small muted">09/10</div></div><b>€ 17,00</b></div>
-              <div class="ex-buttons"><span>🔗 Met een transactie</span><span>💶 In cash</span><span>🎁 Kwijtschelden</span></div>
+              <div class="ex-buttons"><span>🔗 Met een transactie</span><span>💶 In cash</span><span>🔄 Verrekenen</span></div>
             </div>
             <figcaption><strong>Wie is je nog iets schuldig?</strong> Elk voorschot met een titel, en met één klik afgehandeld.</figcaption>
           </figure>
@@ -4958,7 +5022,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
     'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
     'forgive-save': saveForgive,
-    'forgive-undo': el => { if (confirm('Deze kwijtschelding ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
+    'forgive-undo': el => { if (confirm('Dit ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
     'bulk-refund': () => {
       const r = bulkRefundTarget();
       if (!r) return;

@@ -300,6 +300,57 @@ test('beleggingen: verdeling per soort (aandelen, ETF, obligaties, goud, cash), 
   assert.equal(g2.metal, 10000, 'zonder fysiek goud enkel de goud-ETC');
 });
 
+test('regels kunnen ook aan een actie koppelen (elke maand een nieuwe), en verrekenen telt als terugbetaald', () => {
+  const s = Store.defaultState();
+  s.rules.push({ id: 'rt', name: 'Telenet', field: 'counterparty', operator: 'name', value: 'telenet', categoryId: null, enabled: true, priority: 10,
+    action: { name: 'Telenet terugvragen', perMonth: true, expectBack: true, person: 'huisgenoot', since: '2026-09-01' } });
+  s.transactions.push(tx('t8', '2026-08-03', -6000, 'TELENET'), tx('t9', '2026-09-03', -6000, 'TELENET'), tx('t10', '2026-10-03', -6100, 'Telenet BV'), tx('x', '2026-10-04', -500, 'Bakker'));
+  C.recompute(s);
+  const ids = s.transactions.map(t => (t.actions || []).join(','));
+  assert.deepEqual(ids, ['', 'act_r_rt_2026-09', 'act_r_rt_2026-10', ''], 'vanaf september, per maand');
+  const a = s.actions.find(x => x.id === 'act_r_rt_2026-10');
+  assert.equal(a.name, 'Telenet terugvragen — okt 2026'); assert.equal(a.expectBack, true); assert.equal(a.person, 'huisgenoot');
+  assert.equal(C.actionSummary(s, a).open, 6100);
+  assert.equal(s.transactions[2].categoryId, null, 'regel zonder categorie laat de categorie open');
+  // Zelf uit de actie gehaald: niet opnieuw toegevoegd
+  delete s.transactions[2].actions;
+  C.recompute(s);
+  assert.equal(s.transactions[2].actions, undefined);
+  assert.equal(s.actions.filter(x => x.ruleId === 'rt').length, 2, 'geen dubbele acties');
+  // Verrekenen (bv. via Tricount)
+  s.transactions.push(tx('v', '2026-10-05', -3000, 'Restaurant', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan' }));
+  s.people.push({ id: 'pj', name: 'Jan', ibans: [], forgiven: [{ id: 'f1', date: '2026-10-06', amount: 3000, categoryId: 'cat_boodschappen', reason: 'settled', note: 'Tricount' }] });
+  C.recompute(s);
+  const it = C.advancesOverview(s).items.find(x => x.txId === 'v');
+  assert.equal(it.repaid, 3000); assert.equal(it.settledBy[0].reason, 'settled');
+});
+
+test('regel: een deel van elke rekening is een voorschot (bv. de helft van Telenet voor je huisgenoot)', () => {
+  const s = Store.defaultState();
+  s.rules.push({ id: 'rs', name: 'Telenet', field: 'counterparty', operator: 'name', value: 'telenet', categoryId: 'cat_boodschappen', enabled: true, priority: 10, share: { person: 'Huisgenoot', mode: 'pct', value: 50 } });
+  s.transactions.push(tx('a', '2026-09-03', -6001, 'TELENET'), tx('b', '2026-10-03', -6000, 'TELENET'));
+  C.recompute(s);
+  assert.deepEqual(C.splitLines(s.transactions[0]).map(l => [l.categoryId, l.amount, l.person]), [[C.SYS_ADVANCE, -3001, 'Huisgenoot'], ['cat_boodschappen', -3000, '']]);
+  const ov = C.advancesOverview(s);
+  assert.equal(ov.people.find(p => p.person === 'Huisgenoot').open, 6001);
+  // Vast bedrag
+  s.rules[0].share = { person: 'Huisgenoot', mode: 'amount', value: 2500 };
+  C.recompute(s);
+  assert.equal(s.transactions[1].splits[0].amount, -2500);
+  // Zelf aangepast: de regel blijft eraf
+  s.transactions[1].splits = [{ categoryId: C.SYS_ADVANCE, amount: -1000, person: 'Huisgenoot' }];
+  s.transactions[1].categorySource = 'manual'; delete s.transactions[1].splitByRule;
+  C.recompute(s);
+  assert.equal(s.transactions[1].splits[0].amount, -1000);
+  // Regel weg: de splitsing van de regel verdwijnt
+  s.rules = [];
+  C.recompute(s);
+  assert.deepEqual(s.transactions[0].splits, []); assert.equal(s.transactions[0].categoryId, null);
+  // Een splitsing door een regel telt niet als eigen wijziging voor de synchronisatie
+  const t = Object.assign({}, s.transactions[1]);
+  assert.ok(C.entityHash(t));
+});
+
 test('js/app.js is geldig JavaScript', () => {
   const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);

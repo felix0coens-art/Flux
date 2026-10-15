@@ -351,7 +351,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
     'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
     'forgive-save': saveForgive,
-    'forgive-undo': el => { if (confirm('Deze kwijtschelding ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
+    'forgive-undo': el => { if (confirm('Dit ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
     'bulk-refund': () => {
       const r = bulkRefundTarget();
       if (!r) return;

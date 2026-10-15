@@ -36,6 +36,10 @@
    *    bonnetje indienen, …). Je vinkt ze af als het gedaan is. Ze veranderen niets aan de cijfers.
    *  - Voorschotten: geld dat iemand anders jou nog moet (je betaalde voor hen; telt niet als jouw uitgave).
    */
+  /** Niet in geld terugbetaald: verrekend (bv. via Tricount) of kwijtgescholden (cadeau). */
+  const fgLabel = (reason, cap) => reason === 'settled' ? (cap ? '🔄 Verrekend' : '🔄 verrekend') : (cap ? '🎁 Kwijtgescholden' : '🎁 kwijtgescholden');
+  const fgReasonOf = it => { const r = (it.settledBy || []).filter(b => b.kind === 'forgiven'); return r.length && r.every(b => b.reason === 'settled') ? 'settled' : 'gift'; };
+
   function renderAdvances() {
     const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
     const showAdv = f !== 'act', showAct = f !== 'adv';
@@ -45,7 +49,7 @@
     const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
     const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
-    const settledHow = it => it.forgiven >= it.amount ? '🎁 kwijtgescholden' : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} kwijtgescholden` : '✓ terugbetaald';
+    const settledHow = it => it.forgiven >= it.amount ? fgLabel(fgReasonOf(it)) : it.forgiven > 0 ? `✓ terug · ${money(it.forgiven)} ${fgLabel(fgReasonOf(it)).slice(3)}` : '✓ terugbetaald';
     const plural = (n, one, more) => n + ' ' + (n === 1 ? one : more);
     const history = (p) => {
       const st = p.stats;
@@ -58,7 +62,7 @@
       return `<details class="adv-history"><summary class="small">Afgehandeld en terugbetalingen <span class="muted">(${closed.length + reps.length + forgiven.length})</span></summary>
         ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span></span><span class="amount">${money(it.amount)}</span><span class="small">${settledHow(it)}</span></div>`).join('')}</div>` : ''}
         ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span></div>`).join('')}</div>` : ''}
-        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">🎁 ${esc(fg.note || 'Kwijtgescholden')} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
+        ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Verrekend of kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">${fgLabel(fg.reason, true).slice(0, 2)} ${esc(fg.note || fgLabel(fg.reason, true).slice(3))} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
     const personTools = p => `<div class="card-tools">
@@ -86,7 +90,7 @@
             <div class="adv-paid"><span class="small muted">Betaald?</span>
               <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
               <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>
-              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Je vraagt het niet meer terug: het telt dan als uitgave">🎁 Kwijtschelden</button>
+              <button class="btn small" data-action="adv-item-forgive" data-key="${key}" data-person="${esc(p.name)}" title="Niet in geld terugbetaald: verrekend (bv. via Tricount) of kwijtgescholden. Het telt dan als jouw uitgave in een categorie naar keuze.">🔄 Verrekenen</button>
             </div>
           </div>`;
         }).join('')}</div>
@@ -148,6 +152,7 @@
    */
   function catTxModal() {
     const m = modal;
+    const forgivenReason = Object.fromEntries(C.forgivenList(state).map(f => [f.id, f.reason]));
     const none = m.cat === '__none__';
     const range = m.all ? null : currentRange();
     const lines = C.allocations(state).filter(l => (none ? !l.categoryId : l.categoryId === m.cat) && (!range || C.inRange(l.date, range)));
@@ -164,8 +169,8 @@
     const label = none ? 'Nog niet gekoppeld' : catLabel(m.cat);
     const row = r => {
       const t = r.txId ? txById(r.txId) : null;
-      const what = r.forgiven ? `🎁 Kwijtgescholden aan ${esc(r.person || '')}` : t ? esc(t.title || t.counterparty || t.description || '—') : '—';
-      const sub = r.forgiven ? 'voorschot dat een uitgave werd' : t ? esc([r.refund ? '↩ terugbetaling' : '', t.title ? t.counterparty : '', accName(t.accountId)].filter(Boolean).join(' · ')) : '';
+      const what = r.forgiven ? `${fgLabel((forgivenReason[r.forgiveId] || 'gift'), true)} met ${esc(r.person || '')}` : t ? esc(t.title || t.counterparty || t.description || '—') : '—';
+      const sub = r.forgiven ? 'voorschot dat jouw uitgave werd' : t ? esc([r.refund ? '↩ terugbetaling' : '', t.title ? t.counterparty : '', accName(t.accountId)].filter(Boolean).join(' · ')) : '';
       return `<tr ${t ? `class="clickable" data-action="edit-tx" data-id="${esc(t.id)}"` : ''}>
         <td class="nowrap">${fmtDate(r.date)}</td><td>${what}<div class="desc">${sub}</div></td>
         <td class="amount ${amountClass(r.amount)}">${money(r.amount)}</td></tr>`;

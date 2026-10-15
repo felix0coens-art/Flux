@@ -156,6 +156,7 @@
       counterpartyIban: C.normalizeIban($('#tx-iban').value), transferMode: $('#tx-transfer').value,
       refundOf, splits, note: $('#tx-note').value.trim()
     });
+    delete t.splitByRule; // zelf bewaard: de regel past de splitsing niet meer aan
     const title = $('#tx-title').value.trim();
     if (title) t.title = title; else delete t.title;
     if (newCat === C.SYS_ADVANCE) { t.person = person || (linked ? linked.person : ''); ensurePerson(t.person, t.amount > 0 ? t.counterpartyIban : ''); } else delete t.person;
@@ -192,6 +193,7 @@
    */
   function resetToTodo(t) {
     t.categoryId = null; t.categorySource = 'manual'; t.ruleId = null;
+    if (t.splitByRule) { t.splits = []; delete t.splitByRule; }
     delete t.person; delete t.personByRule; delete t.advanceOf;
     if (t.refundOf) t.refundOf = null;
     if (t.isTransfer || t.transferMode === 'yes') t.transferMode = 'no';
