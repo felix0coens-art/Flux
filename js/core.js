@@ -522,6 +522,7 @@
     const cats = new Map(state.categories.map(c => [c.id, c]));
     const byCategory = {};
     const byIncome = {};
+    const expenseBy = {}; // effectieve uitgaven per categorie (na terugbetalingen), zelfde telling als 'expenses'
     const src = id => (byIncome[id] = byIncome[id] || { gross: 0, costs: 0, net: 0, costsByCategory: {} });
     let income = 0, incomeCosts = 0, expenses = 0, advanced = 0, repaid = 0, invested = 0;
     for (const l of lines) {
@@ -545,6 +546,7 @@
         s.costsByCategory[c.id] = (s.costsByCategory[c.id] || 0) - l.amount;
       } else {
         expenses -= l.amount;
+        expenseBy[key] = (expenseBy[key] || 0) - l.amount;
       }
     }
     for (const k of Object.keys(byIncome)) byIncome[k].net = byIncome[k].gross - byIncome[k].costs;
@@ -553,7 +555,7 @@
       if (tx.isTransfer && tx.amount < 0 && inRange(tx.date, range)) transfers -= tx.amount;
     }
     const netIncome = income - incomeCosts;
-    return { income, incomeCosts, netIncome, expenses, net: netIncome - expenses, byCategory, byIncome, transfers, advanced, repaid, invested };
+    return { income, incomeCosts, netIncome, expenses, net: netIncome - expenses, byCategory, expenseBy, byIncome, transfers, advanced, repaid, invested };
   }
 
   // ---------- Budgetten ----------

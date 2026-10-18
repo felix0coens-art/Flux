@@ -351,6 +351,22 @@ test('regel: een deel van elke rekening is een voorschot (bv. de helft van Telen
   assert.ok(C.entityHash(t));
 });
 
+test('uitgaven: het diagram per categorie telt hetzelfde als het totaal (na terugbetalingen)', () => {
+  const s = Store.demoState('2026-10-15');
+  C.recompute(s);
+  for (const r of [{ start: '2026-10-01', end: '2026-10-31' }, { start: '2025-01-01', end: '2026-12-31' }]) {
+    const sum = C.summarize(s, r);
+    const pos = Object.values(sum.expenseBy).reduce((a, v) => a + v, 0);
+    assert.equal(pos, sum.expenses, 'som per categorie = totale uitgaven');
+  }
+  // Een terugbetaling maakt de categorie kleiner, en kosten op een inkomst tellen niet mee
+  const t = Store.defaultState();
+  t.transactions.push(tx('e', '2026-10-01', -9000, 'Restaurant', { categoryId: 'cat_boodschappen', categorySource: 'manual' }), tx('r', '2026-10-02', 3000, 'Jan', { refundOf: 'e' }));
+  C.recompute(t);
+  const sm = C.summarize(t, { start: '2026-10-01', end: '2026-10-31' });
+  assert.equal(sm.expenseBy.cat_boodschappen, 6000); assert.equal(sm.expenses, 6000);
+});
+
 test('js/app.js is geldig JavaScript', () => {
   const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);

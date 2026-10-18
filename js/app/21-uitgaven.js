@@ -57,9 +57,11 @@
     const list = state.transactions.filter(t => t.amount < 0 && C.inRange(t.date, range) && ['todo', 'expense', 'split', 'advance'].includes(kindOf(t)))
       .filter(t => !ui.list.status || kindOf(t) === ui.list.status)
       .sort((a, b) => b.date.localeCompare(a.date));
-    const cats = Object.entries(sum.byCategory)
-      .filter(([id, v]) => v < 0 && (id === '__none__' || (cat(id) && cat(id).kind === 'expense')))
-      .map(([id, v]) => ({ id: id === '__none__' ? null : id, v: -v })).sort((a, b) => b.v - a.v);
+    // Zelfde telling als het kader "Uitgaven": effectieve uitgaven per categorie, na terugbetalingen
+    const cats = Object.entries(sum.expenseBy)
+      .filter(([, v]) => v > 0)
+      .map(([id, v]) => ({ id: id === '__none__' ? null : id, v })).sort((a, b) => b.v - a.v);
+    const refundSurplus = Object.values(sum.expenseBy).filter(v => v < 0).reduce((a, v) => a - v, 0);
     const maxCat = cats.length ? cats[0].v : 1;
     const monthlyFixed = recurring.reduce((s, r) => s + r.monthlyCost, 0);
     const cands = C.lookupCandidates(state).filter(c => c.direction === 'out').length;
@@ -78,6 +80,7 @@
         <div class="card">
           <h2>Per categorie</h2>
           ${donutChart(cats, { totalLabel: 'Uitgaven' })}
+          ${refundSurplus ? `<p class="small muted">In deze periode kwam er in sommige categorieën meer terug dan je uitgaf (${money(refundSurplus)}); dat zit wel in het totaal van ${money(sum.expenses)}, niet in het diagram.</p>` : ''}
           ${cats.length ? cats.map(c => `<div class="catbar cat-link" data-action="cat-view" data-cat="${esc(c.id || '__none__')}" title="Bekijk de transacties"><span class="name">${esc(c.id ? catLabel(c.id) : 'Nog niet gekoppeld')}</span>
             <span class="track"><span class="fill" style="display:block;width:${(c.v / maxCat * 100).toFixed(1)}%;background:${esc(catColor(c.id))}"></span></span>
             <span class="amount">${money(c.v)}</span></div>`).join('') : '<p class="muted">Geen uitgaven in deze periode.</p>'}
