@@ -283,6 +283,15 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       markAdvance(t, name);
       whatIsDone('Terugbetaling van ' + name + ' gekoppeld');
     },
+    'wi-prepaid': () => {
+      const t = txById(modal.txId); const name = $('#wi-person').value.trim();
+      if (!t) return;
+      if (!name) { toast('Geef de naam van wie vooruitbetaalde.'); return; }
+      markAdvance(t, name);
+      const title = $('#wi-prepaid-title').value.trim();
+      if (title) t.title = title;
+      whatIsDone(name + ' betaalde vooruit: nog voor ' + name + ' te betalen');
+    },
     'wi-action': () => {
       const t = txById(modal.txId); if (!t) return;
       let id = $('#wi-action').value;
@@ -514,7 +523,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (modal && modal.type === 'search' && el.id === 'global-search') {
       modal.q = el.value;
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q); }, 120);
+      searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); }, 120);
       return;
     }
     if (modal && modal.type === 'actionPick' && el.id === 'act-search') {
@@ -537,6 +546,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
     if (el.dataset.assignInput) return;
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
+    if (modal && modal.type === 'search' && el.id === 'global-search-cat') { modal.cat = el.value; const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); return; }
+    if (el.dataset.filter === 'bank.category') { ui.bank.category = el.value; if (el.value && ui.bank.status === 'todo' && el.value !== '__none__') ui.bank.status = ''; render(); return; }
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }

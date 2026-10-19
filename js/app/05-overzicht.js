@@ -27,7 +27,7 @@
     const open = adv.people.filter(p => p.open !== 0);
 
     const metalSum = metals();
-    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen);
+    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen) - (adv.totalPrepaid || 0);
     const cancels = C.cancellationPairs(state).length;
     const actionsOpen = actionLists().open;
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
@@ -36,7 +36,7 @@
       todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
       cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
       ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${moneyHtml(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
-      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
+      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">📥</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} vooruit</strong><span class="small muted">Nog voor ${esc(p.person)} te betalen (koppel die uitgave), of te veel terugbetaald</span></span><span class="todo-go">›</span></a>`),
       actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
       ...budgets.map(b => `<div class="todo-row"><span class="todo-icon">${b.status === 'over' ? '⚠️' : '⏳'}</span><span class="grow"><strong>Budget ${esc(catLabel(b.budget.categoryId))} ${b.status === 'over' ? 'overschreden' : 'bijna op'}</strong><span class="small muted">${Math.round(b.pct * 100)}% · ${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</span></span></div>`),
       ...upcoming.slice(0, 4).map(r => `<div class="todo-row"><span class="todo-icon">🔁</span><span class="grow"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</span></span><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`)
@@ -66,6 +66,7 @@
             ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
             ${metalSum.value ? `<div class="list-row"><div class="grow">Goud en zilver (fysiek)<div class="small muted">${metalSum.giftValue ? 'waarvan ' + money(metalSum.giftValue) + ' gekregen als cadeau' : 'aan de huidige goudprijs'}</div></div><span class="amount">${money(metalSum.value)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
+            ${adv.totalPrepaid > 0 ? `<div class="list-row"><div class="grow">Vooruitbetaald door anderen<div class="small muted">staat op je rekening, maar moet je nog voor hen uitgeven</div></div><span class="amount">${money(-adv.totalPrepaid)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
           ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}

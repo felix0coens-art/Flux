@@ -187,6 +187,7 @@
           ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
         </div>
         <select data-filter="bank.account"><option value="">Alle rekeningen</option>${accountOptions(f.account)}</select>
+        <select data-filter="bank.category" aria-label="Filter op categorie"><option value="">Alle categorieën</option><option value="__none__" ${f.category === '__none__' ? 'selected' : ''}>❔ Nog niet gekoppeld</option>${categoryOptions(f.category || null, { special: true, allowEmpty: false })}</select>
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}

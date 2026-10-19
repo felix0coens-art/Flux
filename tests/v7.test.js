@@ -367,6 +367,35 @@ test('uitgaven: het diagram per categorie telt hetzelfde als het totaal (na teru
   assert.equal(sm.expenseBy.cat_boodschappen, 6000); assert.equal(sm.expenses, 6000);
 });
 
+test('samen een cadeau: terugbetalingen gaan eerst naar het voorschot-deel, en vooruitbetalen (Airbnb)', () => {
+  const s = Store.defaultState();
+  s.transactions.push(tx('g', '2026-09-04', -10000, 'Shop', { categoryId: 'cat_boodschappen', categorySource: 'manual', splits: [{ categoryId: C.SYS_ADVANCE, amount: -8571, person: 'THK', note: 'THK cadeau' }] }));
+  ['A', 'B', 'C', 'D'].forEach((n, i) => s.transactions.push(tx('r' + i, '2026-09-0' + (5 + i), 1429, n, { refundOf: 'g' })));
+  C.recompute(s);
+  const it = C.advancesOverview(s).items[0];
+  assert.equal(it.repaid, 5716, 'de 4 terugbetalingen vereffenen het voorschot');
+  assert.equal(it.amount - it.repaid, 2855, 'nog 2 mensen open');
+  const sum = C.summarize(s, { start: '2026-09-01', end: '2026-09-30' });
+  assert.equal(sum.expenses, 1429, 'jouw deel blijft € 14,29');
+  // Betaalt iemand meer dan het voorschot, dan gaat de rest naar jouw deel
+  s.transactions.push(tx('r9', '2026-09-20', 4000, 'E', { refundOf: 'g' }));
+  C.recompute(s);
+  assert.equal(C.advancesOverview(s).items[0].amount - C.advancesOverview(s).items[0].repaid, 0);
+  assert.equal(C.summarize(s, { start: '2026-09-01', end: '2026-09-30' }).expenses, 1429 - (4000 - 2855));
+  // Vooruitbetaald: Jan stort € 120 voor de Airbnb, jij betaalt later € 400 waarvan € 120 voor Jan
+  const a = Store.defaultState();
+  a.transactions.push(tx('in', '2026-10-01', 12000, 'Jan', { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Jan' }));
+  C.recompute(a);
+  let ov = C.advancesOverview(a);
+  assert.equal(ov.people[0].open, -12000); assert.equal(ov.totalPrepaid, 12000, 'nog voor Jan te betalen');
+  assert.equal(C.summarize(a, { start: '2026-10-01', end: '2026-10-31' }).income, 0, 'geen inkomen');
+  a.transactions.push(tx('bnb', '2026-10-10', -40000, 'Airbnb', { categoryId: 'cat_boodschappen', categorySource: 'manual', splits: [{ categoryId: C.SYS_ADVANCE, amount: -12000, person: 'Jan' }] }));
+  C.recompute(a);
+  ov = C.advancesOverview(a);
+  assert.equal(ov.people[0].open, 0); assert.equal(ov.totalPrepaid, 0);
+  assert.equal(C.summarize(a, { start: '2026-10-01', end: '2026-10-31' }).expenses, 28000, 'enkel jouw deel is een uitgave');
+});
+
 test('js/app.js is geldig JavaScript', () => {
   const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);

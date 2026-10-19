@@ -66,7 +66,17 @@
         </select></div>` : ''}
 
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
-        <div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div></div>` : ''}
+        ${(() => {
+          const ra = C.refundAllocation(state);
+          const parts = refundedBy.flatMap(r => ra.get(r.id) || []);
+          const toAdv = parts.filter(p => p.advance).reduce((s, p) => s + p.amount, 0);
+          const advTotal = C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE && l.amount < 0).reduce((s, l) => s - l.amount, 0);
+          const own = C.splitLines(t).filter(l => l.categoryId !== C.SYS_ADVANCE).reduce((s, l) => s + l.amount, 0) + parts.filter(p => !p.advance).reduce((s, p) => s + p.amount, 0);
+          return advTotal
+            ? `<div class="small">Jouw deel: <strong>${money(own)}</strong> · voorschot ${money(advTotal)}: ${money(toAdv)} terug${advTotal - toAdv > 0 ? `, <span class="warn-text">nog ${money(advTotal - toAdv)} open</span>` : ' ✓'}</div>
+               <div class="small muted">Terugbetalingen gaan eerst naar het voorschot; wat daarboven komt, maakt jouw deel kleiner.</div>`
+            : `<div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div>`;
+        })()}</div>` : ''}
 
       <div class="field"><span>Acties <span class="muted small">(iets wat je nog moet doen, bv. “Retour binnenbrengen”)</span></span>
         <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge ${a.closed ? 'done' : ''}">${a.closed ? '✓' : '☐'} ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
@@ -219,7 +229,7 @@
       return;
     }
     ui.ruleHint = null;
-    if (value === 'whatis') { render(); openModal({ type: 'whatIs', txId: t.id, choice: null }); return; }
+    if (value === 'whatis' || value.startsWith('whatis:')) { render(); openModal({ type: 'whatIs', txId: t.id, choice: value.slice(7) || null }); return; }
     if (value.startsWith('refund:')) { linkRefunds([t], value.slice(7)); return; }
     if (value.startsWith('adv:')) {
       markAdvance(t, value.slice(4));

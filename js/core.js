@@ -381,18 +381,59 @@
    * - Terugbetalingen worden op de categorie(ën) én de datum van de oorspronkelijke uitgave geboekt,
    *   zodat ze de uitgave verminderen in plaats van als inkomen te tellen.
    */
+  /**
+   * Hoe elke terugbetaling (refundOf) over de lijnen van de oorspronkelijke uitgave verdeeld wordt.
+   * Had je een deel als voorschot geboekt (bv. een cadeau van € 100 waarvan € 85,71 voor de anderen),
+   * dan gaat een terugbetaling eerst naar dat voorschot (oudste terugbetaling eerst); enkel wat daarboven
+   * komt, vermindert je eigen deel. @returns Map(refundTxId -> [{ categoryId, amount, person, advance, key }])
+   */
+  function refundAllocation(state) {
+    const byId = new Map(state.transactions.map(t => [t.id, t]));
+    const groups = new Map();
+    for (const tx of state.transactions) {
+      if (tx.isTransfer || !tx.refundOf) continue;
+      const orig = byId.get(tx.refundOf);
+      if (!orig || orig.isTransfer) continue;
+      if (!groups.has(orig.id)) groups.set(orig.id, { orig, refunds: [] });
+      groups.get(orig.id).refunds.push(tx);
+    }
+    const out = new Map();
+    for (const { orig, refunds } of groups.values()) {
+      const lines = splitLines(orig);
+      const nSplits = orig.splits && orig.splits.length ? orig.splits.length : 0;
+      const keyOfLine = i => orig.id + (i < nSplits ? ':' + i : '');
+      const advIdx = lines.map((l, i) => i).filter(i => lines[i].categoryId === SYS_ADVANCE && Math.sign(lines[i].amount) === Math.sign(orig.amount));
+      const cap = advIdx.map(i => Math.abs(lines[i].amount));
+      const others = lines.map((l, i) => i).filter(i => !advIdx.includes(i));
+      refunds.sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+      for (const r of refunds) {
+        let left = Math.abs(r.amount);
+        const sign = Math.sign(r.amount) || 1;
+        const res = [];
+        advIdx.forEach((i, j) => {
+          const take = Math.min(left, cap[j]);
+          if (take > 0) { cap[j] -= take; left -= take; res.push({ categoryId: SYS_ADVANCE, amount: sign * take, person: lines[i].person || orig.person || '', advance: true, key: keyOfLine(i) }); }
+        });
+        if (left > 0) {
+          const base = others.length ? others : lines.map((l, i) => i);
+          const parts = distribute(sign * left, base.map(i => lines[i].amount));
+          base.forEach((i, k) => { if (parts[k]) res.push({ categoryId: lines[i].categoryId, amount: parts[k], person: lines[i].person || '', advance: lines[i].categoryId === SYS_ADVANCE, key: keyOfLine(i) }); });
+        }
+        out.set(r.id, res);
+      }
+    }
+    return out;
+  }
+
   function allocations(state) {
     const byId = new Map(state.transactions.map(t => [t.id, t]));
+    const refunds = refundAllocation(state);
     const lines = [];
     for (const tx of state.transactions) {
       if (tx.isTransfer) continue;
       const orig = tx.refundOf ? byId.get(tx.refundOf) : null;
       if (orig && !orig.isTransfer) {
-        const origLines = splitLines(orig);
-        const parts = distribute(tx.amount, origLines.map(l => l.amount));
-        origLines.forEach((l, i) => {
-          if (parts[i]) lines.push({ txId: tx.id, date: orig.date, categoryId: l.categoryId, amount: parts[i], refund: true, accountId: tx.accountId });
-        });
+        for (const p of (refunds.get(tx.id) || [])) lines.push({ txId: tx.id, date: orig.date, categoryId: p.categoryId, amount: p.amount, refund: true, accountId: tx.accountId, person: p.person || undefined });
         continue;
       }
       for (const l of splitLines(tx)) {
@@ -973,6 +1014,14 @@
         } else repayments.push({ kind: 'repayment', txId: tx.id, ref: tx.id, date: tx.date, person, amount: l.amount, advanceOf: tx.advanceOf || null, title: (tx.title || '').trim(), counterparty: tx.counterparty || '', settles: [] });
       });
     }
+    // Terugbetalingen gekoppeld aan een uitgave met een voorschot-deel: vereffenen dat voorschot
+    const refundAlloc = refundAllocation(state);
+    for (const tx of state.transactions) {
+      for (const p of (refundAlloc.get(tx.id) || [])) {
+        if (!p.advance || !(p.amount > 0)) continue;
+        repayments.push({ kind: 'repayment', txId: tx.id, ref: tx.id, date: tx.date, person: (p.person || '').trim() || 'Onbekend', amount: p.amount, advanceOf: p.key, title: (tx.title || '').trim(), counterparty: tx.counterparty || '', settles: [], viaRefund: true });
+      }
+    }
     // Kwijtschelden telt als terugbetaling (zonder geld)
     const forgivenBy = {};
     for (const f of forgivenList(state)) {
@@ -1042,7 +1091,8 @@
       p.ledger = rows;
     }
     const list = Object.values(people).sort((a, b) => b.open - a.open);
-    return { items, repayments, people: list, totalOpen: sum(list.map(p => Math.max(0, p.open))) };
+    // totalPrepaid: wat anderen je vooruit (of te veel) betaalden en jij nog voor hen moet uitgeven
+    return { items, repayments, people: list, totalOpen: sum(list.map(p => Math.max(0, p.open))), totalPrepaid: sum(list.map(p => Math.max(0, -p.open))) };
   }
 
   /**
@@ -1433,7 +1483,7 @@
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
     RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, applyRuleActions, ruleSharePart, sortedRules,
-    detectTransfers, splitLines, validateSplits, allocations, forgivenList, surplusList, savingsIn, actionSummary, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
+    detectTransfers, splitLines, validateSplits, refundAllocation, allocations, forgivenList, surplusList, savingsIn, actionSummary, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,
     detectDelimiter, parseCSV, guessMapping, rowsToTransactions, fingerprint, dedupe,

@@ -31,7 +31,7 @@
     view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
     owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
-    bank: { account: '', status: 'todo', search: '', limit: 150 },
+    bank: { account: '', category: '', status: 'todo', search: '', limit: 150 },
     list: { status: '', limit: 150 },
     ruleHint: null, // { txId, categoryId } na een inline koppeling: "altijd zo?"
     auth: null,

@@ -31,7 +31,7 @@
     view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
     owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
-    bank: { account: '', status: 'todo', search: '', limit: 150 },
+    bank: { account: '', category: '', status: 'todo', search: '', limit: 150 },
     list: { status: '', limit: 150 },
     ruleHint: null, // { txId, categoryId } na een inline koppeling: "altijd zo?"
     auth: null,
@@ -390,7 +390,7 @@
     const open = adv.people.filter(p => p.open !== 0);
 
     const metalSum = metals();
-    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen);
+    const worth = bankTotal + (invSum ? invSum.valueEur : 0) + metalSum.value + Math.max(0, adv.totalOpen) - (adv.totalPrepaid || 0);
     const cancels = C.cancellationPairs(state).length;
     const actionsOpen = actionLists().open;
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
@@ -399,7 +399,7 @@
       todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
       cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
       ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${moneyHtml(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
-      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">💶</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} te veel terug</strong><span class="small muted">Inboeken als inkomst?</span></span><span class="todo-go">›</span></a>`),
+      ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">📥</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} vooruit</strong><span class="small muted">Nog voor ${esc(p.person)} te betalen (koppel die uitgave), of te veel terugbetaald</span></span><span class="todo-go">›</span></a>`),
       actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
       ...budgets.map(b => `<div class="todo-row"><span class="todo-icon">${b.status === 'over' ? '⚠️' : '⏳'}</span><span class="grow"><strong>Budget ${esc(catLabel(b.budget.categoryId))} ${b.status === 'over' ? 'overschreden' : 'bijna op'}</strong><span class="small muted">${Math.round(b.pct * 100)}% · ${b.budget.period === 'yearly' ? esc(b.range.label) : esc(monthLabel(b.range.label))}</span></span></div>`),
       ...upcoming.slice(0, 4).map(r => `<div class="todo-row"><span class="todo-icon">🔁</span><span class="grow"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.frequency.label)} · ${r.daysUntil < 0 ? -r.daysUntil + ' d te laat' : r.daysUntil === 0 ? 'vandaag' : 'over ' + r.daysUntil + ' d'}</span></span><span class="amount">${r.fixed ? '' : '± '}${money(r.expected)}</span></div>`)
@@ -429,6 +429,7 @@
             ${invSum ? `<div class="list-row"><div class="grow">Beleggingen<div class="small muted">stand ${fmtDate(inv().positionsDate)}</div></div><span class="amount">${money(invSum.valueEur)}</span></div>` : ''}
             ${metalSum.value ? `<div class="list-row"><div class="grow">Goud en zilver (fysiek)<div class="small muted">${metalSum.giftValue ? 'waarvan ' + money(metalSum.giftValue) + ' gekregen als cadeau' : 'aan de huidige goudprijs'}</div></div><span class="amount">${money(metalSum.value)}</span></div>` : ''}
             ${adv.totalOpen > 0 ? `<div class="list-row"><div class="grow">Nog terug te krijgen van vrienden</div><span class="amount">${money(adv.totalOpen)}</span></div>` : ''}
+            ${adv.totalPrepaid > 0 ? `<div class="list-row"><div class="grow">Vooruitbetaald door anderen<div class="small muted">staat op je rekening, maar moet je nog voor hen uitgeven</div></div><span class="amount">${money(-adv.totalPrepaid)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
           ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}
@@ -769,6 +770,13 @@
   function bankTxFilter(t) {
     const f = ui.bank;
     if (f.account && t.accountId !== f.account) return false;
+    // Categorie: ook gesplitste transacties en terugbetalingen die (deels) in die categorie vallen
+    if (f.category) {
+      const ids = C.splitLines(t).map(l => l.categoryId || '__none__');
+      const orig = t.refundOf ? txById(t.refundOf) : null;
+      if (orig) ids.push(...C.splitLines(orig).map(l => l.categoryId || '__none__'));
+      if (t.isTransfer ? f.category !== '__transfer__' : !ids.includes(f.category)) return false;
+    }
     const k = kindOf(t);
     if (f.status === 'todo' && k !== 'todo') return false;
     if (f.status === 'done' && k === 'todo') return false;
@@ -807,6 +815,7 @@
       add('adv:' + p.name, incoming ? '🤝 Terugbetaling van ' + p.name : '🤝 Voorgeschoten voor ' + p.name, 'Voorschot', incoming && p.stats.open > 0 ? 'nog ' + money(p.stats.open) + ' open' : '');
     }
     add('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van iemand anders…' : '↗ Voorgeschoten voor iemand anders…', 'Voorschot');
+    if (incoming) add('whatis:prepaid', '📥 Vooruitbetaald voor iets dat ik nog betaal (bv. Airbnb)…', 'Voorschot');
     if (incoming && !strong) addRefunds();
     if (incoming) add('refund', '↩ Terugbetaling van een andere uitgave…', 'Speciaal');
     add('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)', 'Speciaal');
@@ -1116,6 +1125,7 @@
           ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
         </div>
         <select data-filter="bank.account"><option value="">Alle rekeningen</option>${accountOptions(f.account)}</select>
+        <select data-filter="bank.category" aria-label="Filter op categorie"><option value="">Alle categorieën</option><option value="__none__" ${f.category === '__none__' ? 'selected' : ''}>❔ Nog niet gekoppeld</option>${categoryOptions(f.category || null, { special: true, allowEmpty: false })}</select>
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
       ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
@@ -1271,7 +1281,9 @@
     const showAdv = f !== 'act', showAct = f !== 'adv';
     const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
     const openPeople = people.filter(p => p.stats.open > 0);
-    const done = people.filter(p => p.stats.open <= 0);
+    const done = people.filter(p => p.stats.open === 0);
+    const prepaid = people.filter(p => p.stats.open < 0);
+    const prepaidTotal = prepaid.reduce((a, p) => a - p.stats.open, 0);
     const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
     const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
@@ -1324,6 +1336,22 @@
         ${personTools(p)}
       </div>`;
     };
+    /** Iemand betaalde je vooruit (bv. zijn deel van de Airbnb): dat geld moet je nog voor hem uitgeven. */
+    const prepaidCard = p => {
+      const st = p.stats;
+      return `<div class="card person-card prepaid">
+        <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">betaalde vooruit</div></div>
+          <div class="person-open"><div class="small muted">nog voor ${esc(p.name)} te betalen</div><strong>${money(-st.open)}</strong></div></div>
+        <p class="small muted">Betaal je de uitgave (bv. de Airbnb), koppel ze dan als voorschot voor ${esc(p.name)}: zo valt het tegen elkaar weg. Betaalde je ook voor jezelf? Splits dan de uitgave: jouw deel + voorschot voor ${esc(p.name)}.</p>
+        <div class="adv-paid">
+          <button class="btn small primary" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">🔗 Uitgave koppelen</button>
+          <button class="btn small" data-action="surplus-new" data-person="${esc(p.name)}" title="Het was gewoon te veel terugbetaald, of je houdt het">Toch inkomst…</button>
+        </div>
+        ${history(p)}
+        ${personTools(p)}
+      </div>`;
+    };
     const doneCard = p => {
       const st = p.stats;
       const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
@@ -1357,6 +1385,8 @@
           <button class="btn small primary" data-action="adv-pick" data-dir="out">+ Voorschot</button></div>
         ${openPeople.length ? `<div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
           : `<div class="card empty-state"><p>${people.length ? '🎉 Niemand is je nog iets schuldig.' : 'Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Typ bij die transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>`}
+        ${prepaid.length ? `<h3 class="section-sub">📥 Vooruitbetaald — nog voor anderen te betalen <span class="muted small">${money(prepaidTotal)}</span></h3>
+          <div class="grid cards people">${prepaid.map(prepaidCard).join('')}</div>` : ''}
         ${done.length ? `<details class="act-done" data-keep="advDone" ${ui.keepOpen.advDone ? 'open' : ''}><summary class="small"><strong>Alles in orde</strong> <span class="muted">(${plural(done.length, 'persoon', 'personen')})</span></summary>
           <div class="grid cards people" style="margin-top:10px">${done.map(doneCard).join('')}</div></details>` : ''}
       </section>`;
@@ -1365,7 +1395,7 @@
         <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}</div></div>
       <div class="follow-sum">
         <button class="follow-stat act" data-action="owed-filter" data-f="act"><span class="label">Acties te doen</span><strong>${openActs.length}</strong>${late ? `<span class="small warn-text">${late} te laat</span>` : ''}</button>
-        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}</span></button>
+        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}${prepaidTotal ? ` · ${money(prepaidTotal)} vooruitbetaald` : ''}</span></button>
       </div>
       <p class="small muted follow-help"><strong>Actie</strong> = iets wat jij nog moet doen bij een transactie (geld terugvragen, retour binnenbrengen, bonnetje indienen); vink het af als het gedaan is.
         <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.</p>
@@ -1573,9 +1603,9 @@
   // ----- Zoeken over alles -----
 
   /** Zoekt in titel, tegenpartij, omschrijving, notitie, bedrag, categorie, persoon en acties. */
-  function searchResults(q) {
+  function searchResults(q, catFilter) {
     q = String(q || '').trim().toLowerCase();
-    if (q.length < 2) return [];
+    if (q.length < 2 && !catFilter) return [];
     const words = q.split(/\s+/);
     const amt = C.parseAmount(q);
     const out = [];
@@ -1583,14 +1613,15 @@
       const hay = [t.title, t.counterparty, t.description, t.note, t.person, t.categoryId ? catName(t.categoryId) : '', accName(t.accountId),
         C.centsToInput(t.amount), C.centsToInput(Math.abs(t.amount)), ...(t.actions || []).map(id => (actionById(id) || {}).name || ''),
         ...(t.splits || []).map(sp => (sp.note || '') + ' ' + (sp.categoryId ? catName(sp.categoryId) : ''))].join(' ').toLowerCase();
-      if (words.every(w => hay.includes(w)) || (!isNaN(amt) && amt !== 0 && Math.abs(t.amount) === Math.abs(amt))) out.push(t);
+      if (catFilter && !C.splitLines(t).some(l => (l.categoryId || '__none__') === catFilter) && !(t.refundOf && txById(t.refundOf) && C.splitLines(txById(t.refundOf)).some(l => l.categoryId === catFilter))) continue;
+      if (q.length < 2 || words.every(w => hay.includes(w)) || (!isNaN(amt) && amt !== 0 && Math.abs(t.amount) === Math.abs(amt))) out.push(t);
     }
     return out.sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  function searchListHtml(q) {
-    const res = searchResults(q);
-    if (String(q || '').trim().length < 2) return '<p class="small muted">Typ minstens 2 tekens: een naam, een woord uit de omschrijving, een categorie of een bedrag (bv. <code>45,20</code>).</p>';
+  function searchListHtml(q, catFilter) {
+    const res = searchResults(q, catFilter);
+    if (String(q || '').trim().length < 2 && !catFilter) return '<p class="small muted">Typ minstens 2 tekens: een naam, een woord uit de omschrijving, een categorie of een bedrag (bv. <code>45,20</code>).</p>';
     if (!res.length) return '<p class="muted">Niets gevonden.</p>';
     const total = res.reduce((a, t) => a + t.amount, 0);
     return `<p class="small muted">${res.length} transactie${res.length === 1 ? '' : 's'} · samen ${money(total)}</p>
@@ -1602,7 +1633,8 @@
 
   function searchModal() {
     return modalShell('Zoeken', `<input type="search" id="global-search" placeholder="Zoek in al je transacties…" value="${esc(modal.q || '')}" autocomplete="off">
-      <div id="search-results" style="margin-top:10px">${searchListHtml(modal.q)}</div>`, '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true);
+      <select id="global-search-cat" aria-label="Filter op categorie" style="margin-top:8px"><option value="">Alle categorieën</option><option value="__none__" ${modal.cat === '__none__' ? 'selected' : ''}>❔ Nog niet gekoppeld</option>${categoryOptions(modal.cat || null, { special: true, allowEmpty: false })}</select>
+      <div id="search-results" style="margin-top:10px">${searchListHtml(modal.q, modal.cat)}</div>`, '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true);
   }
 
   // ----- Wat is dit geld? -----
@@ -1619,6 +1651,7 @@
       ['income', '💶', 'Inkomen', 'Loon, een cadeau, iets dat je verkocht, rente, …'],
       ['refund', '↩', 'Ik krijg geld terug van een uitgave', 'Iemand betaalt zijn deel van iets dat jij betaalde, of een bestelling werd geannuleerd of teruggestort. De uitgave wordt dan kleiner.'],
       ['advance', '🤝', 'Iemand betaalt een voorschot terug', 'Je had iets voorgeschoten voor iemand (dat telde niet als jouw uitgave).'],
+      ['prepaid', '📥', 'Vooruitbetaald voor iets dat ik nog betaal', 'Bv. vrienden storten hun deel van de Airbnb en jij betaalt die later. Geen inkomen: je moet het nog voor hen uitgeven.'],
       ['action', '✅', 'Het hoort bij een actie', 'Bv. het geld van een retour, of mama die de kleren terugbetaalt.'],
       ['transfer', '↔', 'Van een eigen rekening', 'Je zette zelf geld over, bv. van je spaarrekening.']
     ];
@@ -1632,6 +1665,12 @@
       detail = sugg.length ? `<p class="small muted">Van welke uitgave? Helder stelt de waarschijnlijkste voor:</p><div class="wi-list">${sugg.map(x => `<button class="wi-pick" data-action="wi-refund" data-id="${esc(x.tx.id)}"><span class="grow"><strong>${esc(x.tx.title || x.tx.counterparty || x.tx.description || 'uitgave')}</strong><span class="small muted">${fmtDate(x.tx.date)}${x.tx.categoryId ? ' · ' + esc(catLabel(x.tx.categoryId)) : ''}</span></span><span class="amount">${money(x.tx.amount)}</span></button>`).join('')}</div>
         <p class="small"><a href="#" data-action="wi-refund-other">Een andere uitgave zoeken…</a></p>`
         : `<p class="small muted">Helder vindt geen passende uitgave in de laatste 3 maanden.</p><p><button class="btn" data-action="wi-refund-other">Uitgave zelf kiezen…</button></p>`;
+    } else if (c === 'prepaid') {
+      detail = `<label class="field"><span>Van wie?</span><input type="text" id="wi-person" list="wi-people" value="${esc(t.counterparty && !/\d{4}/.test(t.counterparty) ? t.counterparty.split(/\s+/).slice(0, 2).join(' ') : '')}" placeholder="naam">
+          <datalist id="wi-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
+        <label class="field"><span>Waarvoor? <span class="muted small">(optioneel)</span></span><input type="text" id="wi-prepaid-title" maxlength="60" placeholder="bv. Airbnb Ardennen"></label>
+        <p class="btn-row"><button class="btn primary" data-action="wi-prepaid">Opslaan</button></p>
+        <p class="small muted">Betaal je later de Airbnb, koppel die uitgave dan als voorschot voor deze persoon (Opvolgen → 🔗 Uitgave koppelen). Betaalde je ook voor jezelf, splits ze dan.</p>`;
     } else if (c === 'advance') {
       const people = C.personList(state).filter(p => p.stats.open > 0).sort((a, b) => b.stats.open - a.stats.open);
       detail = `<label class="field"><span>Wie betaalt terug?</span><input type="text" id="wi-person" list="wi-people" value="${esc(people[0] ? people[0].name : '')}" placeholder="naam">
@@ -1885,10 +1924,10 @@
     const over = st.open < 0 ? -st.open : 0;
     return modalShell(`Rekening-courant — ${m.person}`, `
       <div class="lg-head">
-        <div><div class="small muted">${st.open > 0 ? m.person + ' is je nog schuldig' : st.open < 0 ? 'Te veel terugbetaald' : 'Saldo'}</div><div class="cat-total ${st.open < 0 ? 'pos' : ''}">${money(Math.abs(st.open))}</div></div>
+        <div><div class="small muted">${st.open > 0 ? m.person + ' is je nog schuldig' : st.open < 0 ? 'Vooruitbetaald (nog voor ' + m.person + ' te betalen)' : 'Saldo'}</div><div class="cat-total ${st.open < 0 ? 'pos' : ''}">${money(Math.abs(st.open))}</div></div>
         <p class="small muted">Zoals een rekening: een voorschot zet geld op de rekening van ${esc(m.person)}, een terugbetaling haalt het eraf. Kies bij elke terugbetaling welk voorschot ze vereffent; laat je “Automatisch” staan, dan gaat ze naar het oudste open voorschot.</p>
       </div>
-      ${over ? `<div class="notice small">${esc(m.person)} betaalde <strong>${money(over)}</strong> meer terug dan er open stond. Hoort dat bij een voorschot dat nog niet in Helder staat? Voeg het dan toe. Anders kan je de rest inboeken als inkomst.
+      ${over ? `<div class="notice small">${esc(m.person)} betaalde <strong>${money(over)}</strong> meer dan er open stond. Betaalde ${esc(m.person)} vooruit voor iets dat jij nog betaalt (bv. de Airbnb)? Koppel die uitgave dan als voorschot voor ${esc(m.person)}. Anders kan je de rest inboeken als inkomst.
         <div style="margin-top:6px"><button class="btn small primary" data-action="surplus-new" data-person="${esc(m.person)}">Rest inboeken als inkomst…</button></div></div>` : ''}
       ${rows.length ? `<div class="table-wrap"><table class="ledger"><thead><tr><th>Datum</th><th>Omschrijving</th><th class="right">Voorschot</th><th class="right">Terug</th><th class="right">Saldo</th><th></th></tr></thead><tbody>${rows.map(line).join('')}</tbody></table></div>`
         : '<p class="muted">Nog geen bewegingen.</p>'}`,
@@ -3544,7 +3583,17 @@
         </select></div>` : ''}
 
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
-        <div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div></div>` : ''}
+        ${(() => {
+          const ra = C.refundAllocation(state);
+          const parts = refundedBy.flatMap(r => ra.get(r.id) || []);
+          const toAdv = parts.filter(p => p.advance).reduce((s, p) => s + p.amount, 0);
+          const advTotal = C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE && l.amount < 0).reduce((s, l) => s - l.amount, 0);
+          const own = C.splitLines(t).filter(l => l.categoryId !== C.SYS_ADVANCE).reduce((s, l) => s + l.amount, 0) + parts.filter(p => !p.advance).reduce((s, p) => s + p.amount, 0);
+          return advTotal
+            ? `<div class="small">Jouw deel: <strong>${money(own)}</strong> · voorschot ${money(advTotal)}: ${money(toAdv)} terug${advTotal - toAdv > 0 ? `, <span class="warn-text">nog ${money(advTotal - toAdv)} open</span>` : ' ✓'}</div>
+               <div class="small muted">Terugbetalingen gaan eerst naar het voorschot; wat daarboven komt, maakt jouw deel kleiner.</div>`
+            : `<div class="small">Netto kost: <strong>${money(t.amount + refundedBy.reduce((s, r) => s + r.amount, 0))}</strong></div>`;
+        })()}</div>` : ''}
 
       <div class="field"><span>Acties <span class="muted small">(iets wat je nog moet doen, bv. “Retour binnenbrengen”)</span></span>
         <div class="tx-actions">${(t.actions || []).map(id => actionById(id)).filter(Boolean).map(a => `<span class="badge action-badge ${a.closed ? 'done' : ''}">${a.closed ? '✓' : '☐'} ${esc(a.name)} <button type="button" class="chip-x" data-action="tx-action-remove" data-id="${esc(a.id)}" aria-label="Uit actie halen">✕</button></span>`).join('')}
@@ -3697,7 +3746,7 @@
       return;
     }
     ui.ruleHint = null;
-    if (value === 'whatis') { render(); openModal({ type: 'whatIs', txId: t.id, choice: null }); return; }
+    if (value === 'whatis' || value.startsWith('whatis:')) { render(); openModal({ type: 'whatIs', txId: t.id, choice: value.slice(7) || null }); return; }
     if (value.startsWith('refund:')) { linkRefunds([t], value.slice(7)); return; }
     if (value.startsWith('adv:')) {
       markAdvance(t, value.slice(4));
@@ -4959,6 +5008,15 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       markAdvance(t, name);
       whatIsDone('Terugbetaling van ' + name + ' gekoppeld');
     },
+    'wi-prepaid': () => {
+      const t = txById(modal.txId); const name = $('#wi-person').value.trim();
+      if (!t) return;
+      if (!name) { toast('Geef de naam van wie vooruitbetaalde.'); return; }
+      markAdvance(t, name);
+      const title = $('#wi-prepaid-title').value.trim();
+      if (title) t.title = title;
+      whatIsDone(name + ' betaalde vooruit: nog voor ' + name + ' te betalen');
+    },
     'wi-action': () => {
       const t = txById(modal.txId); if (!t) return;
       let id = $('#wi-action').value;
@@ -5190,7 +5248,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (modal && modal.type === 'search' && el.id === 'global-search') {
       modal.q = el.value;
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q); }, 120);
+      searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); }, 120);
       return;
     }
     if (modal && modal.type === 'actionPick' && el.id === 'act-search') {
@@ -5213,6 +5271,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
     if (el.dataset.assignInput) return;
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
+    if (modal && modal.type === 'search' && el.id === 'global-search-cat') { modal.cat = el.value; const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); return; }
+    if (el.dataset.filter === 'bank.category') { ui.bank.category = el.value; if (el.value && ui.bank.status === 'todo' && el.value !== '__none__') ui.bank.status = ''; render(); return; }
     if (el.dataset.tl) { onTimelineInput(el); render(); return; }
     if (el.dataset.adminReg != null) { Sync.admin.setRegistration(el.checked).then(() => { toast(el.checked ? 'Nieuwe accounts: open' : 'Nieuwe accounts: gesloten'); loadAdmin(); }).catch(e => toast(e.message)); return; }
     if (el.dataset.adminAi) { Sync.admin.user(el.dataset.adminAi, el.checked ? 'ai-on' : 'ai-off').then(() => loadAdmin()).catch(e => toast(e.message)); return; }

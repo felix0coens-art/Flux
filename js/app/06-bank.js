@@ -3,6 +3,13 @@
   function bankTxFilter(t) {
     const f = ui.bank;
     if (f.account && t.accountId !== f.account) return false;
+    // Categorie: ook gesplitste transacties en terugbetalingen die (deels) in die categorie vallen
+    if (f.category) {
+      const ids = C.splitLines(t).map(l => l.categoryId || '__none__');
+      const orig = t.refundOf ? txById(t.refundOf) : null;
+      if (orig) ids.push(...C.splitLines(orig).map(l => l.categoryId || '__none__'));
+      if (t.isTransfer ? f.category !== '__transfer__' : !ids.includes(f.category)) return false;
+    }
     const k = kindOf(t);
     if (f.status === 'todo' && k !== 'todo') return false;
     if (f.status === 'done' && k === 'todo') return false;
@@ -41,6 +48,7 @@
       add('adv:' + p.name, incoming ? '🤝 Terugbetaling van ' + p.name : '🤝 Voorgeschoten voor ' + p.name, 'Voorschot', incoming && p.stats.open > 0 ? 'nog ' + money(p.stats.open) + ' open' : '');
     }
     add('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van iemand anders…' : '↗ Voorgeschoten voor iemand anders…', 'Voorschot');
+    if (incoming) add('whatis:prepaid', '📥 Vooruitbetaald voor iets dat ik nog betaal (bv. Airbnb)…', 'Voorschot');
     if (incoming && !strong) addRefunds();
     if (incoming) add('refund', '↩ Terugbetaling van een andere uitgave…', 'Speciaal');
     add('cat:' + C.SYS_INVEST, '📈 Belegging (storting/opname)', 'Speciaal');

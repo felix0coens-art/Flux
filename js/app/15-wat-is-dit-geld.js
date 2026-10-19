@@ -12,6 +12,7 @@
       ['income', '💶', 'Inkomen', 'Loon, een cadeau, iets dat je verkocht, rente, …'],
       ['refund', '↩', 'Ik krijg geld terug van een uitgave', 'Iemand betaalt zijn deel van iets dat jij betaalde, of een bestelling werd geannuleerd of teruggestort. De uitgave wordt dan kleiner.'],
       ['advance', '🤝', 'Iemand betaalt een voorschot terug', 'Je had iets voorgeschoten voor iemand (dat telde niet als jouw uitgave).'],
+      ['prepaid', '📥', 'Vooruitbetaald voor iets dat ik nog betaal', 'Bv. vrienden storten hun deel van de Airbnb en jij betaalt die later. Geen inkomen: je moet het nog voor hen uitgeven.'],
       ['action', '✅', 'Het hoort bij een actie', 'Bv. het geld van een retour, of mama die de kleren terugbetaalt.'],
       ['transfer', '↔', 'Van een eigen rekening', 'Je zette zelf geld over, bv. van je spaarrekening.']
     ];
@@ -25,6 +26,12 @@
       detail = sugg.length ? `<p class="small muted">Van welke uitgave? Helder stelt de waarschijnlijkste voor:</p><div class="wi-list">${sugg.map(x => `<button class="wi-pick" data-action="wi-refund" data-id="${esc(x.tx.id)}"><span class="grow"><strong>${esc(x.tx.title || x.tx.counterparty || x.tx.description || 'uitgave')}</strong><span class="small muted">${fmtDate(x.tx.date)}${x.tx.categoryId ? ' · ' + esc(catLabel(x.tx.categoryId)) : ''}</span></span><span class="amount">${money(x.tx.amount)}</span></button>`).join('')}</div>
         <p class="small"><a href="#" data-action="wi-refund-other">Een andere uitgave zoeken…</a></p>`
         : `<p class="small muted">Helder vindt geen passende uitgave in de laatste 3 maanden.</p><p><button class="btn" data-action="wi-refund-other">Uitgave zelf kiezen…</button></p>`;
+    } else if (c === 'prepaid') {
+      detail = `<label class="field"><span>Van wie?</span><input type="text" id="wi-person" list="wi-people" value="${esc(t.counterparty && !/\d{4}/.test(t.counterparty) ? t.counterparty.split(/\s+/).slice(0, 2).join(' ') : '')}" placeholder="naam">
+          <datalist id="wi-people">${C.personList(state).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></label>
+        <label class="field"><span>Waarvoor? <span class="muted small">(optioneel)</span></span><input type="text" id="wi-prepaid-title" maxlength="60" placeholder="bv. Airbnb Ardennen"></label>
+        <p class="btn-row"><button class="btn primary" data-action="wi-prepaid">Opslaan</button></p>
+        <p class="small muted">Betaal je later de Airbnb, koppel die uitgave dan als voorschot voor deze persoon (Opvolgen → 🔗 Uitgave koppelen). Betaalde je ook voor jezelf, splits ze dan.</p>`;
     } else if (c === 'advance') {
       const people = C.personList(state).filter(p => p.stats.open > 0).sort((a, b) => b.stats.open - a.stats.open);
       detail = `<label class="field"><span>Wie betaalt terug?</span><input type="text" id="wi-person" list="wi-people" value="${esc(people[0] ? people[0].name : '')}" placeholder="naam">

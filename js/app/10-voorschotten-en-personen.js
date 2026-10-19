@@ -45,7 +45,9 @@
     const showAdv = f !== 'act', showAct = f !== 'adv';
     const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
     const openPeople = people.filter(p => p.stats.open > 0);
-    const done = people.filter(p => p.stats.open <= 0);
+    const done = people.filter(p => p.stats.open === 0);
+    const prepaid = people.filter(p => p.stats.open < 0);
+    const prepaidTotal = prepaid.reduce((a, p) => a - p.stats.open, 0);
     const advTotal = openPeople.reduce((a, p) => a + p.stats.open, 0);
     const { open: openActs, done: doneActs } = actionLists();
     const itemTitle = it => it.title ? esc(it.title) : `<span class="adv-untitled">${esc(it.counterparty || it.note || 'Voorschot')}</span>`;
@@ -98,6 +100,22 @@
         ${personTools(p)}
       </div>`;
     };
+    /** Iemand betaalde je vooruit (bv. zijn deel van de Airbnb): dat geld moet je nog voor hem uitgeven. */
+    const prepaidCard = p => {
+      const st = p.stats;
+      return `<div class="card person-card prepaid">
+        <div class="person-head"><span class="avatar" aria-hidden="true">${esc(p.name.slice(0, 1).toUpperCase())}</span>
+          <div class="grow"><strong class="person-name">${esc(p.name)}</strong><div class="small muted">betaalde vooruit</div></div>
+          <div class="person-open"><div class="small muted">nog voor ${esc(p.name)} te betalen</div><strong>${money(-st.open)}</strong></div></div>
+        <p class="small muted">Betaal je de uitgave (bv. de Airbnb), koppel ze dan als voorschot voor ${esc(p.name)}: zo valt het tegen elkaar weg. Betaalde je ook voor jezelf? Splits dan de uitgave: jouw deel + voorschot voor ${esc(p.name)}.</p>
+        <div class="adv-paid">
+          <button class="btn small primary" data-action="adv-pick" data-person="${esc(p.name)}" data-dir="out">🔗 Uitgave koppelen</button>
+          <button class="btn small" data-action="surplus-new" data-person="${esc(p.name)}" title="Het was gewoon te veel terugbetaald, of je houdt het">Toch inkomst…</button>
+        </div>
+        ${history(p)}
+        ${personTools(p)}
+      </div>`;
+    };
     const doneCard = p => {
       const st = p.stats;
       const status = st.open < 0 ? `<span class="badge">${money(-st.open)} te veel terug</span>` : st.items.length ? '<span class="badge ok">✓ alles in orde</span>' : '<span class="badge">nog niets voorgeschoten</span>';
@@ -131,6 +149,8 @@
           <button class="btn small primary" data-action="adv-pick" data-dir="out">+ Voorschot</button></div>
         ${openPeople.length ? `<div class="grid cards people">${openPeople.map(openCard).join('')}</div>`
           : `<div class="card empty-state"><p>${people.length ? '🎉 Niemand is je nog iets schuldig.' : 'Betaalde je iets voor iemand anders, zoals de hele restaurantrekening? Typ bij die transactie in <em>Gekoppeld aan</em> de naam, bv. <code>pieter</code>, en kies <strong>🤝 Voorgeschoten voor Pieter</strong>.'}</p></div>`}
+        ${prepaid.length ? `<h3 class="section-sub">📥 Vooruitbetaald — nog voor anderen te betalen <span class="muted small">${money(prepaidTotal)}</span></h3>
+          <div class="grid cards people">${prepaid.map(prepaidCard).join('')}</div>` : ''}
         ${done.length ? `<details class="act-done" data-keep="advDone" ${ui.keepOpen.advDone ? 'open' : ''}><summary class="small"><strong>Alles in orde</strong> <span class="muted">(${plural(done.length, 'persoon', 'personen')})</span></summary>
           <div class="grid cards people" style="margin-top:10px">${done.map(doneCard).join('')}</div></details>` : ''}
       </section>`;
@@ -139,7 +159,7 @@
         <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}</div></div>
       <div class="follow-sum">
         <button class="follow-stat act" data-action="owed-filter" data-f="act"><span class="label">Acties te doen</span><strong>${openActs.length}</strong>${late ? `<span class="small warn-text">${late} te laat</span>` : ''}</button>
-        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}</span></button>
+        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}${prepaidTotal ? ` · ${money(prepaidTotal)} vooruitbetaald` : ''}</span></button>
       </div>
       <p class="small muted follow-help"><strong>Actie</strong> = iets wat jij nog moet doen bij een transactie (geld terugvragen, retour binnenbrengen, bonnetje indienen); vink het af als het gedaan is.
         <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.</p>

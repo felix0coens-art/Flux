@@ -228,10 +228,10 @@
     const over = st.open < 0 ? -st.open : 0;
     return modalShell(`Rekening-courant — ${m.person}`, `
       <div class="lg-head">
-        <div><div class="small muted">${st.open > 0 ? m.person + ' is je nog schuldig' : st.open < 0 ? 'Te veel terugbetaald' : 'Saldo'}</div><div class="cat-total ${st.open < 0 ? 'pos' : ''}">${money(Math.abs(st.open))}</div></div>
+        <div><div class="small muted">${st.open > 0 ? m.person + ' is je nog schuldig' : st.open < 0 ? 'Vooruitbetaald (nog voor ' + m.person + ' te betalen)' : 'Saldo'}</div><div class="cat-total ${st.open < 0 ? 'pos' : ''}">${money(Math.abs(st.open))}</div></div>
         <p class="small muted">Zoals een rekening: een voorschot zet geld op de rekening van ${esc(m.person)}, een terugbetaling haalt het eraf. Kies bij elke terugbetaling welk voorschot ze vereffent; laat je “Automatisch” staan, dan gaat ze naar het oudste open voorschot.</p>
       </div>
-      ${over ? `<div class="notice small">${esc(m.person)} betaalde <strong>${money(over)}</strong> meer terug dan er open stond. Hoort dat bij een voorschot dat nog niet in Helder staat? Voeg het dan toe. Anders kan je de rest inboeken als inkomst.
+      ${over ? `<div class="notice small">${esc(m.person)} betaalde <strong>${money(over)}</strong> meer dan er open stond. Betaalde ${esc(m.person)} vooruit voor iets dat jij nog betaalt (bv. de Airbnb)? Koppel die uitgave dan als voorschot voor ${esc(m.person)}. Anders kan je de rest inboeken als inkomst.
         <div style="margin-top:6px"><button class="btn small primary" data-action="surplus-new" data-person="${esc(m.person)}">Rest inboeken als inkomst…</button></div></div>` : ''}
       ${rows.length ? `<div class="table-wrap"><table class="ledger"><thead><tr><th>Datum</th><th>Omschrijving</th><th class="right">Voorschot</th><th class="right">Terug</th><th class="right">Saldo</th><th></th></tr></thead><tbody>${rows.map(line).join('')}</tbody></table></div>`
         : '<p class="muted">Nog geen bewegingen.</p>'}`,
