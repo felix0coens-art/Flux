@@ -2488,10 +2488,10 @@
       return `<path d="${d}" fill="${esc(sg.color)}" data-donut="${i}" class="donut-seg" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''}><title>${esc(sg.label)}: ${money(sg.v)} (${(frac * 100).toFixed(0)}%)</title></path>`;
     }).join('');
     const pctTxt = v => (v / total * 100).toFixed(v / total < 0.1 || v / total > 0.9 && v < total ? 1 : 0).replace('.', ',') + '%';
-    return `<div class="donut" data-total="${esc(money(total))}" data-total-label="${esc(opts.totalLabel || 'Totaal')}">
+    return `<div class="donut" data-total="${esc(money(opts.centerTotal != null ? opts.centerTotal : total))}" data-total-label="${esc(opts.totalLabel || 'Totaal')}">
       <svg viewBox="0 0 180 180" role="img" aria-label="${esc(opts.aria || 'Verdeling per categorie')}">${arcs}
         <text x="90" y="84" text-anchor="middle" class="donut-label" id="donut-label">${esc(opts.totalLabel || 'Totaal')}</text>
-        <text x="90" y="104" text-anchor="middle" class="donut-value" id="donut-value">${esc(money(total))}</text></svg>
+        <text x="90" y="104" text-anchor="middle" class="donut-value" id="donut-value">${esc(money(opts.centerTotal != null ? opts.centerTotal : total))}</text></svg>
  <ul class="donut-legend">${segs.map((sg, i) => `<li data-donut="${i}" ${sg.id ? `data-action="cat-view" data-cat="${esc(sg.id)}"` : ''} data-label="${esc(sg.label.replace(/\s*\(\d+\)$/, ''))}" data-value="${esc(money(sg.v) + ' · ' + pctTxt(sg.v))}"><span class="sw" style="background:${esc(sg.color)}"></span><span class="name">${esc(sg.label)}</span><span class="pct">${pctTxt(sg.v)}</span><span class="amt">${money(sg.v)}</span></li>`).join('')}</ul></div>`;
   }
 
@@ -2521,6 +2521,7 @@
     const cats = Object.entries(sum.expenseBy)
       .filter(([, v]) => v > 0)
       .map(([id, v]) => ({ id: id === '__none__' ? null : id, v })).sort((a, b) => b.v - a.v);
+    const negCats = Object.entries(sum.expenseBy).filter(([id, v]) => v < 0 && id !== '__none__').map(([id, v]) => ({ id, v }));
     const refundSurplus = Object.values(sum.expenseBy).filter(v => v < 0).reduce((a, v) => a - v, 0);
     const maxCat = cats.length ? cats[0].v : 1;
     const monthlyFixed = recurring.reduce((s, r) => s + r.monthlyCost, 0);
@@ -2539,11 +2540,12 @@
       <div class="grid two" style="margin-bottom:16px">
         <div class="card">
           <h2>Per categorie</h2>
-          ${donutChart(cats, { totalLabel: 'Uitgaven' })}
-          ${refundSurplus ? `<p class="small muted">In deze periode kwam er in sommige categorieën meer terug dan je uitgaf (${money(refundSurplus)}); dat zit wel in het totaal van ${money(sum.expenses)}, niet in het diagram.</p>` : ''}
+          ${donutChart(cats, { totalLabel: 'Uitgaven', centerTotal: sum.expenses })}
+          ${refundSurplus ? `<p class="small muted">↩ In ${negCats.map(c => esc(catLabel(c.id))).join(', ')} kwam ${money(refundSurplus)} meer terug dan je in deze periode uitgaf. Dat is al afgetrokken van het totaal (${money(sum.expenses)}).</p>` : ''}
           ${cats.length ? cats.map(c => `<div class="catbar cat-link" data-action="cat-view" data-cat="${esc(c.id || '__none__')}" title="Bekijk de transacties"><span class="name">${esc(c.id ? catLabel(c.id) : 'Nog niet gekoppeld')}</span>
             <span class="track"><span class="fill" style="display:block;width:${(c.v / maxCat * 100).toFixed(1)}%;background:${esc(catColor(c.id))}"></span></span>
-            <span class="amount">${money(c.v)}</span></div>`).join('') : '<p class="muted">Geen uitgaven in deze periode.</p>'}
+            <span class="amount">${money(c.v)}</span></div>`).join('') + negCats.map(c => `<div class="catbar cat-link" data-action="cat-view" data-cat="${esc(c.id)}" title="Meer terugbetaald dan uitgegeven in deze periode"><span class="name">${esc(catLabel(c.id))} <span class="small muted">↩ terugbetaling</span></span>
+            <span class="track"></span><span class="amount pos">${money(c.v)}</span></div>`).join('') + (cats.length > 1 || negCats.length ? `<div class="catbar total"><span class="name"><strong>Totaal</strong></span><span class="track"></span><span class="amount"><strong>${money(sum.expenses)}</strong></span></div>` : '') : '<p class="muted">Geen uitgaven in deze periode.</p>'}
         </div>
         <div class="card">
           <div class="card-head"><h2>Budgetten</h2><button class="btn small" data-action="new-budget">+ Budget</button></div>

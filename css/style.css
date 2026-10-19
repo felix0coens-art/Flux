@@ -1044,3 +1044,4 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .fg-reason > span { display: flex; flex-direction: column; gap: 2px; }
 .fg-cat > span { font-weight: 600; color: var(--text); }
 .fg-cat select:invalid { border-color: var(--orange); }
+.catbar.total { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px; }
