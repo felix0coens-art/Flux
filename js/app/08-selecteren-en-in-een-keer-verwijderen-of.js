@@ -30,6 +30,43 @@
     } });
   }
 
+  /**
+   * Een uitgave kiezen om een terugbetaling aan te koppelen: alle uitgaven (elke datum, elk bedrag),
+   * de waarschijnlijkste bovenaan, met zoeken op naam, omschrijving, categorie of bedrag.
+   */
+  function refundPickModal() {
+    const m = modal;
+    const t = txById(m.txId) || (m.back && m.back.tx);
+    if (!t) return modalShell('Uitgave kiezen', '<p class="muted">Deze transactie bestaat niet meer.</p>', '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>');
+    const q = (m.search || '').trim().toLowerCase();
+    const refunded = C.refundTotals(state);
+    const sugg = new Map(C.suggestRefundTargets(state, t, 8).map((s, i) => [s.tx.id, i]));
+    const list = state.transactions.filter(o => o.id !== t.id && o.amount < 0 && !o.isTransfer && !o.refundOf)
+      .filter(o => !q || `${o.title || ''} ${o.counterparty} ${o.description} ${o.note || ''} ${o.categoryId ? catName(o.categoryId) : ''} ${C.centsToInput(o.amount)} ${C.centsToInput(-o.amount)}`.toLowerCase().includes(q))
+      .sort((a, b) => (sugg.has(a.id) ? sugg.get(a.id) : 1e9) - (sugg.has(b.id) ? sugg.get(b.id) : 1e9) || b.date.localeCompare(a.date))
+      .slice(0, 150);
+    return modalShell('Bij welke uitgave hoort deze terugbetaling?', `
+      <div class="wi-tx"><div><strong>${esc(t.title || t.counterparty || t.description || '—')}</strong><div class="small muted">${fmtDate(t.date)}</div></div><span class="amount pos">${money(t.amount)}</span></div>
+      <input type="search" id="rp-search" placeholder="Zoek op naam, omschrijving, categorie of bedrag…" value="${esc(m.search || '')}" autocomplete="off" style="margin-top:10px">
+      <div class="search-list" style="margin-top:8px">${list.map(o => {
+        const open = -o.amount - (refunded[o.id] || 0);
+        return `<button class="search-hit" data-action="refund-pick" data-id="${esc(o.id)}">
+          <span class="grow"><strong>${sugg.has(o.id) ? '💡 ' : ''}${esc(o.title || o.counterparty || o.description || '—')}</strong>
+            <span class="small muted">${fmtDate(o.date)}${o.categoryId ? ' · ' + esc(catLabel(o.categoryId)) : ''}${refunded[o.id] ? ` · al ${money(refunded[o.id])} terug, nog ${money(open)} open` : ''}${open < t.amount ? ' · <span class="warn-text">kleiner dan deze terugbetaling</span>' : ''}</span></span>
+          <span class="amount">${money(o.amount)}</span></button>`;
+      }).join('') || '<p class="muted">Geen uitgave gevonden.</p>'}</div>
+      <p class="small muted">💡 = waarschijnlijk. Je kan elke uitgave kiezen, ook een oudere. Een terugbetaling op een uitgave met een voorschot-deel gaat eerst naar dat voorschot.</p>`,
+      `<span class="spacer"></span><button class="btn" data-action="${m.back ? 'refund-back' : 'close-modal'}">${m.back ? 'Terug' : 'Annuleren'}</button>`, true);
+  }
+
+  function chooseRefundTarget(id) {
+    const m = modal;
+    if (m.back) { m.back.tx.refundOf = id; if (m.back.tx.isTransfer) m.back.tx.transferMode = 'no'; openModal(m.back); return; }
+    const t = txById(m.txId);
+    closeModal();
+    if (t) linkRefunds([t], id);
+  }
+
   function bulkRefundTarget() {
     const sel = Array.from(ui.selected).map(txById).filter(Boolean);
     const out = sel.filter(t => t.amount < 0);

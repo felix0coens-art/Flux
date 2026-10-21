@@ -275,7 +275,9 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'wi-newcat': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'new-cat'); },
     'wi-refund': el => { const t = txById(modal.txId); closeModal(); if (t) linkRefunds([t], el.dataset.id); },
-    'wi-refund-other': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'refund'); },
+    'wi-refund-other': () => { const t = txById(modal.txId); if (t) openModal({ type: 'refundPick', txId: t.id, search: '' }); },
+    'refund-pick': el => chooseRefundTarget(el.dataset.id),
+    'refund-back': () => openModal(modal.back),
     'wi-advance': () => {
       const t = txById(modal.txId); const name = $('#wi-person').value.trim();
       if (!t) return;
@@ -526,6 +528,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); }, 120);
       return;
     }
+    if (modal && modal.type === 'refundPick' && el.id === 'rp-search') {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#rp-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
+      return;
+    }
     if (modal && modal.type === 'actionPick' && el.id === 'act-search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#act-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
@@ -582,6 +589,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
+    if (modal.type === 'tx' && el.id === 'tx-refund' && el.value === '__search__') { const back = modal; openModal({ type: 'refundPick', txId: back.tx.id, back, search: '' }); return; }
     if (modal.type === 'tx' && el.id === 'tx-action-add') { txAddAction(el); return; }
     if (modal.type === 'metal' && el.id === 'mt-preset') { metalPresetChosen(el.value); return; }
     if (modal.type === 'tx' && el.id === 'tx-file') { uploadTxFile(el); return; }

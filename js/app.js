@@ -968,6 +968,43 @@
     } });
   }
 
+  /**
+   * Een uitgave kiezen om een terugbetaling aan te koppelen: alle uitgaven (elke datum, elk bedrag),
+   * de waarschijnlijkste bovenaan, met zoeken op naam, omschrijving, categorie of bedrag.
+   */
+  function refundPickModal() {
+    const m = modal;
+    const t = txById(m.txId) || (m.back && m.back.tx);
+    if (!t) return modalShell('Uitgave kiezen', '<p class="muted">Deze transactie bestaat niet meer.</p>', '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>');
+    const q = (m.search || '').trim().toLowerCase();
+    const refunded = C.refundTotals(state);
+    const sugg = new Map(C.suggestRefundTargets(state, t, 8).map((s, i) => [s.tx.id, i]));
+    const list = state.transactions.filter(o => o.id !== t.id && o.amount < 0 && !o.isTransfer && !o.refundOf)
+      .filter(o => !q || `${o.title || ''} ${o.counterparty} ${o.description} ${o.note || ''} ${o.categoryId ? catName(o.categoryId) : ''} ${C.centsToInput(o.amount)} ${C.centsToInput(-o.amount)}`.toLowerCase().includes(q))
+      .sort((a, b) => (sugg.has(a.id) ? sugg.get(a.id) : 1e9) - (sugg.has(b.id) ? sugg.get(b.id) : 1e9) || b.date.localeCompare(a.date))
+      .slice(0, 150);
+    return modalShell('Bij welke uitgave hoort deze terugbetaling?', `
+      <div class="wi-tx"><div><strong>${esc(t.title || t.counterparty || t.description || '—')}</strong><div class="small muted">${fmtDate(t.date)}</div></div><span class="amount pos">${money(t.amount)}</span></div>
+      <input type="search" id="rp-search" placeholder="Zoek op naam, omschrijving, categorie of bedrag…" value="${esc(m.search || '')}" autocomplete="off" style="margin-top:10px">
+      <div class="search-list" style="margin-top:8px">${list.map(o => {
+        const open = -o.amount - (refunded[o.id] || 0);
+        return `<button class="search-hit" data-action="refund-pick" data-id="${esc(o.id)}">
+          <span class="grow"><strong>${sugg.has(o.id) ? '💡 ' : ''}${esc(o.title || o.counterparty || o.description || '—')}</strong>
+            <span class="small muted">${fmtDate(o.date)}${o.categoryId ? ' · ' + esc(catLabel(o.categoryId)) : ''}${refunded[o.id] ? ` · al ${money(refunded[o.id])} terug, nog ${money(open)} open` : ''}${open < t.amount ? ' · <span class="warn-text">kleiner dan deze terugbetaling</span>' : ''}</span></span>
+          <span class="amount">${money(o.amount)}</span></button>`;
+      }).join('') || '<p class="muted">Geen uitgave gevonden.</p>'}</div>
+      <p class="small muted">💡 = waarschijnlijk. Je kan elke uitgave kiezen, ook een oudere. Een terugbetaling op een uitgave met een voorschot-deel gaat eerst naar dat voorschot.</p>`,
+      `<span class="spacer"></span><button class="btn" data-action="${m.back ? 'refund-back' : 'close-modal'}">${m.back ? 'Terug' : 'Annuleren'}</button>`, true);
+  }
+
+  function chooseRefundTarget(id) {
+    const m = modal;
+    if (m.back) { m.back.tx.refundOf = id; if (m.back.tx.isTransfer) m.back.tx.transferMode = 'no'; openModal(m.back); return; }
+    const t = txById(m.txId);
+    closeModal();
+    if (t) linkRefunds([t], id);
+  }
+
   function bulkRefundTarget() {
     const sel = Array.from(ui.selected).map(txById).filter(Boolean);
     const out = sel.filter(t => t.amount < 0);
@@ -3501,7 +3538,7 @@
   function renderModal() {
     const root = $('#modal-root');
     if (!modal) { root.innerHTML = ''; return; }
-    const fns = { watch: watchModal, metal: metalModal, metalPrice: metalPriceModal, taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
+    const fns = { refundPick: refundPickModal, watch: watchModal, metal: metalModal, metalPrice: metalPriceModal, taxYear: taxYearModal, search: searchModal, whatIs: whatIsModal, action: actionModal, actionPick: actionPickModal, actionView: m => modalShell('Actie', actionCard(actionById(m.id) || { id: '', name: '?' }, true), '<span class="spacer"></span><button class="btn" data-action="close-modal">Sluiten</button>', true), advLedger: advLedgerModal, surplus: surplusModal, catTx: catTxModal, advTitle: advTitleModal, forgive: forgiveModal, saxoSetup: saxoSetupModal, tx: txModal, rule: ruleModal, budget: budgetModal, account: accountModal, category: categoryModal, import: importModal, lookup: lookupModal, password: passwordModal, degiro: degiroModal, degiroFiles: degiroFilesModal, importView: importViewModal, bankSetup: bankSetupModal, bankConnect: bankConnectModal, person: personModal, advPick: advPickModal };
     const bd = $('.modal-backdrop', root);
     const scroll = bd ? bd.scrollTop : 0;
     root.innerHTML = fns[modal.type]();
@@ -3579,7 +3616,9 @@
         <h3>Terugbetaling van een uitgave</h3>
         <p class="small muted" style="margin:0 0 8px">Boekte je de hele rekening als jouw uitgave en betaalt een vriend zijn deel terug? Koppel het hier: die uitgave wordt verminderd.</p>
         <select id="tx-refund" style="width:100%"><option value="">— Nee —</option>
+          ${(() => { const cur = t.refundOf && !suggestions.some(s => s.tx.id === t.refundOf) ? txById(t.refundOf) : null; return cur ? `<option value="${esc(cur.id)}" selected>${fmtDate(cur.date)} · ${esc(cur.title || cur.counterparty || cur.description)} · ${money(cur.amount)}</option>` : ''; })()}
           ${suggestions.map(s => `<option value="${esc(s.tx.id)}" ${t.refundOf === s.tx.id ? 'selected' : ''}>${fmtDate(s.tx.date)} · ${esc(s.tx.title || s.tx.counterparty || s.tx.description)} · ${money(s.tx.amount)}</option>`).join('')}
+          <option value="__search__">🔎 Andere uitgave zoeken…</option>
         </select></div>` : ''}
 
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
@@ -3667,7 +3706,7 @@
     if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
     if (isNaN(amount) || amount === 0) errors.push('Geef een geldig bedrag (bv. -12,50 voor een uitgave).');
     const splits = isNaN(amount) ? [] : readSplits(amount);
-    const refundOf = $('#tx-refund') ? $('#tx-refund').value || null : null;
+    const refundOf = $('#tx-refund') && $('#tx-refund').value !== '__search__' ? $('#tx-refund').value || null : t.refundOf || null;
     const newCat = $('#tx-category').value || null;
     const person = $('#tx-person').value.trim();
     const advanceOf = newCat === C.SYS_ADVANCE && amount > 0 ? $('#tx-advance-of').value || null : null;
@@ -3735,14 +3774,14 @@
       openModal({ type: 'category', assignTo: t.id, category: { id: C.uid('cat'), name: '', kind: t.amount > 0 ? 'income' : 'expense', color: t.amount > 0 ? '#37b24d' : '#3b5bdb', lookupTags: '' } });
       return;
     }
-    if (value === 'split' || value === 'refund' || value === 'cat:' + C.SYS_ADVANCE) {
+    if (value === 'refund') { render(); openModal({ type: 'refundPick', txId: t.id, search: '' }); return; }
+    if (value === 'split' || value === 'cat:' + C.SYS_ADVANCE) {
       const copy = JSON.parse(JSON.stringify(t));
       if (value === 'cat:' + C.SYS_ADVANCE) { copy.categoryId = C.SYS_ADVANCE; if (copy.isTransfer) copy.transferMode = 'no'; }
       render(); // keuzelijst terugzetten tot er bewaard wordt
       openModal({ type: 'tx', tx: copy });
       if (value === 'split' && !copy.splits.length) actions['add-split']();
       if (value === 'cat:' + C.SYS_ADVANCE) { const p = $('#tx-person'); if (p) p.focus(); }
-      if (value === 'refund') { const r = $('#tx-refund'); if (r) r.focus(); }
       return;
     }
     ui.ruleHint = null;
@@ -5000,7 +5039,9 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'wi-newcat': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'new-cat'); },
     'wi-refund': el => { const t = txById(modal.txId); closeModal(); if (t) linkRefunds([t], el.dataset.id); },
-    'wi-refund-other': () => { const t = txById(modal.txId); closeModal(); if (t) assignTx(t.id, 'refund'); },
+    'wi-refund-other': () => { const t = txById(modal.txId); if (t) openModal({ type: 'refundPick', txId: t.id, search: '' }); },
+    'refund-pick': el => chooseRefundTarget(el.dataset.id),
+    'refund-back': () => openModal(modal.back),
     'wi-advance': () => {
       const t = txById(modal.txId); const name = $('#wi-person').value.trim();
       if (!t) return;
@@ -5251,6 +5292,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       searchTimer = setTimeout(() => { const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); }, 120);
       return;
     }
+    if (modal && modal.type === 'refundPick' && el.id === 'rp-search') {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#rp-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
+      return;
+    }
     if (modal && modal.type === 'actionPick' && el.id === 'act-search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { modal.search = el.value; const pos = el.selectionStart; renderModal(); const s2 = $('#act-search'); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); } }, 150);
@@ -5307,6 +5353,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
+    if (modal.type === 'tx' && el.id === 'tx-refund' && el.value === '__search__') { const back = modal; openModal({ type: 'refundPick', txId: back.tx.id, back, search: '' }); return; }
     if (modal.type === 'tx' && el.id === 'tx-action-add') { txAddAction(el); return; }
     if (modal.type === 'metal' && el.id === 'mt-preset') { metalPresetChosen(el.value); return; }
     if (modal.type === 'tx' && el.id === 'tx-file') { uploadTxFile(el); return; }

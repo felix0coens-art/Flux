@@ -62,7 +62,9 @@
         <h3>Terugbetaling van een uitgave</h3>
         <p class="small muted" style="margin:0 0 8px">Boekte je de hele rekening als jouw uitgave en betaalt een vriend zijn deel terug? Koppel het hier: die uitgave wordt verminderd.</p>
         <select id="tx-refund" style="width:100%"><option value="">— Nee —</option>
+          ${(() => { const cur = t.refundOf && !suggestions.some(s => s.tx.id === t.refundOf) ? txById(t.refundOf) : null; return cur ? `<option value="${esc(cur.id)}" selected>${fmtDate(cur.date)} · ${esc(cur.title || cur.counterparty || cur.description)} · ${money(cur.amount)}</option>` : ''; })()}
           ${suggestions.map(s => `<option value="${esc(s.tx.id)}" ${t.refundOf === s.tx.id ? 'selected' : ''}>${fmtDate(s.tx.date)} · ${esc(s.tx.title || s.tx.counterparty || s.tx.description)} · ${money(s.tx.amount)}</option>`).join('')}
+          <option value="__search__">🔎 Andere uitgave zoeken…</option>
         </select></div>` : ''}
 
       ${refundedBy.length ? `<div class="section"><h3>Terugbetaald door</h3>${refundedBy.map(r => `<div class="small">${fmtDate(r.date)} · ${esc(r.counterparty || r.description)} · <span class="pos">${money(r.amount)}</span></div>`).join('')}
@@ -150,7 +152,7 @@
     if (!C.parseDate(date)) errors.push('Geef een geldige datum.');
     if (isNaN(amount) || amount === 0) errors.push('Geef een geldig bedrag (bv. -12,50 voor een uitgave).');
     const splits = isNaN(amount) ? [] : readSplits(amount);
-    const refundOf = $('#tx-refund') ? $('#tx-refund').value || null : null;
+    const refundOf = $('#tx-refund') && $('#tx-refund').value !== '__search__' ? $('#tx-refund').value || null : t.refundOf || null;
     const newCat = $('#tx-category').value || null;
     const person = $('#tx-person').value.trim();
     const advanceOf = newCat === C.SYS_ADVANCE && amount > 0 ? $('#tx-advance-of').value || null : null;
@@ -218,14 +220,14 @@
       openModal({ type: 'category', assignTo: t.id, category: { id: C.uid('cat'), name: '', kind: t.amount > 0 ? 'income' : 'expense', color: t.amount > 0 ? '#37b24d' : '#3b5bdb', lookupTags: '' } });
       return;
     }
-    if (value === 'split' || value === 'refund' || value === 'cat:' + C.SYS_ADVANCE) {
+    if (value === 'refund') { render(); openModal({ type: 'refundPick', txId: t.id, search: '' }); return; }
+    if (value === 'split' || value === 'cat:' + C.SYS_ADVANCE) {
       const copy = JSON.parse(JSON.stringify(t));
       if (value === 'cat:' + C.SYS_ADVANCE) { copy.categoryId = C.SYS_ADVANCE; if (copy.isTransfer) copy.transferMode = 'no'; }
       render(); // keuzelijst terugzetten tot er bewaard wordt
       openModal({ type: 'tx', tx: copy });
       if (value === 'split' && !copy.splits.length) actions['add-split']();
       if (value === 'cat:' + C.SYS_ADVANCE) { const p = $('#tx-person'); if (p) p.focus(); }
-      if (value === 'refund') { const r = $('#tx-refund'); if (r) r.focus(); }
       return;
     }
     ui.ruleHint = null;
