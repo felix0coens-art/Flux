@@ -1313,10 +1313,14 @@
   const fgLabel = (reason, cap) => reason === 'settled' ? (cap ? '🔄 Verrekend' : '🔄 verrekend') : (cap ? '🎁 Kwijtgescholden' : '🎁 kwijtgescholden');
   const fgReasonOf = it => { const r = (it.settledBy || []).filter(b => b.kind === 'forgiven'); return r.length && r.every(b => b.reason === 'settled') ? 'settled' : 'gift'; };
 
+  /** "door ADVOCATENKANTOOR (16/10) + 🎁 kwijtgescholden": waarmee een voorschot (deels) betaald werd. */
+  const paidByText = it => (it.settledBy || []).map(b => b.kind === 'forgiven' ? fgLabel(b.reason) + (b.amount !== it.amount ? ' ' + money(b.amount) : '') : esc(b.title || 'terugbetaling') + ' ' + fmtDate(b.date).slice(0, 5) + (b.amount !== it.amount ? ' (' + money(b.amount) + ')' : '')).join(' + ');
+
   function renderAdvances() {
     const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
     const showAdv = f !== 'act', showAct = f !== 'adv';
     const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
+    const advOv = C.advancesOverview(state);
     const openPeople = people.filter(p => p.stats.open > 0);
     const done = people.filter(p => p.stats.open === 0);
     const prepaid = people.filter(p => p.stats.open < 0);
@@ -1332,11 +1336,14 @@
       const closed = st.items.filter(it => it.amount - it.repaid <= 0).slice().reverse();
       const reps = state.transactions.filter(t => C.splitLines(t).some(l => l.categoryId === C.SYS_ADVANCE && l.amount > 0 && String(l.person || t.person || '').toLowerCase() === p.name.toLowerCase()))
         .sort((a, b) => b.date.localeCompare(a.date));
+      const settlesOf = id => (advOv.repayments.find(r => r.txId === id && r.kind === 'repayment') || { settles: [] });
       const forgiven = (ent.forgiven || []).slice().sort((a, b) => b.date.localeCompare(a.date));
       if (!closed.length && !reps.length && !forgiven.length) return '';
       return `<details class="adv-history"><summary class="small">Afgehandeld en terugbetalingen <span class="muted">(${closed.length + reps.length + forgiven.length})</span></summary>
-        ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span></span><span class="amount">${money(it.amount)}</span><span class="small">${settledHow(it)}</span></div>`).join('')}</div>` : ''}
-        ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span></div>`).join('')}</div>` : ''}
+        ${closed.length ? `<div class="adv-hist-block"><div class="small muted">Afgehandelde voorschotten</div>${closed.map(it => `<div class="adv-hist-row"><span class="grow"><button class="linklike" data-action="adv-title" data-key="${esc(advKey(it))}">${itemTitle(it)}</button> <span class="small muted">${fmtDate(it.date)}</span>
+          <div class="small muted">${settledHow(it)} · ${paidByText(it)}</div></span><span class="amount">${money(it.amount)}</span><span></span></div>`).join('')}</div>` : ''}
+        ${reps.length ? `<div class="adv-hist-block"><div class="small muted">Terugbetalingen</div>${reps.map(t => `<div class="adv-hist-row"><span class="grow"><a href="#" data-action="edit-tx" data-id="${esc(t.id)}">${esc(t.title || (t.source === 'manual' && /cash/i.test(t.description || '') ? 'In cash' : t.counterparty || 'Terugbetaling'))}</a> <span class="small muted">${fmtDate(t.date)}</span></span><span class="amount pos">${money(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).reduce((a, l) => a + l.amount, 0))}</span><span></span>
+          ${(() => { const r = settlesOf(t.id); const parts = r.settles.map(x => esc(x.title || 'voorschot') + (r.settles.length > 1 ? ' (' + money(x.amount) + ')' : '')); return `<div class="small muted adv-hist-for">${parts.length ? 'voor: ' + parts.join(', ') : ''}${r.surplus ? (parts.length ? ' · ' : '') + money(r.surplus) + ' meer dan er open stond' : ''} · <button class="linklike" data-action="adv-ledger" data-person="${esc(p.name)}">anders koppelen</button></div>`; })()}</div>`).join('')}</div>` : ''}
         ${forgiven.length ? `<div class="adv-hist-block"><div class="small muted">Verrekend of kwijtgescholden</div>${forgiven.map(fg => `<div class="adv-hist-row"><span class="grow">${fgLabel(fg.reason, true).slice(0, 2)} ${esc(fg.note || fgLabel(fg.reason, true).slice(3))} <span class="small muted">${fmtDate(fg.date)} → ${esc(catName(fg.categoryId))}</span></span><span class="amount">${money(fg.amount)}</span><button class="btn small ghost" data-action="forgive-undo" data-person="${esc(p.name)}" data-id="${esc(fg.id)}" title="Ongedaan maken">✕</button></div>`).join('')}</div>` : ''}
       </details>`;
     };
@@ -1361,7 +1368,7 @@
               <button class="adv-title" data-action="adv-title" data-key="${key}" title="Titel geven of wijzigen">${itemTitle(it)}${it.title ? '' : ' <span class="adv-addtitle">✎ titel</span>'}</button>
               <strong class="adv-amt">${money(it.amount - it.repaid)}</strong>
             </div>
-            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)}` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
+            <div class="small muted adv-sub">${fmtDate(it.date)}${it.repaid > 0 ? ` · al ${money(it.repaid)} terug van ${money(it.amount)} (${paidByText(it)}) · <button class="linklike" data-action="adv-ledger" data-person="${esc(p.name)}">anders koppelen</button>` : ''} · <a href="#" data-action="edit-tx" data-id="${esc(it.txId)}">details</a></div>
             <div class="adv-paid"><span class="small muted">Betaald?</span>
               <button class="btn small" data-action="adv-item-tx" data-key="${key}" data-person="${esc(p.name)}" title="Kies de terugbetaling bij je transacties">🔗 Transactie</button>
               <button class="btn small" data-action="adv-item-cash" data-key="${key}" data-person="${esc(p.name)}">💶 Cash</button>

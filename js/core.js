@@ -1051,9 +1051,20 @@
       }
       if (left > 0) unassigned.push({ r, left });
     }
+    // Exact hetzelfde bedrag als een open voorschot van die persoon? Dan hoort het daar bijna zeker bij
+    // (bv. € 900 terug voor het voorschot van € 900), ook als er oudere voorschotten open staan.
+    for (const u of unassigned) {
+      if (u.r.kind !== 'repayment') continue;
+      const cands = items.filter(i => i.person.toLowerCase() === u.r.person.toLowerCase() && i.repaid === 0 && i.amount === u.left);
+      if (!cands.length) continue;
+      const best = cands.sort((a, b) => Math.abs(daysBetween(a.date, u.r.date)) - Math.abs(daysBetween(b.date, u.r.date)))[0];
+      settle(u.r, best, u.left);
+      u.left = 0;
+    }
     const credit = {};
     for (const u of unassigned) {
       let left = u.left;
+      if (left <= 0) continue;
       for (const it of items.filter(i => i.person.toLowerCase() === u.r.person.toLowerCase())) {
         if (left <= 0) break;
         const take = Math.min(left, it.amount - it.repaid);

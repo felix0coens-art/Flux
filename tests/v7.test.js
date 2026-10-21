@@ -396,6 +396,20 @@ test('samen een cadeau: terugbetalingen gaan eerst naar het voorschot-deel, en v
   assert.equal(C.summarize(a, { start: '2026-10-01', end: '2026-10-31' }).expenses, 28000, 'enkel jouw deel is een uitgave');
 });
 
+test('voorschotten: een terugbetaling met exact hetzelfde bedrag gaat naar dat voorschot, niet naar het oudste', () => {
+  const s = Store.defaultState();
+  const A = { categoryId: C.SYS_ADVANCE, categorySource: 'manual', person: 'Kristin' };
+  s.transactions.push(tx('m1', '2026-08-12', -2300, 'Mediafin', A), tx('t', '2026-10-13', -4127, 'De tijd', A), tx('p', '2026-10-20', -90000, 'Pluxee', A),
+    tx('r2', '2026-10-16', 90000, 'ADVOCATENKANTOOR', A), tx('r3', '2026-10-21', 1000, 'Kristin', A));
+  C.recompute(s);
+  const by = Object.fromEntries(C.advancesOverview(s).items.map(it => [it.txId, it.repaid]));
+  assert.equal(by.p, 90000, '€ 900 terug = het voorschot van € 900');
+  assert.equal(by.t, 0, 'De tijd staat nog open');
+  assert.equal(by.m1, 1000, 'een ander bedrag gaat nog altijd naar het oudste voorschot');
+  const r = C.advancesOverview(s).repayments.find(x => x.txId === 'r2');
+  assert.deepEqual(r.settles.map(x => x.title), ['Pluxee'], 'je ziet waarvoor de terugbetaling diende');
+});
+
 test('js/app.js is geldig JavaScript', () => {
   const r = require('child_process').spawnSync(process.execPath, ['--check', require('path').join(__dirname, '..', 'js', 'app.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
