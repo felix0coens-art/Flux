@@ -228,7 +228,9 @@ tr.is-transfer td { opacity: .65; }
 .modal-foot .spacer { flex: 1; }
 .section { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--surface-2); }
 .section h3 { display: flex; justify-content: space-between; align-items: center; }
-.split-row { display: grid; grid-template-columns: 1fr 110px 1fr 32px; gap: 6px; margin-bottom: 6px; }
+.split-row { display: grid; grid-template-columns: 1fr 100px 76px 1fr 32px; gap: 6px; margin-bottom: 6px; align-items: center; }
+.split-pct-wrap { display: flex; align-items: center; gap: 3px; }
+.split-pct-wrap input { width: 100%; min-width: 0; }
 .errors { color: var(--red); font-size: 13px; }
 .errors:empty { display: none; }
 
@@ -245,7 +247,7 @@ svg text { fill: var(--muted); font-size: 11px; }
   .topbar { gap: 12px; padding: 10px 16px; }
   .form-grid { grid-template-columns: 1fr; }
   .catbar { grid-template-columns: 110px 1fr 84px; }
-  .split-row { grid-template-columns: 1fr 90px 32px; }
+  .split-row { grid-template-columns: 1fr 86px 66px 32px; }
   .split-row .note { display: none; }
   .hide-sm { display: none; }
 }

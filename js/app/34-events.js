@@ -384,7 +384,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       if (!container) return;
       if (!container.children.length) {
         const amount = C.parseAmount($('#tx-amount').value);
-        container.insertAdjacentHTML('beforeend', splitRow({ categoryId: $('#tx-category').value || null, amount: isNaN(amount) ? 0 : amount }));
+        container.insertAdjacentHTML('beforeend', splitRow({ categoryId: $('#tx-category').value || null, amount: isNaN(amount) ? 0 : Math.abs(amount) }, true));
       }
       container.insertAdjacentHTML('beforeend', splitRow());
       updateSplitRemaining(); updateTxSections();
@@ -518,6 +518,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
         const s = $('[data-filter="bank.search"]'); s.focus(); s.setSelectionRange(pos, pos);
       }, 200);
     }
+    if (modal && modal.type === 'tx' && el.closest('#splits')) onSplitInput(el);
     if (modal && modal.type === 'tx' && (el.closest('#splits') || el.id === 'tx-amount')) { updateSplitRemaining(); updateTxSections(); }
     if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();

@@ -3571,7 +3571,7 @@
     const adv = C.advancesOverview(state);
     const openAdv = adv.items.filter(it => it.amount - it.repaid > 0 || it.txId === t.advanceOf);
     const refundedBy = state.transactions.filter(o => o.refundOf === t.id);
-    const splitRows = (t.splits || []).map(s => splitRow(Object.assign({}, s, { opposite: Math.sign(s.amount) !== Math.sign(t.amount) }))).join('');
+    const splitRows = (t.splits || []).map(s => splitRow(Object.assign({}, s, { opposite: Math.sign(s.amount) !== Math.sign(t.amount) }), false, t.amount)).join('');
     const people = Array.from(new Set(adv.items.map(x => x.person))).sort();
 
     const body = `
@@ -3605,7 +3605,7 @@
 
       <div class="section">
         <h3>Opsplitsen <button class="btn small" data-action="add-split" type="button">+ Splitsing</button></h3>
-        <p class="small muted" style="margin:0 0 8px">Bv. een etentje van € 150: € 50 <em>Restaurant</em> (jouw deel) + 2 × € 50 <em>Voorschot</em> voor je vrienden. Een minteken telt in de andere richting (bv. afgehouden commissie).</p>
+        <p class="small muted" style="margin:0 0 8px">Bv. een etentje van € 150: € 50 <em>Restaurant</em> (jouw deel) + 2 × € 50 <em>Voorschot</em> voor je vrienden. Typ een bedrag of een %; het laatste lege vakje krijgt vanzelf de rest. Een minteken telt in de andere richting (bv. afgehouden commissie).</p>
         <div id="splits">${splitRows}</div>
         <div class="small" id="split-remaining"></div>
       </div>
@@ -3672,11 +3672,14 @@
     $$('#splits .split-row').forEach(row => { $('.split-person', row).hidden = $('.split-cat', row).value !== C.SYS_ADVANCE; });
   }
 
-  function splitRow(s) {
+  function splitRow(s, auto, txTotal) {
     s = s || {};
-    return `<div class="split-row">
+    const total = txTotal != null ? Math.abs(txTotal) : Math.abs(C.parseAmount(($('#tx-amount') || {}).value || '') || 0);
+    const pctVal = s.amount && total ? Math.round(Math.abs(s.amount) / total * 1000) / 10 : null;
+    return `<div class="split-row" ${auto ? 'data-auto="1"' : ''}>
       <select class="split-cat">${categoryOptions(s.categoryId, { emptyLabel: '— Categorie —', special: true })}</select>
-      <input type="text" inputmode="decimal" class="split-amount" placeholder="0,00" value="${s.amount ? esc((s.opposite ? '-' : '') + C.centsToInput(s.amount)) : ''}">
+      <input type="text" inputmode="decimal" class="split-amount" placeholder="€ 0,00" aria-label="Bedrag" value="${s.amount ? esc((s.opposite ? '-' : '') + C.centsToInput(s.amount)) : ''}">
+      <span class="split-pct-wrap"><input type="text" inputmode="decimal" class="split-pct" placeholder="%" aria-label="Percent van het totaal" value="${pctVal != null ? String(pctVal).replace('.', ',') : ''}"><span class="small muted">%</span></span>
       <input type="text" class="split-person" placeholder="voor wie?" list="people" value="${esc(s.person || '')}" ${s.categoryId === C.SYS_ADVANCE ? '' : 'hidden'}>
       <input type="text" class="split-note note" placeholder="notitie" value="${esc(s.note || '')}">
       <button class="btn small ghost" type="button" data-action="remove-split" aria-label="Verwijder splitsing">✕</button></div>`;
@@ -3691,6 +3694,35 @@
       if (categoryId === C.SYS_ADVANCE) out.person = $('.split-person', row).value.trim();
       return out;
     }).filter(s => s.categoryId || s.amount);
+  }
+
+  /**
+   * Bij typen in een splitsing: % ↔ bedrag omrekenen, en de rest automatisch invullen in het enige
+   * andere vakje dat nog leeg is (of dat Helder zelf invulde). Bv. € 20, je typt 15 → het andere wordt 5.
+   */
+  function onSplitInput(el) {
+    const row = el.closest('.split-row');
+    if (!row) return;
+    const total = Math.abs(C.parseAmount($('#tx-amount').value));
+    if (!total) return;
+    const fmtPct = v => String(Math.round(v * 10) / 10).replace('.', ',');
+    if (el.classList.contains('split-pct')) {
+      const p = parseFloat(el.value.replace(',', '.'));
+      $('.split-amount', row).value = isFinite(p) ? C.centsToInput(Math.round(total * p / 100)) : '';
+    } else if (el.classList.contains('split-amount')) {
+      const a = C.parseAmount(el.value);
+      $('.split-pct', row).value = !isNaN(a) && el.value.trim() ? fmtPct(Math.abs(a) / total * 100) : '';
+    } else return;
+    row.removeAttribute('data-auto');
+    const rows = $$('#splits .split-row');
+    const open = rows.filter(r => r !== row && (r.dataset.auto === '1' || !$('.split-amount', r).value.trim()));
+    if (open.length !== 1) return;
+    const target = open[0];
+    const others = rows.filter(r => r !== target).reduce((s, r) => { const v = C.parseAmount($('.split-amount', r).value); return s + (isNaN(v) ? 0 : v); }, 0);
+    const rest = total - others;
+    $('.split-amount', target).value = rest > 0 ? C.centsToInput(rest) : '';
+    $('.split-pct', target).value = rest > 0 ? fmtPct(rest / total * 100) : '';
+    target.dataset.auto = '1';
   }
 
   function updateSplitRemaining() {
@@ -5155,7 +5187,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       if (!container) return;
       if (!container.children.length) {
         const amount = C.parseAmount($('#tx-amount').value);
-        container.insertAdjacentHTML('beforeend', splitRow({ categoryId: $('#tx-category').value || null, amount: isNaN(amount) ? 0 : amount }));
+        container.insertAdjacentHTML('beforeend', splitRow({ categoryId: $('#tx-category').value || null, amount: isNaN(amount) ? 0 : Math.abs(amount) }, true));
       }
       container.insertAdjacentHTML('beforeend', splitRow());
       updateSplitRemaining(); updateTxSections();
@@ -5289,6 +5321,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
         const s = $('[data-filter="bank.search"]'); s.focus(); s.setSelectionRange(pos, pos);
       }, 200);
     }
+    if (modal && modal.type === 'tx' && el.closest('#splits')) onSplitInput(el);
     if (modal && modal.type === 'tx' && (el.closest('#splits') || el.id === 'tx-amount')) { updateSplitRemaining(); updateTxSections(); }
     if (modal && modal.type === 'tx' && el.id === 'tx-title') { clearTimeout(searchTimer); searchTimer = setTimeout(updateTitleSuggestion, 250); }
     if (modal && modal.type === 'rule') updateRulePreview();
