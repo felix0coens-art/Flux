@@ -15,6 +15,7 @@ require __DIR__ . '/php/lib/enablebanking.php';
 require __DIR__ . '/php/lib/saxo.php';
 require __DIR__ . '/php/lib/files.php';
 require __DIR__ . '/php/lib/household.php';
+require __DIR__ . '/php/lib/groups.php';
 require __DIR__ . '/php/lib/accounts.php';
 
 @set_time_limit(300);
@@ -176,6 +177,10 @@ function handle(string $method, string $path): void {
         return;
     }
 
+    // Groepen via een gedeelde link: zonder aanmelden, de token in de link geeft toegang tot die ene groep
+    if ($path === '/api/g/load' && $method === 'POST') { send(200, group_public(group_load(body()['t'] ?? null))); return; }
+    if ($path === '/api/g/op' && $method === 'POST') { send(200, group_public_op(body())); return; }
+
     if (!$user || !$me || !empty($me['disabled'])) throw new HttpError(401, 'Niet aangemeld');
 
     // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
@@ -193,6 +198,8 @@ function handle(string $method, string $path): void {
     // Bonnetjes bij transacties
     // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
     $dataUser = data_user($user, $me);
+    if ($path === '/api/groups/create' && $method === 'POST') { send(200, group_create($dataUser, body())); return; }
+    if ($path === '/api/groups/delete' && $method === 'POST') { send(200, group_remove($dataUser, body())); return; }
     if ($path === '/api/household' && $method === 'GET') { send(200, household_status($user)); return; }
     if ($path === '/api/household/invite' && $method === 'POST') { send(200, household_invite($user)); return; }
     if ($path === '/api/household/join' && $method === 'POST') { send(200, household_join($user, body())); return; }

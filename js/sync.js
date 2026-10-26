@@ -279,6 +279,14 @@
     leave: async user => { if (!user) await syncNow(); const r = await api('POST', '/api/household/leave', user ? { user } : {}); if (!user) await reloadData(); return r; }
   };
 
+  /** Gedeelde groepen (zoals Tricount). Laden en wijzigen gaat met de token, zoals op de deelpagina. */
+  const groups = {
+    create: (name, me, others) => api('POST', '/api/groups/create', { name, me, others }),
+    remove: token => api('POST', '/api/groups/delete', { token }),
+    load: token => api('POST', '/api/g/load', { t: token }),
+    op: (token, actor, op, data) => api('POST', '/api/g/op', { t: token, actor, op, data })
+  };
+
   /** Opnieuw de gegevens van de server laden (zonder samenvoegen), bv. na het wisselen van boekhouding. */
   async function reloadData() {
     const s = await api('GET', '/api/session');
@@ -340,7 +348,7 @@
   };
 
   root.FluxSync = {
-    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, metals, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, household, admin,
+    init, syncNow, noteChanges, login, register, setup, logout, changePassword, deleteAccount, lookup, degiro, prices, metals, bank, saxo, aiKey, refreshFeatures, unlinkGoogle, files, household, groups, admin,
     get auth() { return authInfo; },
     get account() { return account; },
     get mode() { return mode; },

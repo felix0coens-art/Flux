@@ -12,6 +12,8 @@ DirectoryIndex index.html
   # Korte adressen voor de juridische pagina's (ook met hoofdletters)
   RewriteRule ^(privacy|privacy-policy|privacybeleid|privacyverklaring)(\.html)?/?$ privacy.html [NC,L]
   RewriteRule ^(voorwaarden|terms|gebruiksvoorwaarden|terms-of-service)(\.html)?/?$ voorwaarden.html [NC,L]
+  # Gedeelde groep (zoals Tricount): /g#geheime-token
+  RewriteRule ^g/?$ groep.html [L]
   # Cookies en de CSRF-header doorgeven, en alle API-verzoeken naar api.php
   RewriteRule ^api/ api.php [L,QSA]
 </IfModule>

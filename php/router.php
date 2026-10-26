@@ -9,7 +9,7 @@ $path = rawurldecode((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_
 
 if (strpos($path, '/api/') === 0) { require $root . '/api.php'; return true; }
 
-$static = ['/' => 'index.html', '/index.html' => 'index.html', '/sw.js' => 'sw.js', '/manifest.webmanifest' => 'manifest.webmanifest', '/privacy.html' => 'privacy.html', '/voorwaarden.html' => 'voorwaarden.html'];
+$static = ['/' => 'index.html', '/index.html' => 'index.html', '/g' => 'groep.html', '/g/' => 'groep.html', '/groep.html' => 'groep.html', '/sw.js' => 'sw.js', '/manifest.webmanifest' => 'manifest.webmanifest', '/privacy.html' => 'privacy.html', '/voorwaarden.html' => 'voorwaarden.html'];
 if (preg_match('#^/(privacy|privacy-policy|privacybeleid|privacyverklaring)(\.html)?/?$#i', $path)) $path = '/privacy.html';
 if (preg_match('#^/(voorwaarden|terms|gebruiksvoorwaarden|terms-of-service)(\.html)?/?$#i', $path)) $path = '/voorwaarden.html';
 $rel = $static[$path] ?? null;

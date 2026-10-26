@@ -81,6 +81,14 @@ Elke inkomstencategorie is een **bron**. Helder maakt er geen vooraf aan: je maa
 
 Vaste lasten zijn geen apart tabblad. Ze worden **automatisch herkend** in je transacties: minstens drie betalingen aan dezelfde tegenpartij met een vast ritme. Je ziet ze als 🔁-label bij die transacties, en bij *Uitgaven* staat een overzicht met de volgende vervaldatum, het verwachte bedrag en eventuele seizoenspatronen. Verwachte inkomsten, zoals je loon, staan bij *Inkomsten*.
 
+### Groepen (zoals Tricount)
+
+Onder *Opvolgen → 👥 Groepen* maak je een groep (een reis, een weekend, huisgenoten) en deel je de link. Wie de link opent, hoeft geen account te hebben: die kiest eerst **wie hij is** en voegt dan toe wat hij betaalde en voor wie. Helder rekent uit wie wie hoeveel moet, met zo weinig mogelijk overschrijvingen.
+
+- De link bevat een lange geheime sleutel achter het `#`-teken. Op de server staat enkel een hash ervan in de bestandsnaam (`group-….json`). Bezoekers zien enkel die ene groep, nooit je account of de rest van je boekhouding.
+- In je boekhouding is een groep één "persoon" voor de voorschotten (bv. *👥 Weekend*). Zet je een betaling in de groep, dan blijft **jouw deel** je uitgave en wordt de rest een **voorschot**. Jouw deel van wat anderen betaalden, boek je met één klik als jouw uitgave in een categorie naar keuze. Terugbetalingen koppel je aan je bank of noteer je als cash.
+- Staat alles verwerkt, dan is wat Helder nog open ziet voor de groep exact je saldo in de groep. Verandert er iets in de groep, dan zie je dat en zet **Bijwerken** het recht.
+
 ## Beleggingen (Degiro en Saxo Bank)
 
 ### Rechtstreeks ophalen

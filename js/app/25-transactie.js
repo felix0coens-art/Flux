@@ -49,6 +49,14 @@
         <div class="small" id="split-remaining"></div>
       </div>
 
+      ${!isNew && groupsOn() ? (() => {
+        const g = t.groupRef && groupById(t.groupRef.groupId);
+        if (g) return `<div class="section"><h3>👥 Groep</h3><p class="small" style="margin:0 0 8px">${t.groupRef.paymentId ? 'Terugbetaling binnen' : 'Uitgave in'} de groep <strong>${esc(g.name)}</strong>. ${t.groupRef.expenseId ? 'Jouw deel staat hierboven als eigen uitgave, de rest als voorschot voor de groep.' : ''}</p>
+          <p class="btn-row"><a class="btn small" href="${esc(groupLink(g))}" target="_blank" rel="noopener">Groep openen ↗</a><button class="btn small ghost" type="button" data-action="group-unlink" data-id="${esc(t.id)}">Loskoppelen</button></p></div>`;
+        return `<div class="section"><h3>👥 Groep</h3><p class="small muted" style="margin:0 0 8px">${t.amount < 0 ? 'Betaalde je dit voor een groep (reis, weekend, huisgenoten)? Zet het in de groep: jouw deel blijft jouw uitgave, de rest wordt een voorschot.' : 'Betaalde iemand uit een groep je terug?'}</p>
+          <button class="btn small" type="button" ${groupList().length ? `data-action="group-assign" data-id="${esc(t.id)}"` : `data-action="group-new" data-tx="${esc(t.id)}"`}>${groupList().length ? (t.amount < 0 ? '👥 In een groep zetten…' : '👥 Terugbetaling uit een groep…') : '👥 Groep maken…'}</button></div>`;
+      })() : ''}
+
       <div class="section">
         <h3>Eigen rekening</h3>
         <select id="tx-transfer">
@@ -253,6 +261,8 @@
       return;
     }
     if (value === 'refund') { render(); openModal({ type: 'refundPick', txId: t.id, search: '' }); return; }
+    if (value === 'group:new') { render(); openModal({ type: 'groupNew', then: { txId: t.id } }); return; }
+    if (value.startsWith('group:')) { render(); openModal({ type: 'groupAssign', txId: t.id, groupId: value.slice(6) }); return; }
     if (value === 'split' || value === 'cat:' + C.SYS_ADVANCE) {
       const copy = JSON.parse(JSON.stringify(t));
       if (value === 'cat:' + C.SYS_ADVANCE) { copy.categoryId = C.SYS_ADVANCE; if (copy.isTransfer) copy.transferMode = 'no'; }

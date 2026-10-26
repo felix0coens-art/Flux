@@ -29,6 +29,7 @@ const EnableBanking = require('./enablebanking.js');
 const SaxoLink = require('./saxo.js');
 const FilesLib = require('./files.js');
 const HouseholdLib = require('./household.js');
+const GroupsLib = require('./groups.js');
 const Accounts = require('./accounts.js');
 
 // Koerscache in het geheugen (12 uur)
@@ -123,6 +124,7 @@ const Files = FilesLib.create(DATA_DIR, (status, message) => httpError(status, m
 
 // Gedeelde boekhouding (huishouden)
 const House = HouseholdLib.create({ readJson, writeJson, withLock, getUsers: () => getUsers(), httpError: (s, m) => httpError(s, m) });
+const Groups = GroupsLib.create({ readJson, writeJson, withLock, remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}), httpError: (s, m) => httpError(s, m) });
 /** Accountgegevens voor de browser, met wiens boekhouding gebruikt wordt. */
 async function publicUser(name, u) { return Object.assign(Accounts.userPublic(name, u), { dataUser: House.dataUserSync(await getUsers(), name) }); }
 
@@ -401,7 +403,7 @@ function readBody(req) {
 }
 
 const STATIC = {
-  '/': 'index.html', '/index.html': 'index.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/privacy.html': 'privacy.html', '/voorwaarden.html': 'voorwaarden.html'
+  '/': 'index.html', '/index.html': 'index.html', '/g': 'groep.html', '/g/': 'groep.html', '/groep.html': 'groep.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/privacy.html': 'privacy.html', '/voorwaarden.html': 'voorwaarden.html'
 };
 const STATIC_DIRS = ['css/', 'js/', 'icons/', 'fonts/'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
@@ -538,6 +540,10 @@ async function handleApi(req, res, pathname, query) {
     return res.end(SaxoLink.callbackPage(r));
   }
 
+  // Groepen via een gedeelde link: zonder aanmelden, de token in de link geeft toegang tot die ene groep
+  if (pathname === '/api/g/load' && req.method === 'POST') return send(res, 200, await Groups.publicLoad(await readBody(req)));
+  if (pathname === '/api/g/op' && req.method === 'POST') return send(res, 200, await Groups.publicOp(clientIp(req), await readBody(req)));
+
   if (!user || !me || me.disabled) throw httpError(401, 'Niet aangemeld');
 
   // Beheer: enkel voor de beheerder, die zelf geen financiële gegevens heeft
@@ -553,6 +559,8 @@ async function handleApi(req, res, pathname, query) {
 
   // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
   const dataUser = await House.dataUser(user);
+  if (pathname === '/api/groups/create' && req.method === 'POST') return send(res, 200, await Groups.createGroup(dataUser, await readBody(req)));
+  if (pathname === '/api/groups/delete' && req.method === 'POST') return send(res, 200, await Groups.removeGroup(dataUser, await readBody(req)));
   if (pathname === '/api/household' && req.method === 'GET') return send(res, 200, await House.status(user));
   if (pathname === '/api/household/invite' && req.method === 'POST') return send(res, 200, await House.invite(user));
   if (pathname === '/api/household/join' && req.method === 'POST') return send(res, 200, await House.join(user, await readBody(req)));

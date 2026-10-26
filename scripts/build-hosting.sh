@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 OUT=${1:-dist/public_html}
 rm -rf "$OUT"
 mkdir -p "$OUT/php"
-cp -r index.html privacy.html voorwaarden.html sw.js manifest.webmanifest api.php .htaccess .user.ini css js icons fonts "$OUT"/
+cp -r index.html groep.html privacy.html voorwaarden.html sw.js manifest.webmanifest api.php .htaccess .user.ini css js icons fonts "$OUT"/
 rm -rf "$OUT/js/app"  # bronstukken van js/app.js horen niet op de site
 cp -r php/lib php/.htaccess "$OUT/php/"
 if [ -d php/vendor ]; then cp -r php/vendor "$OUT/php/"; else echo "Let op: php/vendor ontbreekt (composer install in php/), AI-functie staat dan uit." >&2; fi

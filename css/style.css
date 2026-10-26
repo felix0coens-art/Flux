@@ -1049,3 +1049,32 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .catbar.total { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px; }
 .section-sub { font-size: 15px; margin: 14px 0 8px; } .person-card.prepaid { border-left: 4px solid var(--advance); }
 .adv-hist-row .adv-hist-for { grid-column: 1 / -1; margin-top: -2px; }
+
+/* Groepen (zoals Tricount) in Opvolgen */
+.group-card .grp-plan { margin: 6px 0; }
+.grp-todos { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.grp-todo { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; }
+.grp-todo.warn { background: var(--orange-soft); border-color: transparent; }
+.grp-todo .grow { flex: 1 1 200px; min-width: 0; }
+.grp-why { display: block; }
+.grp-ok { color: var(--green); margin: 8px 0; }
+.group-intro p { margin: 0 0 8px; }
+.grp-link { display: flex; gap: 8px; }
+.grp-link input { flex: 1; min-width: 0; font-size: 13px; }
+.grp-steps { padding-left: 20px; margin: 12px 0; }
+.grp-steps li { margin-bottom: 6px; }
+.grp-who { display: flex; flex-wrap: wrap; gap: 8px; }
+.grp-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.grp-opt:last-child { border-bottom: 0; }
+.grp-for { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.grp-preview { margin-top: 4px; }
+.grp-seg { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 3px; margin: 10px 0; }
+.grp-seg label { flex: 1; }
+.grp-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.grp-seg span { display: block; text-align: center; padding: 7px; border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--muted); cursor: pointer; }
+.grp-seg input:checked + span { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.grp-seg input:focus-visible + span { outline: 2px solid var(--primary); }
+.grp-book { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.grp-book-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.grp-book-row .grow { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; }
+.grp-book-row select { max-width: 200px; }

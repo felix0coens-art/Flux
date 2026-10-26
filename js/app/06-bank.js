@@ -44,7 +44,9 @@
     if (strong) addRefunds();
     cats(incoming ? 'income' : 'expense', incoming ? 'Inkomst' : 'Uitgave');
     add('new-cat', incoming ? '+ Nieuwe inkomstenbron…' : '+ Nieuwe categorie…', incoming ? 'Inkomst' : 'Uitgave');
-    for (const p of C.personList(state).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (groupsOn()) for (const g of groupList().filter(x => x.memberId)) add('group:' + g.id, incoming ? '👥 Terugbetaling binnen groep ' + g.name + '…' : '👥 In groep ' + g.name + '…', 'Groep', incoming ? '' : 'jouw deel + voorschot voor de anderen');
+    if (groupsOn() && !incoming && !groupList().length) add('group:new', '👥 Gedeeld met een groep (zoals Tricount)…', 'Groep');
+    for (const p of C.personList(state).filter(x => !isGroupPerson(x.name)).sort((a, b) => a.name.localeCompare(b.name))) {
       add('adv:' + p.name, incoming ? '🤝 Terugbetaling van ' + p.name : '🤝 Voorgeschoten voor ' + p.name, 'Voorschot', incoming && p.stats.open > 0 ? 'nog ' + money(p.stats.open) + ' open' : '');
     }
     add('cat:' + C.SYS_ADVANCE, incoming ? '↙ Terugbetaling van iemand anders…' : '↗ Voorgeschoten voor iemand anders…', 'Voorschot');
@@ -68,6 +70,7 @@
 
   function assignSelect(t) {
     const k = kindOf(t);
+    if (t.groupRef && groupById(t.groupRef.groupId)) return `<button class="btn small" data-action="edit-tx" data-id="${esc(t.id)}">👥 ${esc(groupById(t.groupRef.groupId).name)} — bekijk</button>`;
     if (k === 'split' || k === 'refund' || (t.splits && t.splits.length)) return `<button class="btn small" data-action="edit-tx" data-id="${esc(t.id)}">${k === 'refund' ? '↩ Terugbetaling' : '✂ Gesplitst'} — bekijk</button>`;
     const label = assignLabel(t);
     return `<div class="assign-box ${label ? '' : 'todo'}"><input type="text" class="assign-input" data-assign-input="${esc(t.id)}" value="${esc(label)}" data-label="${esc(label)}"

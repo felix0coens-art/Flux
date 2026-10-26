@@ -44,9 +44,10 @@
   const paidByText = it => (it.settledBy || []).map(b => b.kind === 'forgiven' ? fgLabel(b.reason) + (b.amount !== it.amount ? ' ' + money(b.amount) : '') : esc(b.title || 'terugbetaling') + ' ' + fmtDate(b.date).slice(0, 5) + (b.amount !== it.amount ? ' (' + money(b.amount) + ')' : '')).join(' + ');
 
   function renderAdvances() {
-    const f = ['adv', 'act'].includes(ui.owed) ? ui.owed : 'all';
-    const showAdv = f !== 'act', showAct = f !== 'adv';
-    const people = C.personList(state).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
+    const f = ['adv', 'act', 'grp'].includes(ui.owed) ? ui.owed : 'all';
+    const showAdv = f === 'all' || f === 'adv', showAct = f === 'all' || f === 'act', showGrp = f === 'all' || f === 'grp';
+    // Groepen hebben hun eigen blok (met het saldo uit de groep)
+    const people = C.personList(state).filter(p => !isGroupPerson(p.name)).sort((a, b) => b.stats.open - a.stats.open || a.name.localeCompare(b.name));
     const advOv = C.advancesOverview(state);
     const openPeople = people.filter(p => p.stats.open > 0);
     const done = people.filter(p => p.stats.open === 0);
@@ -163,14 +164,15 @@
       </section>`;
     return `
       <div class="page-head"><h1>Opvolgen</h1><span class="spacer"></span>
-        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}</div></div>
+        <div class="seg owed-seg">${seg('all', 'Alles')}${seg('act', '✅ Acties')}${seg('adv', '🤝 Voorschotten')}${seg('grp', '👥 Groepen')}</div></div>
       <div class="follow-sum">
         <button class="follow-stat act" data-action="owed-filter" data-f="act"><span class="label">Acties te doen</span><strong>${openActs.length}</strong>${late ? `<span class="small warn-text">${late} te laat</span>` : ''}</button>
-        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}${prepaidTotal ? ` · ${money(prepaidTotal)} vooruitbetaald` : ''}</span></button>
+        <button class="follow-stat adv" data-action="owed-filter" data-f="adv"><span class="label">Nog terug te krijgen</span><strong>${money(advTotal)}</strong><span class="small muted">${plural(openPeople.length, 'persoon', 'personen')}${prepaidTotal ? ` · ${money(prepaidTotal)} vooruitbetaald` : ''}</span>${(() => { const gn = groupList().length ? groupsNet() : 0; return gn ? `<span class="small ${gn > 0 ? 'pos' : 'warn-text'}">👥 groepen: ${gn > 0 ? 'je krijgt nog ' + money(gn) : 'je moet nog ' + money(-gn)}</span>` : ''; })()}</button>
       </div>
       <p class="small muted follow-help"><strong>Actie</strong> = iets wat jij nog moet doen bij een transactie (geld terugvragen, retour binnenbrengen, bonnetje indienen); vink het af als het gedaan is.
-        <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.</p>
-      ${actSection}${advSection}`;
+        <strong>Voorschot</strong> = je betaalde voor iemand anders; dat is niet jouw uitgave en Helder houdt bij wat je nog terugkrijgt.
+        <strong>Groep</strong> = samen uitgaven delen via een link, zoals Tricount.</p>
+      ${actSection}${advSection}${showGrp ? groupsSection() : ''}`;
   }
 
   /**

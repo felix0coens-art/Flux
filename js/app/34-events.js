@@ -1,6 +1,7 @@
   // ---------- Events ----------
 
   const actions = {
+    ...groupActions,
     'goto': el => go(el.dataset.view),
     'range-preset': el => { ui.range = presetRange(el.dataset.preset, timelineMonths()); render(); },
     'import': el => openModal({ type: 'import', accountHint: (el && el.dataset.account) || '' }),
@@ -488,6 +489,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
     if (ui.view === 'bank' && !bankLink.status && bankLinkAvailable()) loadBankLink();
     if (ui.view === 'invest' && !saxoLink.status && saxoAvailable()) loadSaxo();
+    if (ui.view === 'advances') refreshGroups();
     if (!silent) { render(); window.scrollTo(0, 0); }
   }
 
@@ -509,6 +511,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     const el = ev.target;
     if (el.dataset.tl) { onTimelineInput(el); return; }
     if (el.dataset.assignInput) { openPicker(el, true); return; }
+    if (groupInput(el)) return;
     if (el.dataset.filter === 'bank.search') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
@@ -553,6 +556,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.select) { if (el.checked) ui.selected.add(el.dataset.select); else ui.selected.delete(el.dataset.select); render(); return; }
     if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
     if (el.dataset.assignInput) return;
+    if (groupChange(el)) return;
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
     if (modal && modal.type === 'search' && el.id === 'global-search-cat') { modal.cat = el.value; const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); return; }
     if (el.dataset.filter === 'bank.category') { ui.bank.category = el.value; if (el.value && ui.bank.status === 'todo' && el.value !== '__none__') ui.bank.status = ''; render(); return; }

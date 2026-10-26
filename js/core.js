@@ -1215,7 +1215,7 @@
   // elkaar te overschrijven. Afgeleide velden (transfers, categorie via regel) tellen niet als
   // wijziging; die worden na het samenvoegen opnieuw berekend.
 
-  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions', 'metals', 'watchlist'];
+  const SYNC_COLLECTIONS = ['accounts', 'categories', 'rules', 'budgets', 'transactions', 'imports', 'deleted', 'people', 'actions', 'metals', 'watchlist', 'groups'];
   const SYNC_SINGLETONS = ['settings', 'investments'];
   const TOMBSTONE_TTL = 400 * 86400000;
 

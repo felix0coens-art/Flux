@@ -1,0 +1,108 @@
+/* Helder — gedeelde groep (groep.html). Bouwt verder op style.css; eerst voor de gsm. */
+.gp-body { min-height: 100vh; }
+.gp-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+.gp-brand { color: var(--primary); display: inline-flex; }
+.gp-brand .logo-icon { width: 34px; height: 34px; }
+.gp-title { min-width: 0; }
+.gp-name { font-weight: 700; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-sub { font-size: 12px; color: var(--muted); }
+.gp-main { max-width: 620px; margin: 0 auto; padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+.gp-main .card { margin: 0; }
+.gp-main h2 { margin: 0 0 6px; font-size: 20px; }
+.gp-main h3 { margin: 0 0 4px; font-size: 16px; }
+.gp-center { text-align: center; }
+.gp-big-icon { font-size: 40px; margin: 6px 0; }
+.grow { flex: 1; min-width: 0; }
+.gp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; }
+.linklike { background: none; border: 0; padding: 0; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; }
+
+/* Wie ben jij? */
+.gp-who-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+.gp-who-btn { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; text-align: left; min-height: 52px; }
+.gp-who-btn:hover, .gp-who-btn:focus-visible { border-color: var(--primary); background: var(--primary-soft); }
+.gp-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+.gp-not-listed { width: 100%; }
+.gp-add-me { display: flex; flex-direction: column; gap: 8px; }
+
+/* Mijn saldo */
+.gp-state { font-size: 20px; font-weight: 600; }
+.gp-state strong { font-size: 26px; }
+.gp-state.pos, .pos { color: var(--green); }
+.gp-state.owe, .owe { color: var(--orange); }
+.gp-state.even { color: var(--green); }
+.gp-me-sub { margin: 4px 0 0; }
+.gp-steps { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.gp-step { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.gp-add { width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 600; border-radius: 12px; }
+
+/* Tabbladen */
+.gp-tabs { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 4px; gap: 4px; }
+.gp-tabs button { flex: 1; border: 0; background: transparent; padding: 9px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
+.gp-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* Lijst met uitgaven */
+.gp-list { display: flex; flex-direction: column; }
+.gp-day { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 4px 6px; }
+.gp-day:first-child { margin-top: 0; }
+.gp-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.gp-item:hover { border-color: var(--primary); }
+.gp-ico { font-size: 20px; flex: none; }
+.gp-item-title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-item-sub { display: block; font-size: 12px; color: var(--muted); }
+.gp-amt { text-align: right; font-weight: 600; white-space: nowrap; flex: none; }
+.gp-pay { background: var(--surface-2); }
+.gp-empty { text-align: center; padding: 26px 10px; }
+.gp-foot { text-align: center; }
+
+/* Saldo's */
+.gp-bal { display: grid; grid-template-columns: minmax(0, 1fr) 1.1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.gp-bal:last-child { border-bottom: 0; }
+.gp-bal-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-bal-bar { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; }
+.gp-bal-bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--border); }
+.gp-bal-bar span { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.gp-bal-bar .plus { left: 50%; background: var(--green); }
+.gp-bal-bar .min { right: 50%; background: var(--orange); }
+.gp-bal-amt { font-weight: 600; text-align: right; white-space: nowrap; font-size: 14px; }
+.gp-members { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.gp-member { display: flex; align-items: center; gap: 10px; }
+
+/* Onderaan schuivend formulier */
+.gp-sheet-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+.gp-sheet-wrap[hidden] { display: none; }
+.gp-sheet-bg { position: absolute; inset: 0; background: rgba(10, 15, 25, .45); }
+.gp-sheet { position: relative; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; background: var(--surface); border-radius: 18px 18px 0 0; padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -6px 30px rgba(0, 0, 0, .2); }
+.gp-sheet form { display: flex; flex-direction: column; gap: 12px; }
+.gp-sheet .field input, .gp-sheet .field select { font-size: 16px; padding: 10px; }
+.gp-sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.gp-sheet-head h2 { margin: 0; font-size: 19px; }
+.gp-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.gp-two > .field { min-width: 0; }
+.gp-sheet .field input:not([type=checkbox]):not([type=radio]):not(.gp-part), .gp-sheet .field select { width: 100%; box-sizing: border-box; min-width: 0; }
+.gp-amount { font-size: 20px !important; font-weight: 600; }
+.gp-seg { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 3px; }
+.gp-seg label { flex: 1; }
+.gp-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.gp-seg span { display: block; text-align: center; padding: 8px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+.gp-seg input:checked + span { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.gp-seg input:focus-visible + span { outline: 2px solid var(--primary); }
+.gp-for { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 8px; }
+.gp-for-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; min-height: 46px; }
+.gp-for-row:last-child { border-bottom: 0; }
+.gp-for-row input[type=checkbox] { width: 20px; height: 20px; flex: none; accent-color: var(--primary); }
+.gp-share { color: var(--muted); font-size: 14px; }
+.gp-part { display: none; width: 96px; flex: none; text-align: right; font-size: 16px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.mode-amounts .gp-part { display: block; }
+.mode-amounts .gp-share { display: none; }
+.gp-split-info { margin-top: 6px; min-height: 1.2em; }
+.gp-actions { justify-content: space-between; }
+.gp-actions .btn.primary { flex: 1; padding: 12px; font-size: 16px; font-weight: 600; }
+.gp-noscroll { overflow: hidden; }
+
+.gp-toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 60; max-width: calc(100% - 32px); box-shadow: var(--shadow); }
+.gp-toast[hidden] { display: none; }
+
+@media (min-width: 700px) {
+  .gp-sheet-wrap { align-items: center; }
+  .gp-sheet { border-radius: 18px; }
+}
