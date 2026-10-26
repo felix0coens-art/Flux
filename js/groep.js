@@ -344,7 +344,8 @@
   async function share() {
     const url = location.href;
     const text = 'Voeg je uitgaven toe aan "' + S.group.name + '"';
-    if (navigator.share) { try { await navigator.share({ title: S.group.name, text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    // De link staat achteraan in de tekst: sommige apps plakken anders de tekst achter de link (en breken die)
+    if (navigator.share) { try { await navigator.share({ text: text + ': ' + url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(url); toast('Link gekopieerd. Plak hem in een bericht aan de groep.'); }
     catch (e) { window.prompt('Kopieer deze link:', url); }
   }
@@ -444,7 +445,12 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !S.sheet && S.token) load(true); });
 
   function start() {
-    S.token = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
+    // Enkel de sleutel zelf: soms plakt een berichtenapp er tekst achter (bv. "#abc… Voeg je uitgaven toe")
+    let raw = location.hash.replace(/^#/, '');
+    try { raw = decodeURIComponent(raw); } catch (e) { /* ongeldige codering: gebruik zoals het is */ }
+    const hit = raw.trim().match(/^[A-Za-z0-9_-]{32,64}/);
+    S.token = hit ? hit[0] : '';
+    if (hit && raw !== S.token) history.replaceState(null, '', location.pathname + '#' + S.token);
     if (!/^[A-Za-z0-9_-]{32,64}$/.test(S.token)) { S.token = ''; S.error = ''; render(); return; }
     load(false);
   }

@@ -244,7 +244,8 @@
 
   async function groupJoin() {
     const raw = ($('#grp-join-link').value || '').trim();
-    const token = (raw.split('#')[1] || raw).trim();
+    const hit = (raw.split('#')[1] || raw).trim().match(/^[A-Za-z0-9_-]{32,64}/);
+    const token = hit ? hit[0] : '';
     const err = $('#grp-errors');
     if (!/^[A-Za-z0-9_-]{32,64}$/.test(token)) { err.textContent = 'Dit lijkt geen groepslink. Ze ziet eruit als https://…/g#…'; return; }
     if (groupList().some(g => g.token === token)) { err.textContent = 'Deze groep staat al in Helder.'; return; }
@@ -517,7 +518,7 @@
   async function groupShareNative(el) {
     const g = groupById(el.dataset.id);
     if (!g) return;
-    try { await navigator.share({ title: g.name, text: 'Voeg je uitgaven toe aan "' + g.name + '"', url: groupLink(g) }); } catch (e) { /* geannuleerd */ }
+    try { await navigator.share({ text: 'Voeg je uitgaven toe aan "' + g.name + '": ' + groupLink(g) }); } catch (e) { /* geannuleerd */ }
   }
 
   /** Groepen opnieuw ophalen (bij het openen van Opvolgen of terugkeren naar de app). */
