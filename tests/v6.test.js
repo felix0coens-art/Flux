@@ -37,6 +37,11 @@ test('verkochte aandelen: gerealiseerde winst met gemiddelde aankoopprijs', () =
   assert.equal(b.result, -10000);
   assert.equal(b.closed, true);
   assert.equal(r.total, 4700);
+  // Rendement op wat verkocht is: € 47 winst op € 951 aankoopprijs van de verkochte stuks
+  assert.equal(r.costSold, 95100);
+  assert.equal(r.proceeds, 99800);
+  assert.deepEqual([r.gains, r.losses], [14700, -10000]);
+  assert.ok(Math.abs(r.pct - 4700 / 95100) < 1e-12);
 });
 
 test('startdatum: oudere transacties worden bij elke bank overgeslagen', () => {

@@ -638,7 +638,13 @@
     return {
       positions: list,
       total: list.reduce((s, p) => s + p.result, 0),
-      totalDividends: list.reduce((s, p) => s + p.dividends, 0)
+      totalDividends: list.reduce((s, p) => s + p.dividends, 0),
+      // Rendement op wat verkocht is: winst tegenover de aankoopprijs van de verkochte stuks
+      costSold: list.reduce((s, p) => s + p.costSold, 0),
+      proceeds: list.reduce((s, p) => s + p.proceeds, 0),
+      gains: list.reduce((s, p) => s + Math.max(0, p.result), 0),
+      losses: list.reduce((s, p) => s + Math.min(0, p.result), 0),
+      pct: (() => { const c = list.reduce((s, p) => s + p.costSold, 0); return c ? list.reduce((s, p) => s + p.result, 0) / c : null; })()
     };
   }
 

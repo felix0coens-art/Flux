@@ -3370,6 +3370,13 @@
         <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">stand ${fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
         <div class="card kpi"><div class="label">Netto ingelegd</div><div class="value">${s.hasDeposits ? money(s.netDeposits) : '—'}</div><div class="hint">${s.hasDeposits ? 'stortingen ' + money(s.deposits) + (s.withdrawals ? ' − opnames ' + money(s.withdrawals) : '') : 'laad het rekeningoverzicht op'}</div></div>
         <div class="card kpi"><div class="label">Winst / verlies</div><div class="value ${s.gainEur >= 0 ? 'pos' : 'negv'}">${s.gainEur != null ? money(s.gainEur) : '—'}</div><div class="hint">waarde − netto inleg</div></div>
+        ${(() => {
+          const r = Invest.realized(iv);
+          if (!r.positions.length) return '';
+          return `<div class="card kpi" title="Enkel wat je effectief verkocht: opbrengst − aankoopprijs van die stuks (kosten inbegrepen)">
+          <div class="label">Gerealiseerde winst</div><div class="value ${r.total >= 0 ? 'pos' : 'negv'}">${money(r.total)} <span class="small">${r.pct != null ? pct(r.pct) : ''}</span></div>
+          <div class="hint">op wat je verkocht: gekocht ${money(r.costSold)} → verkocht ${money(r.proceeds)}${r.losses ? ' · winst ' + money(r.gains) + ', verlies ' + money(r.losses) : ''}</div></div>`;
+        })()}
         <div class="card kpi"><div class="label">Dividend (netto)</div><div class="value">${money(s.netDividends)}</div><div class="hint">kosten: ${money(s.fees)}</div></div>
       </div>
 `,
@@ -3501,7 +3508,7 @@
     const server = Sync && Sync.mode === 'server' && !demo;
     return `<div class="card" style="margin-bottom:16px">
       <div class="card-head"><h2>Verkochte aandelen</h2>
-        <span class="badge ${r.total >= 0 ? 'ok' : 'over'}">${r.total >= 0 ? '▲' : '▼'} gerealiseerd ${money(r.total)}</span></div>
+        <span class="badge ${r.total >= 0 ? 'ok' : 'over'}">${r.total >= 0 ? '▲' : '▼'} gerealiseerd ${money(r.total)}${r.pct != null ? ' (' + pct(r.pct) + ')' : ''}</span></div>
       <p class="small muted">Wat je ooit kocht en (deels) verkocht, met het resultaat van die verkoop (opbrengst − aankoopprijs, kosten inbegrepen; bij aankopen in schijven met je gemiddelde aankoopprijs).
         En wat diezelfde stuks <strong>vandaag</strong> waard zouden zijn, tegenover wat je bij de verkoop kreeg.</p>
       ${known.length ? ''
@@ -3518,7 +3525,7 @@
           <td class="amount">${p.todayValue != null ? money(p.todayValue) + `<div class="small muted">à ${money(Math.round(p.lastPrice))} · ${fmtDate(p.lastDate)}</div>` : '—'}</td>
           <td class="amount ${p.diff == null ? '' : p.diff >= 0 ? 'pos' : 'negv'}">${p.diff != null ? `<strong>${p.diff >= 0 ? '▲ ' : '▼ '}${money(p.diff)}</strong><div class="small">${pct(p.diffPct)}</div>` : '—'}</td>
           <td><button class="btn small ghost" data-action="watch-from-sold" data-key="${esc(p.key)}" title="Volgen bij je favorieten, met je verkoopkoers als start">⭐</button></td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="5"><strong>Totaal</strong></td><td class="amount ${r.total >= 0 ? 'pos' : 'negv'}"><strong>${money(r.total)}</strong></td>
+        <tfoot><tr><td colspan="3"><strong>Totaal</strong></td><td class="amount">${money(r.costSold)}</td><td class="amount">${money(r.proceeds)}</td><td class="amount ${r.total >= 0 ? 'pos' : 'negv'}"><strong>${money(r.total)}</strong><div class="small">${r.pct != null ? pct(r.pct) : ''}</div></td>
           <td class="amount">${known.length ? money(todayTotal) : '—'}</td><td class="amount ${diffTotal >= 0 ? 'pos' : 'negv'}">${known.length ? `<strong>${money(diffTotal)}</strong>` : '—'}</td><td></td></tr></tfoot>
       </table></div>
       <p class="small muted">“Sinds verkoop” = wat de verkochte stuks vandaag waard zijn − wat je ervoor kreeg. Dividenden die je sindsdien gemist hebt en kosten zitten er niet in.</p></div>`;
