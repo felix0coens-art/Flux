@@ -1078,3 +1078,25 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .grp-book-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .grp-book-row .grow { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; }
 .grp-book-row select { max-width: 200px; }
+
+/* Beleggingen: effectieve winst */
+.profit-kpi .profit-parts { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.pp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; font-size: 12px; }
+.pp-l { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-bar { grid-column: 1 / -1; grid-row: 2; height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.pp-bar i { display: block; height: 100%; border-radius: 3px; }
+.pp-bar i.up { background: var(--green); }
+.pp-bar i.down { background: var(--red); }
+.pp-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.effective-line { margin: -6px 0 16px; }
+.legend .sw.area.up { background: var(--green); opacity: .35; border: 0; }
+.legend .sw.area.down { background: var(--red); opacity: .35; border: 0; }
+.legend .sw.sell { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--text); }
+.gain-zone { stroke: none; }
+.gain-zone.up { fill: var(--green); opacity: .16; }
+.gain-zone.down { fill: var(--red); opacity: .18; }
+.sell-mark { stroke: var(--surface); stroke-width: 1; }
+.sell-mark.up { fill: var(--green); }
+.sell-mark.down { fill: var(--red); }
+svg text.gain-up { fill: var(--green); font-weight: 600; }
+svg text.gain-down { fill: var(--red); font-weight: 600; }

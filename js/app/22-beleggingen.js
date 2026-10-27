@@ -92,13 +92,14 @@
       ${saxoCard()}`;
     const s = iv ? Invest.summary(iv) : null;
     const perf = iv ? Invest.performance(iv) : null;
+    const pf = iv ? Invest.profit(iv) : null;
     const files = iv ? iv.files || [] : [];
     const blocks = {
       kpis: () => !iv ? '' : `
       <div class="grid kpis">
         <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">stand ${fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
         <div class="card kpi"><div class="label">Netto ingelegd</div><div class="value">${s.hasDeposits ? money(s.netDeposits) : '—'}</div><div class="hint">${s.hasDeposits ? 'stortingen ' + money(s.deposits) + (s.withdrawals ? ' − opnames ' + money(s.withdrawals) : '') : 'laad het rekeningoverzicht op'}</div></div>
-        <div class="card kpi"><div class="label">Winst / verlies</div><div class="value ${s.gainEur >= 0 ? 'pos' : 'negv'}">${s.gainEur != null ? money(s.gainEur) : '—'}</div><div class="hint">waarde − netto inleg</div></div>
+        ${profitKpi(pf)}
         ${(() => {
           const r = Invest.realized(iv);
           if (!r.positions.length) return '';
@@ -118,6 +119,7 @@
           <div class="label">MWR / MWRR — geldgewogen</div><div class="value">${pct(perf.mwr)} <span class="small muted">per jaar</span></div>
           <div class="hint">Jouw persoonlijke rendement (XIRR): houdt rekening met het moment en de grootte van elke storting.</div></div>
       </div>
+      ${pf && pf.total != null ? `<p class="small effective-line">In euro: <strong class="${pf.total >= 0 ? 'pos' : 'negv'}">${signMoney(pf.total)}</strong> effectieve winst op ${money(pf.netDeposits)} netto inleg${pf.pct != null ? ' (' + pct(pf.pct) + ')' : ''}${pf.realized ? ` · waarvan ${signMoney(pf.realized)} al verkocht` : ''}.</p>` : ''}
       ${perf.missingYearEnds.length ? `<div class="notice">Voor een rendement per jaar ontbreekt de portefeuillewaarde op <strong>${Array.from(new Set(perf.missingYearEnds)).map(fmtDate).join(', ')}</strong>, en er zijn geen transacties om ze uit te reconstrueren.</div>` : ''}
       ${perf.ignoredFlows.length ? `<div class="notice info">${perf.ignoredFlows.length} storting(en) na ${fmtDate(perf.end)} tellen nog niet mee, omdat er nog geen recentere waardering is.</div>` : ''}
 `,
@@ -131,32 +133,38 @@
       <div class="card" style="margin-bottom:16px">
         <h2>Rendement per jaar</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Jaar</th><th class="right">Begin</th><th class="right">Stortingen</th><th class="right">Opnames</th><th class="right">Einde</th><th class="right">Resultaat</th><th class="right">TWR</th><th class="right">MWR</th><th class="right">Dividend</th></tr></thead>
+          <thead><tr><th>Jaar</th><th class="right">Begin</th><th class="right">Stortingen</th><th class="right">Opnames</th><th class="right">Einde</th><th class="right">Winst</th><th class="right">Waarvan verkocht</th><th class="right">TWR</th><th class="right">MWR</th><th class="right">Dividend</th></tr></thead>
           <tbody>${perf.years.map(y => `<tr>
             <td><strong>${y.year}</strong>${y.partial ? ` <span class="small muted">t.e.m. ${fmtDate(y.endDate)}</span>` : ''}${y.estimated ? ' <span class="badge small" title="Begin- of eindwaarde gereconstrueerd uit je transacties">geschat</span>' : ''}</td>
             <td class="amount">${y.startValue != null ? money(y.startValue) : '—'}</td>
             <td class="amount">${money(y.deposits)}</td>
             <td class="amount">${y.withdrawals ? money(y.withdrawals) : '—'}</td>
             <td class="amount">${y.endValue != null ? money(y.endValue) : '—'}</td>
-            ${y.missing.length ? `<td colspan="3" class="small muted">ontbreekt: portefeuille op ${y.missing.map(fmtDate).join(' en ')}</td>`
-              : `<td class="amount ${y.result >= 0 ? 'pos' : 'negv'}">${money(y.result)}</td><td class="amount">${pct(y.twr)}</td><td class="amount">${pct(y.mwr)}</td>`}
-            <td class="amount">${money(y.dividends)}</td></tr>`).join('')}</tbody></table></div>
-        <p class="small muted"><strong>Resultaat</strong> = eindwaarde − beginwaarde − netto stortingen. <strong>TWR</strong> meet hoe goed je beleggingen het deden (vergelijk met een index).
+            ${y.missing.length ? `<td class="small muted">ontbreekt: portefeuille op ${y.missing.map(fmtDate).join(' en ')}</td><td class="amount">${pf.byYear[y.year] ? signMoney(pf.byYear[y.year]) : '—'}</td><td colspan="2"></td>`
+              : `<td class="amount ${y.result >= 0 ? 'pos' : 'negv'}"><strong>${signMoney(y.result)}</strong></td><td class="amount ${(pf.byYear[y.year] || 0) >= 0 ? '' : 'negv'}">${pf.byYear[y.year] ? signMoney(pf.byYear[y.year]) : '—'}</td><td class="amount">${pct(y.twr)}</td><td class="amount">${pct(y.mwr)}</td>`}
+            <td class="amount">${money(y.dividends)}</td></tr>`).join('')}</tbody>
+          ${(() => { const ok = perf.years.filter(y => !y.missing.length); const tot = ok.reduce((a, y) => a + y.result, 0); const rz = Object.values(pf.byYear).reduce((a, v) => a + v, 0); return ok.length > 1 ? `<tfoot><tr><td colspan="5"><strong>Samen</strong>${ok.length < perf.years.length ? ' <span class="small muted">(jaren met volledige gegevens)</span>' : ''}</td><td class="amount ${tot >= 0 ? 'pos' : 'negv'}"><strong>${signMoney(tot)}</strong></td><td class="amount">${rz ? signMoney(rz) : '—'}</td><td colspan="2"></td><td class="amount">${money(perf.years.reduce((a, y) => a + y.dividends, 0))}</td></tr></tfoot>` : ''; })()}</table></div>
+        <p class="small muted"><strong>Winst</strong> = eindwaarde − beginwaarde − netto stortingen: wat je dat jaar effectief bijwon (of verloor), dividend en kosten inbegrepen. <strong>Waarvan verkocht</strong> = winst die je dat jaar vastzette door te verkopen. <strong>TWR</strong> meet hoe goed je beleggingen het deden (vergelijk met een index).
           <strong>MWR</strong> is jouw eigen rendement: stortte je vlak voor een daling, dan is je MWR lager dan je TWR. Voor het lopende jaar: rendement tot nu, niet op jaarbasis.</p>
       </div>`,
       positions: () => !iv ? '' : `
       <div class="card" style="margin-bottom:16px">
         <h2>Posities</h2>
         ${s.positions.length ? `<div class="table-wrap"><table>
-          <thead><tr><th>Product</th><th class="right">Aantal</th><th class="right">Waarde</th><th class="right">Aankoop</th><th class="right">Winst</th><th>Aandeel</th></tr></thead>
+          <thead><tr><th>Product</th><th class="right">Aantal</th><th class="right">Waarde</th><th class="right">Aankoop</th><th class="right" title="Waarde − aankoopprijs van wat je nog hebt">Winst op papier</th><th class="right" title="Wat je van dit product al verkocht, met winst of verlies">Al verkocht</th><th>Aandeel</th></tr></thead>
           <tbody>${s.positions.map(p => `<tr>
             <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin || p.symbol || '')}${p.currency !== 'EUR' ? ' · ' + esc(p.currency) : ''}${iv.brokers ? ' · ' + esc(p.broker === 'saxo' ? 'Saxo' : 'Degiro') : ''}</div></td>
             <td class="right">${String(p.quantity).replace('.', ',')}</td>
             <td class="amount">${money(p.valueEur)}</td>
             <td class="amount">${p.costEur != null ? money(p.costEur) : '—'}</td>
-            <td class="amount ${p.gainEur >= 0 ? 'pos' : 'negv'}">${p.gainEur != null ? money(p.gainEur) + `<div class="small">${p.costEur ? pct(p.gainEur / p.costEur) : ''}</div>` : '—'}</td>
+            <td class="amount ${p.gainEur >= 0 ? 'pos' : 'negv'}">${p.gainEur != null ? signMoney(p.gainEur) + `<div class="small">${p.costEur ? pct(p.gainEur / p.costEur) : ''}</div>` : '—'}</td>
+            <td class="amount">${(() => { const v = pf.realizedByKey[p.isin] ?? pf.realizedByKey[p.key] ?? pf.realizedByKey[p.name]; return v != null ? `<span class="${v >= 0 ? 'pos' : 'negv'}">${signMoney(v)}</span>` : '—'; })()}</td>
             <td style="min-width:90px"><div class="track"><span class="fill" style="display:block;width:${(p.share * 100).toFixed(1)}%;background:var(--series-1)"></span></div><span class="small muted">${(p.share * 100).toFixed(1).replace('.', ',')}%</span></td>
-          </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Geen posities.</p>'}
+          </tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="2"><strong>Totaal</strong></td><td class="amount"><strong>${money(s.positionsValue)}</strong></td><td class="amount">${pf.openCost ? money(pf.openCost) : '—'}</td>
+            <td class="amount ${pf.unrealized >= 0 ? 'pos' : 'negv'}"><strong>${signMoney(pf.unrealized)}</strong><div class="small">${pf.unrealizedPct != null ? pct(pf.unrealizedPct) : ''}</div></td>
+            <td class="amount">${pf.realized ? `<span class="${pf.realized >= 0 ? 'pos' : 'negv'}">${signMoney(pf.realized)}</span>` : '—'}</td><td></td></tr></tfoot></table></div>
+        <p class="small muted"><strong>Winst op papier</strong> heb je pas echt als je verkoopt; <strong>al verkocht</strong> is winst die je al vastzette.${pf.unknownValue ? ` Voor ${money(pf.unknownValue)} aan posities kent Helder de aankoopprijs niet (laad je transacties op).` : ''}</p>` : '<p class="muted">Geen posities.</p>'}
       </div>
 `,
       alloc: () => allocationCard(iv),
@@ -207,14 +215,14 @@
   function allocationCard(iv) {
     const overrides = (state.settings && state.settings.assetClasses) || {};
     const ms = metals();
-    const groups = Invest.allocation(iv, { overrides, metalsValue: ms.value });
+    const groups = Invest.allocation(iv, { overrides, metalsValue: ms.value, metalsGain: ms.gain, metalsCost: ms.cost });
     if (!groups.length) return '';
     const total = groups.reduce((a, g) => a + g.value, 0);
     const products = groups.flatMap(g => g.items.filter(x => !x.fixed));
     return `<div class="card" style="margin-bottom:16px">
       <h2>Waarin zit je geld</h2>
       ${donutChart([], { segs: groups.map(g => ({ label: g.icon + ' ' + g.label, color: CLASS_COLORS[g.id], v: g.value })), totalLabel: 'Belegd', aria: 'Verdeling van je beleggingen per soort' })}
-      <div class="alloc-groups small">${groups.map(g => `<div class="alloc-group"><span class="sw" style="background:${CLASS_COLORS[g.id]}"></span><strong>${g.icon} ${esc(g.label)}</strong>
+      <div class="alloc-groups small">${groups.map(g => `<div class="alloc-group"><span class="sw" style="background:${CLASS_COLORS[g.id]}"></span><strong>${g.icon} ${esc(g.label)}</strong>${g.cost ? ` <span class="${g.gain >= 0 ? 'pos' : 'negv'}">${signMoney(g.gain)} (${pct(g.gain / g.cost)})</span>` : ''}
         <div class="muted">${g.items.slice(0, 4).map(x => esc(x.name)).join(' · ')}${g.items.length > 4 ? ' · +' + (g.items.length - 4) : ''}</div></div>`).join('')}</div>
       ${products.length ? `<details class="alloc-edit" data-keep="allocEdit" ${ui.keepOpen.allocEdit ? 'open' : ''}><summary class="small"><strong>Klopt de indeling niet?</strong> <span class="muted">Kies per product zelf de soort</span></summary>
         <div class="list">${products.sort((a, b) => b.value - a.value).map(x => `<div class="list-row"><div class="grow">${esc(x.name)}<div class="small muted"><span class="amount">${money(x.value)}</span>${x.manual ? ' · zelf gekozen' : ' · automatisch herkend'}</div></div>
@@ -368,6 +376,27 @@
 
   /** Grafiek: portefeuillewaarde (lijn) en totale inleg (trap), met elke bijstorting als punt. */
   let chartData = null;
+
+  const signMoney = v => (v > 0 ? '+' : '') + money(v);
+
+  /** De effectieve winst (waarde − netto inleg) met waar ze vandaan komt. */
+  function profitKpi(pf) {
+    if (!pf) return '';
+    if (pf.total == null) return `<div class="card kpi"><div class="label">Effectieve winst</div><div class="value">—</div><div class="hint">laad het rekeningoverzicht op (stortingen)</div></div>`;
+    const parts = [
+      ['💸 Verkocht', pf.realized, 'opbrengst − aankoopprijs van wat je verkocht'],
+      ['📋 Nog in bezit', pf.unrealized, 'op papier: waarde − aankoopprijs van wat je nog hebt'],
+      ['🪙 Dividend', pf.dividends, 'netto, na roerende voorheffing'],
+      ['🧾 Kosten en overige', pf.other, 'kosten, wisselkoers, interest en wat niet per product toe te wijzen is']
+    ].filter(x => x[1]);
+    const max = Math.max(1, ...parts.map(x => Math.abs(x[1])));
+    return `<div class="card kpi profit-kpi" title="Waarde nu − alles wat je netto stortte">
+      <div class="label">Effectieve winst</div>
+      <div class="value ${pf.total >= 0 ? 'pos' : 'negv'}">${signMoney(pf.total)} <span class="small">${pf.pct != null ? pct(pf.pct) : ''}</span></div>
+      <div class="hint">waarde − netto inleg</div>
+      ${parts.length ? `<div class="profit-parts">${parts.map(([l, v, t]) => `<div class="pp-row" title="${esc(t)}"><span class="pp-l">${l}</span><span class="pp-bar"><i class="${v >= 0 ? 'up' : 'down'}" style="width:${Math.max(3, Math.round(Math.abs(v) / max * 100))}%"></i></span><span class="pp-v ${v >= 0 ? 'pos' : 'negv'}">${signMoney(v)}</span></div>`).join('')}</div>` : ''}
+    </div>`;
+  }
   function investChart(perf) {
     // Echte waarderingen + reconstructie op elk maandeinde (of per week bij een korte historiek)
     const actualVals = Invest.valuations(inv()).filter(v => v.date >= perf.start);
@@ -395,12 +424,25 @@
     const top = maxV * 1.08;
     const y = v => T + (1 - Math.max(0, v) / top) * (H - T - B);
     const valuePath = [{ date: start, value: 0 }].concat(vals).map((v, i) => (i ? 'L' : 'M') + x(v.date).toFixed(1) + ' ' + y(v.value).toFixed(1)).join(' ');
-    let stepPath = '';
+    // Inleg als trap: [x, y]-punten (ook gebruikt om de winstzone af te bakenen)
+    const stepPts = [];
     steps.forEach((d, i) => {
-      const px = x(d.date).toFixed(1);
-      stepPath += i ? ` L${px} ${y(steps[i - 1].value).toFixed(1)} L${px} ${y(d.value).toFixed(1)}` : `M${px} ${y(d.value).toFixed(1)}`;
+      const px = x(d.date);
+      if (i) stepPts.push([px, y(steps[i - 1].value)]);
+      stepPts.push([px, y(d.value)]);
     });
-    stepPath += ` L${x(end).toFixed(1)} ${y(cum).toFixed(1)}`;
+    stepPts.push([x(end), y(cum)]);
+    const pt = p => p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+    const stepPath = stepPts.map((p, i) => (i ? 'L' : 'M') + pt(p)).join(' ');
+    // Winstzone: tussen de waarde en de inleg; groen waar de waarde erboven ligt, rood eronder
+    const valPts = [{ date: start, value: 0 }].concat(vals).map(v => [x(v.date), y(v.value)]);
+    const zone = 'M' + valPts.map(pt).join(' L') + ' L' + stepPts.slice().reverse().map(pt).join(' L') + ' Z';
+    const above = 'M' + stepPts.map(pt).join(' L') + ` L${x(end).toFixed(1)} ${T} L${x(start).toFixed(1)} ${T} Z`;
+    const below = 'M' + stepPts.map(pt).join(' L') + ` L${x(end).toFixed(1)} ${H - B} L${x(start).toFixed(1)} ${H - B} Z`;
+    // Verkopen op de waardelijn, met hun gerealiseerde winst
+    const pf = Invest.profit(inv());
+    const valueAt = d => { let best = vals[0]; for (const v of vals) if (Math.abs(C.daysBetween(v.date, d)) < Math.abs(C.daysBetween(best.date, d))) best = v; return best.value; };
+    const sells = (pf ? pf.sells : []).filter(s => s.date >= start && s.date <= end);
     // Rasterlijnen op mooie stappen
     const raw = top / 4;
     const mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -410,31 +452,37 @@
     const years = [];
     for (let yr = Number(start.slice(0, 4)) + 1; yr <= Number(end.slice(0, 4)); yr++) years.push(yr + '-01-01');
     const lastVal = vals[vals.length - 1];
-    chartData = { start, span, W, vals, flows: flows.filter(f => f.date <= end), x0: L, x1: W - R };
+    chartData = { start, span, W, vals, flows: flows.filter(f => f.date <= end), x0: L, x1: W - R, realizedUntil: pf ? pf.realizedUntil : () => 0, sells };
     const compact = v => Math.abs(v) >= 100000000 ? '€ ' + (v / 100000000).toFixed(1).replace('.', ',') + ' mln' : Math.abs(v) >= 1000000 || (narrow && Math.abs(v) >= 100000) ? '€ ' + (Math.round(v / 10000) / 10).toString().replace('.', ',') + 'k' : money(v);
     const yLast = y(lastVal.value), yCum = y(cum);
     const apart = Math.abs(yLast - yCum) < 16;
     return `
       <div class="legend"><span><i class="sw line s1"></i>Waarde portefeuille</span>
         <span><i class="sw line s2"></i>Totale inleg (netto stortingen)</span>
+        <span><i class="sw area up"></i>Winst</span><span><i class="sw area down"></i>Verlies</span>${sells.length ? '<span><i class="sw sell"></i>Verkoop</span>' : ''}
         <span><i class="sw dot s2"></i>Bijstorting</span><span><i class="sw dot hollow"></i>Opname</span><span><i class="sw dot s1"></i>Werkelijke stand</span></div>
       <div class="chart-wrap" id="invest-chart">
         <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Waarde van je portefeuille en je totale inleg door de tijd">
           ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-line"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`).join('')}
           ${years.map(d => `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${H - B}" class="grid-line"/><text x="${x(d)}" y="${H - 10}" text-anchor="middle">${d.slice(0, 4)}</text>`).join('')}
+          <defs><clipPath id="iv-above"><path d="${above}"/></clipPath><clipPath id="iv-below"><path d="${below}"/></clipPath></defs>
+          <path d="${zone}" class="gain-zone up" clip-path="url(#iv-above)"/>
+          <path d="${zone}" class="gain-zone down" clip-path="url(#iv-below)"/>
           <path d="${stepPath}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round"/>
           <path d="${valuePath}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>
           ${steps.slice(1).map(d => `<circle cx="${x(d.date)}" cy="${y(d.value)}" r="4" class="${d.flow > 0 ? 'dep' : 'wd'}"><title>${fmtDate(d.date)}: ${d.flow > 0 ? 'storting' : 'opname'} ${money(Math.abs(d.flow))}</title></circle>`).join('')}
           ${vals.filter(v => v.actual).map(v => `<circle cx="${x(v.date)}" cy="${y(v.value)}" r="3" class="actual"><title>${fmtDate(v.date)}: werkelijke stand ${money(v.value)}</title></circle>`).join('')}
+          ${sells.map(sl => { const cx = x(sl.date), cy = y(valueAt(sl.date)) - 9; return `<path d="M${(cx - 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${(cx + 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${cx.toFixed(1)} ${(cy + 4).toFixed(1)} Z" class="sell-mark ${sl.result >= 0 ? 'up' : 'down'}"><title>${fmtDate(sl.date)}: ${esc(sl.name)} verkocht voor ${money(sl.proceeds)} · ${sl.result >= 0 ? 'winst' : 'verlies'} ${money(Math.abs(sl.result))}</title></path>`; }).join('')}
           <text x="${W - R + 8}" y="${(apart && yLast > yCum ? yLast + 10 : yLast) + 4}" class="direct">${compact(lastVal.value)}</text>
           <text x="${W - R + 8}" y="${(apart && yCum >= yLast ? yCum + 10 : yCum) + 4}" class="direct muted-fill">${compact(cum)}${narrow ? '' : ' inleg'}</text>
+          ${apart ? '' : `<text x="${W - R + 8}" y="${((yLast + yCum) / 2 + 4).toFixed(1)}" class="direct ${lastVal.value - cum >= 0 ? 'gain-up' : 'gain-down'}">${lastVal.value - cum >= 0 ? '+' : '−'}${compact(Math.abs(lastVal.value - cum)).replace('€ ', '€')}</text>`}
           <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>
         </svg>
         <div class="chart-tip" hidden></div>
       </div>
       <details><summary class="small">Toon als tabel</summary>
-        <div class="table-wrap"><table><thead><tr><th>Datum</th><th class="right">Waarde</th><th class="right">Inleg tot dan</th><th class="right">Winst</th></tr></thead>
-        <tbody>${vals.map(v => { const inl = inlegOn(v.date); return `<tr><td>${fmtDate(v.date)}${v.actual ? '' : ' <span class="muted small">(geschat)</span>'}</td><td class="amount">${money(v.value)}</td><td class="amount">${money(inl)}</td><td class="amount">${money(v.value - inl)}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Datum</th><th class="right">Waarde</th><th class="right">Inleg tot dan</th><th class="right">Effectieve winst</th><th class="right">Waarvan verkocht</th></tr></thead>
+        <tbody>${vals.map(v => { const inl = inlegOn(v.date); const g = v.value - inl; const rz = pf ? pf.realizedUntil(v.date) : 0; return `<tr><td>${fmtDate(v.date)}${v.actual ? '' : ' <span class="muted small">(geschat)</span>'}</td><td class="amount">${money(v.value)}</td><td class="amount">${money(inl)}</td><td class="amount ${g >= 0 ? 'pos' : 'negv'}">${signMoney(g)}${inl > 0 ? `<div class="small">${pct(g / inl)}</div>` : ''}</td><td class="amount">${rz ? signMoney(rz) : '—'}</td></tr>`; }).join('')}</tbody></table></div>
       </details>`;
   }
   function inlegOn(date) { return (chartData ? chartData.flows : []).filter(f => f.date <= date).reduce((s, f) => s + f.amount, 0); }
@@ -457,7 +505,10 @@
     line.setAttribute('x1', bx); line.setAttribute('x2', bx); line.style.display = '';
     const tip = $('.chart-tip', wrap);
     tip.hidden = false;
-    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong>${best.actual ? '' : ' <span class="muted">(gereconstrueerd)</span>'}<br>Waarde: ${money(best.value)}<br>Inleg: ${money(inl)}<br>Winst: ${money(best.value - inl)}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
+    const g = best.value - inl;
+    const rz = chartData.realizedUntil(best.date);
+    const sold = chartData.sells.filter(sl => Math.abs(C.daysBetween(sl.date, date)) <= Math.max(3, chartData.span / 120));
+    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong>${best.actual ? '' : ' <span class="muted">(gereconstrueerd)</span>'}<br>Waarde: ${money(best.value)}<br>Inleg: ${money(inl)}<br><strong class="${g >= 0 ? 'pos' : 'negv'}">${g >= 0 ? 'Winst' : 'Verlies'}: ${signMoney(g)}${inl > 0 ? ' (' + pct(g / inl) + ')' : ''}</strong>${rz ? '<br><span class="muted">waarvan al verkocht: ' + signMoney(rz) + '</span>' : ''}${sold.length ? '<hr>' + sold.map(sl => 'Verkoop ' + esc(sl.name) + ': ' + signMoney(sl.result)).join('<br>') : ''}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
     const left = (bx / chartData.W) * rect.width;
     tip.style.left = Math.min(rect.width - 200, Math.max(0, left + 12)) + 'px';
   }

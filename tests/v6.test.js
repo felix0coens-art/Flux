@@ -44,6 +44,32 @@ test('verkochte aandelen: gerealiseerde winst met gemiddelde aankoopprijs', () =
   assert.ok(Math.abs(r.pct - 4700 / 95100) < 1e-12);
 });
 
+test('effectieve winst: verkocht + op papier + dividend + rest = waarde − netto inleg', () => {
+  const inv = {
+    trades: [
+      { id: '1', date: '2024-01-10', isin: 'A', name: 'A', quantity: 10, totalEur: -100000, feesEur: 0 },
+      { id: '2', date: '2025-03-01', isin: 'A', name: 'A', quantity: -5, totalEur: 70000, feesEur: 0 }
+    ],
+    positions: [{ isin: 'A', name: 'A', quantity: 5, valueEur: 80000, currency: 'EUR' }],
+    cashEur: 71000,
+    movements: [
+      { id: 'd', date: '2024-01-01', type: 'deposit', amountEur: 100000 },
+      { id: 'v', date: '2025-05-01', type: 'dividend', amountEur: 1500, isin: 'A' },
+      { id: 'k', date: '2025-06-01', type: 'fee', amountEur: -500 }
+    ]
+  };
+  const p = Invest.profit(inv);
+  assert.equal(p.total, 80000 + 71000 - 100000);
+  assert.equal(p.realized, 20000, 'verkocht voor € 700, gekocht voor € 500');
+  assert.equal(p.unrealized, 30000, 'nog 5 stuks: € 800 waard, gekocht voor € 500');
+  assert.equal(p.dividends, 1500);
+  assert.equal(p.realized + p.unrealized + p.dividends + p.other, p.total);
+  assert.equal(p.byYear['2025'], 20000);
+  assert.equal(p.realizedUntil('2025-02-28'), 0);
+  assert.equal(p.realizedUntil('2025-03-01'), 20000);
+  assert.ok(Math.abs(p.pct - 0.51) < 1e-12);
+});
+
 test('startdatum: oudere transacties worden bij elke bank overgeslagen', () => {
   const s = Store.defaultState();
   s.accounts.push({ id: 'k', name: 'KBC', iban: 'BE1', type: 'zicht' }, { id: 'a', name: 'Argenta', iban: 'BE2', type: 'zicht' });

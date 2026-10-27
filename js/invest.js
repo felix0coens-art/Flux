@@ -648,6 +648,39 @@
     };
   }
 
+  /**
+   * Effectieve winst = waarde − netto inleg, opgesplitst in wat ze is:
+   *  - verkocht (gerealiseerd): opbrengst − aankoopprijs van wat je verkocht
+   *  - nog in bezit (op papier): waarde − aankoopprijs van wat je nog hebt
+   *  - netto dividend
+   *  - de rest: kosten, wisselkoers en wat Helder niet per product kan toewijzen (zo telt alles exact op)
+   * Plus de gerealiseerde winst per jaar en de verkopen met hun datum (voor de grafiek).
+   */
+  function profit(inv) {
+    const s = summary(inv);
+    if (!s) return null;
+    const r = realized(inv);
+    const known = s.positions.filter(p => p.gainEur != null);
+    const unrealized = known.reduce((a, p) => a + p.gainEur, 0);
+    const openCost = known.reduce((a, p) => a + p.costEur, 0);
+    const total = s.gainEur;
+    const sells = r.positions.flatMap(p => p.sells.map(x => Object.assign({ key: p.key, name: p.name }, x))).sort((a, b) => a.date.localeCompare(b.date));
+    const byYear = {};
+    for (const x of sells) byYear[x.date.slice(0, 4)] = (byYear[x.date.slice(0, 4)] || 0) + x.result;
+    return {
+      total, netDeposits: s.netDeposits, hasDeposits: s.hasDeposits,
+      pct: total != null && s.netDeposits > 0 ? total / s.netDeposits : null,
+      realized: r.total, realizedPct: r.pct, realizedByKey: Object.fromEntries(r.positions.map(p => [p.key, p.result])),
+      unrealized, openCost, unrealizedPct: openCost ? unrealized / openCost : null,
+      unknownValue: s.positions.filter(p => p.gainEur == null).reduce((a, p) => a + p.valueEur, 0),
+      dividends: s.netDividends,
+      other: total != null ? total - r.total - unrealized - s.netDividends : null,
+      byYear, sells,
+      /** Gerealiseerde winst tot en met een datum. */
+      realizedUntil: date => sells.filter(x => x.date <= date).reduce((a, x) => a + x.result, 0)
+    };
+  }
+
   /** Soorten beleggingen voor de verdeling (vaste volgorde = vaste kleur). */
   const ASSET_CLASSES = [
     { id: 'stock', label: 'Aandelen', icon: '🏢' },
@@ -677,7 +710,7 @@
    */
   function allocation(inv, opts) {
     opts = opts || {};
-    const by = Object.fromEntries(ASSET_CLASSES.map(c => [c.id, Object.assign({}, c, { value: 0, items: [] })]));
+    const by = Object.fromEntries(ASSET_CLASSES.map(c => [c.id, Object.assign({}, c, { value: 0, gain: 0, cost: 0, unknown: 0, items: [] })]));
     if (inv) {
       const s = summary(inv);
       for (const p of s.positions) {
@@ -685,11 +718,16 @@
         const cls = assetClassOf(p, opts.overrides);
         const auto = assetClassOf(p, null);
         by[cls].value += p.valueEur;
-        by[cls].items.push({ key: p.key || p.isin || p.name, name: p.name, value: p.valueEur, cls, auto, manual: cls !== auto || !!(opts.overrides && opts.overrides[p.key || p.isin || p.name]) });
+        if (p.gainEur != null) { by[cls].gain += p.gainEur; by[cls].cost += p.costEur; } else by[cls].unknown += p.valueEur;
+        by[cls].items.push({ key: p.key || p.isin || p.name, name: p.name, value: p.valueEur, gain: p.gainEur, cost: p.costEur, cls, auto, manual: cls !== auto || !!(opts.overrides && opts.overrides[p.key || p.isin || p.name]) });
       }
       if (s.cashEur > 0) { by.cash.value += s.cashEur; by.cash.items.push({ key: '__cash', name: 'Cash op je beleggingsrekening', value: s.cashEur, fixed: true }); }
     }
-    if (opts.metalsValue > 0) { by.metal.value += opts.metalsValue; by.metal.items.push({ key: '__metals', name: 'Fysiek goud en zilver', value: opts.metalsValue, fixed: true }); }
+    if (opts.metalsValue > 0) {
+      by.metal.value += opts.metalsValue;
+      if (opts.metalsGain != null) { by.metal.gain += opts.metalsGain; by.metal.cost += opts.metalsCost || 0; }
+      by.metal.items.push({ key: '__metals', name: 'Fysiek goud en zilver', value: opts.metalsValue, fixed: true });
+    }
     return ASSET_CLASSES.map(c => by[c.id]).filter(c => c.value > 0);
   }
 
@@ -741,7 +779,7 @@
     });
   }
 
-  const api = { ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { profit, ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);
