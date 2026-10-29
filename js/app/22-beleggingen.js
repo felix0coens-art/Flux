@@ -200,7 +200,7 @@
     }).join('');
     return `
       <div class="page-head"><h1>Beleggingen</h1><span class="spacer"></span>
-        ${iv ? `<button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>` : ''}
+        ${iv ? `<button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button><button class="btn" data-action="invest-export" title="Alle beleggingsgegevens in één bestand, om te laten analyseren door Claude">🤖 Export voor Claude</button>` : ''}
         <button class="btn ${edit ? 'primary' : ''}" data-action="invest-edit">${edit ? '✓ Klaar' : '⚙ Weergave aanpassen'}</button>
         ${iv ? `<span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span>` : ''}</div>
       ${edit ? `<div class="iv-edit-help">Zet aan wat je wil zien, kies met ↑ ↓ de volgorde en met ▭ ◧ ◨ of een blok de volle breedte krijgt of enkel links of rechts staat (twee halve blokken komen naast elkaar). Je keuze wordt bewaard (ook op je andere toestellen). <span class="spacer"></span>
@@ -230,6 +230,28 @@
           <select data-asset-class="${esc(x.key)}" aria-label="Soort voor ${esc(x.name)}">${Invest.ASSET_CLASSES.map(c => `<option value="${c.id}" ${x.cls === c.id ? 'selected' : ''}>${c.icon} ${esc(c.label)}${c.id === x.auto && !x.manual ? '' : c.id === x.auto ? ' (automatisch)' : ''}</option>`).join('')}</select></div>`).join('')}</div></details>` : ''}
       <p class="small muted">Posities volgens je laatste stand, plus de cash op je beleggingsrekening${ms.value ? ' en je fysiek goud en zilver' : ''}. Bankrekeningen tellen hier niet mee.</p>
     </div>`;
+  }
+
+  /** Alle beleggingsgegevens als Markdown (voor Claude of een andere AI). */
+  function investExportText() {
+    const iv = inv();
+    if (!iv) return '';
+    const overrides = (state.settings && state.settings.assetClasses) || {};
+    const watch = Invest.watchSummary(state.watchlist || [], (state.settings && state.settings.watchQuotes) || {});
+    return Invest.exportMarkdown(iv, { today, overrides, metals: metals(), watch });
+  }
+
+  function investExportModal() {
+    const text = investExportText();
+    const kb = Math.max(1, Math.round(new Blob([text]).size / 1024));
+    return modalShell('Export voor Claude', `
+      <p>Eén bestand met al je beleggingsgegevens: samenvatting, effectieve winst, posities, verkopen, rendement per jaar, waarde per maand, alle aan- en verkopen en kasbewegingen${(state.metals || []).length ? ', goud en zilver' : ''}${(state.watchlist || []).length ? ' en je favorieten' : ''}.</p>
+      <p class="small muted">Als tabellen in Markdown (${kb} kB): dat leest Claude het makkelijkst en het neemt weinig ruimte in. De definities staan erbij, zodat Claude dezelfde cijfers kan narekenen. Er staan geen namen, rekeningnummers of inloggegevens in.</p>
+      <ol class="small">
+        <li><strong>Downloaden</strong> en het bestand in een gesprek met Claude slepen, of <strong>kopiëren</strong> en plakken.</li>
+        <li>Vraag bv.: <em>“Analyseer mijn portefeuille: spreiding, kosten, wat liep goed en slecht, en wat valt je op?”</em></li>
+      </ol>`,
+      `<span class="spacer"></span><button class="btn" data-action="invest-export-copy">📋 Kopiëren</button><button class="btn primary" data-action="invest-export-download">⬇ Downloaden (.md)</button>`);
   }
 
   /** Waarom er geen koers is voor een product (zoals de server het meldde). */

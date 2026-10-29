@@ -713,6 +713,99 @@
     return out;
   }
 
+  /**
+   * Alle beleggingsgegevens in één Markdown-bestand, om te analyseren met een AI zoals Claude.
+   * Compact (tabellen, bedragen met punt als decimaalteken) en met de definities erbij, zodat de lezer
+   * dezelfde cijfers kan narekenen. Geen namen, rekeningnummers of inloggegevens.
+   * opts: { today, overrides (soort per product), metals (C.metalsSummary), watch (watchSummary) }
+   */
+  function exportMarkdown(inv, opts) {
+    opts = opts || {};
+    const eur = c => c == null || !isFinite(c) ? '' : (c / 100).toFixed(2);
+    const pc = v => v == null || !isFinite(v) ? '' : (v * 100).toFixed(1) + '%';
+    const num = v => v == null ? '' : String(Math.round(v * 1e6) / 1e6);
+    const cell = v => String(v == null ? '' : v).replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+    const table = (head, rows) => rows.length ? ['| ' + head.join(' | ') + ' |', '|' + head.map(() => '---').join('|') + '|'].concat(rows.map(r => '| ' + r.map(cell).join(' | ') + ' |')).join('\n') : '_(geen)_';
+    const today = opts.today || C.todayStr();
+    const s = summary(inv);
+    const pf = profit(inv);
+    const perf = performance(inv);
+    const r = realized(inv);
+    const clsLabel = id => (ASSET_CLASSES.find(c => c.id === id) || {}).label || id;
+    const out = [];
+    out.push('# Beleggingen — export voor analyse', '');
+    out.push(`Gemaakt met Helder op ${today}. Bron: ${(brokers(inv).map(b => b.name).join(', ')) || inv.source || '?'}; laatste stand bij de broker: ${inv.standDate || inv.positionsDate || '?'}${inv.liveDate ? `; posities gewaardeerd aan de koers van ${inv.liveDate} (Yahoo Finance)` : ''}.`);
+    out.push('', 'Afspraken: alle bedragen in EUR met een punt als decimaalteken. Negatief = geld uit (aankoop, kost, opname). Datums JJJJ-MM-DD.', '');
+    out.push('Definities:',
+      '- Netto inleg = stortingen − opnames op de beleggingsrekening.',
+      '- Effectieve winst = waarde nu − netto inleg. = verkocht (gerealiseerd) + nog in bezit (op papier) + netto dividend + kosten en overige.',
+      '- Gerealiseerd = opbrengst − aankoopprijs van verkochte stuks (gemiddelde aankoopprijs, kosten inbegrepen).',
+      '- TWR = tijdgewogen rendement (Modified Dietz, geketend); MWR = geldgewogen rendement (XIRR), beide op jaarbasis.', '');
+    out.push('## Samenvatting', '');
+    const kv = [
+      ['Waarde', eur(s.valueEur)], ['waarvan cash', eur(s.cashEur)], ['Stortingen', eur(s.deposits)], ['Opnames', eur(s.withdrawals)], ['Netto inleg', eur(s.netDeposits)],
+      ['Effectieve winst', eur(pf.total) + (pf.pct != null ? ` (${pc(pf.pct)} van de netto inleg)` : '')],
+      ['  - verkocht (gerealiseerd)', eur(pf.realized) + (pf.realizedPct != null ? ` (${pc(pf.realizedPct)} op de aankoopprijs)` : '')],
+      ['  - nog in bezit (op papier)', eur(pf.unrealized) + (pf.unrealizedPct != null ? ` (${pc(pf.unrealizedPct)} op de aankoopprijs)` : '')],
+      ['  - dividend (netto)', eur(pf.dividends)], ['  - kosten en overige', eur(pf.other)],
+      ['Dividend bruto / roerende voorheffing', eur(s.dividends) + ' / ' + eur(s.dividendTax)], ['Kosten', eur(s.fees)],
+      ['TWR per jaar', perf ? pc(perf.twrAnnual) + ` (totaal ${pc(perf.twr)} sinds ${perf.start})` : ''], ['MWR per jaar', perf ? pc(perf.mwr) : '']
+    ];
+    out.push(kv.map(([k, v]) => (k.startsWith('  - ') ? `${k}: ` : `- ${k}: `) + (v || '—')).join('\n'), '');
+    if (pf.unknownValue) out.push(`Let op: voor ${eur(pf.unknownValue)} aan posities is de aankoopprijs onbekend (zit dan in "kosten en overige").`, '');
+    // Verdeling
+    const by = {};
+    for (const p of s.positions) {
+      const cls = assetClassOf(p, opts.overrides);
+      const g = by[cls] || (by[cls] = { value: 0, gain: 0, cost: 0 });
+      g.value += p.valueEur; if (p.gainEur != null) { g.gain += p.gainEur; g.cost += p.costEur; }
+    }
+    if (s.cashEur) by.cash = Object.assign(by.cash || { value: 0, gain: 0, cost: 0 }, { value: ((by.cash || {}).value || 0) + s.cashEur });
+    const ms = opts.metals;
+    if (ms && ms.value) by.metal = { value: ((by.metal || {}).value || 0) + ms.value, gain: ((by.metal || {}).gain || 0) + (ms.gain || 0), cost: ((by.metal || {}).cost || 0) + (ms.cost || 0) };
+    const tot = Object.values(by).reduce((a, g) => a + g.value, 0);
+    out.push('## Verdeling per soort', '', table(['Soort', 'Waarde', 'Aandeel', 'Winst op papier', 'Winst %'],
+      Object.entries(by).sort((a, b) => b[1].value - a[1].value).map(([id, g]) => [clsLabel(id), eur(g.value), pc(tot ? g.value / tot : null), g.cost ? eur(g.gain) : '', g.cost ? pc(g.gain / g.cost) : ''])), '');
+    // Posities
+    out.push('## Posities nu', '', table(['Product', 'ISIN', 'Soort', 'Munt', 'Aantal', 'Koers', 'Koersdatum', 'Waarde', 'Aankoopprijs', 'Winst op papier', 'Winst %', 'Al gerealiseerd', 'Aandeel'],
+      s.positions.map(p => [p.name, p.isin || p.symbol || '', clsLabel(assetClassOf(p, opts.overrides)), p.currency || '', num(p.quantity), p.priceEur ? eur(p.priceEur) : p.quantity ? eur(p.valueEur / p.quantity) : '', p.priceDate || inv.standDate || inv.positionsDate || '',
+        eur(p.valueEur), eur(p.costEur), eur(p.gainEur), p.costEur ? pc(p.gainEur / p.costEur) : '', eur(pf.realizedByKey[keyOf(p)]), pc(p.share)])), '');
+    // Verkocht
+    const sold = soldVsToday(inv);
+    out.push('## Verkochte posities (gerealiseerd)', '', table(['Product', 'ISIN', 'Eerste aankoop', 'Laatste verkoop', 'Verkocht aantal', 'Nog in bezit', 'Aankoopprijs', 'Opbrengst', 'Resultaat', 'Resultaat %', 'Dividend', 'Vandaag waard'],
+      sold.map(p => [p.name, p.isin, p.firstBuy || '', p.lastSell || '', num(p.soldQty), num(p.qty), eur(p.costSold), eur(p.proceeds), eur(p.result), pc(p.pct), eur(p.dividends), eur(p.todayValue)])), '');
+    // Per jaar
+    if (perf) {
+      out.push('## Rendement per jaar', '', table(['Jaar', 'Begin', 'Stortingen', 'Opnames', 'Einde', 'Winst', 'Waarvan gerealiseerd', 'TWR', 'MWR', 'Dividend', 'Opmerking'],
+        perf.years.map(y => [y.year, eur(y.startValue), eur(y.deposits), eur(y.withdrawals), eur(y.endValue), y.missing.length ? '' : eur(y.result), eur(pf.byYear[y.year]), y.missing.length ? '' : pc(y.twr), y.missing.length ? '' : pc(y.mwr), eur(y.dividends),
+          [y.partial ? 't.e.m. ' + y.endDate : '', y.estimated ? 'deels geschat' : '', y.missing.length ? 'waardering ontbreekt: ' + y.missing.join(', ') : ''].filter(Boolean).join('; ')])), '');
+      // Waarde aan elk maandeinde (gekend of gereconstrueerd uit de transacties)
+      const months = [];
+      const lastDate = (valuations(inv).pop() || {}).date || today;
+      for (let d = C.addDays(C.addMonths(perf.start.slice(0, 8) + '01', 1), -1); d < lastDate; d = C.addDays(C.addMonths(C.addDays(d, 1), 1), -1)) months.push(d);
+      months.push(lastDate);
+      const flows = cashFlows(inv);
+      const inleg = d => flows.filter(f => f.date <= d).reduce((a, f) => a + f.amount, 0);
+      const ser = canEstimate(inv) ? valueSeries(inv, months) : valuations(inv).map(v => ({ date: v.date, valueEur: v.value, actual: true }));
+      out.push('## Waarde door de tijd (maandeinde)', '', table(['Datum', 'Waarde', 'Netto inleg tot dan', 'Effectieve winst', 'Gerealiseerd tot dan', 'Bron'],
+        ser.map(v => [v.date, eur(v.valueEur), eur(inleg(v.date)), eur(v.valueEur - inleg(v.date)), eur(pf.realizedUntil(v.date)), v.actual ? 'stand' : 'geschat'])), '');
+    }
+    // Transacties en kasbewegingen
+    out.push('## Aan- en verkopen', '', table(['Datum', 'Product', 'ISIN', 'Aantal', 'Koers', 'Munt', 'Totaal EUR', 'Kosten EUR'],
+      (inv.trades || []).slice().sort((a, b) => a.date.localeCompare(b.date)).map(t => [t.date, t.name, t.isin || '', num(t.quantity), t.price > 0 ? num(t.price) : '', t.currency || '', eur(t.totalEur), eur(t.feesEur)])), '');
+    out.push('## Kasbewegingen', '', table(['Datum', 'Soort', 'Bedrag', 'ISIN', 'Omschrijving'],
+      (inv.movements || []).filter(m => m.type !== 'trade').slice().sort((a, b) => a.date.localeCompare(b.date)).map(m => [m.date, m.type, eur(m.amountEur), m.isin || '', m.description || ''])), '');
+    if (ms && ms.items && ms.items.length) {
+      out.push('## Fysiek goud en zilver', '', table(['Omschrijving', 'Metaal', 'Aantal', 'Fijn gewicht (g)', 'Waarde', 'Aankoopprijs', 'Winst', 'Herkomst'],
+        ms.items.map(x => [x.name || x.preset || '', x.metal, num(x.count), num(Math.round(x.fineTotal * 100) / 100), eur(x.value), eur(x.cost), eur(x.gain), x.gift ? 'gekregen' : 'gekocht'])), '');
+    }
+    if (opts.watch && opts.watch.length) {
+      out.push('## Favorieten (niet in bezit)', '', table(['Naam', 'Startdatum', 'Startkoers', 'Koers nu', 'Wijziging'],
+        opts.watch.map(w => [w.name, w.startDate, eur(w.start && w.start.eur), eur(w.now && w.now.eur), pc(w.changePct)])), '');
+    }
+    return out.join('\n') + '\n';
+  }
+
   /** Soorten beleggingen voor de verdeling (vaste volgorde = vaste kleur). */
   const ASSET_CLASSES = [
     { id: 'stock', label: 'Aandelen', icon: '🏢' },
@@ -811,7 +904,7 @@
     });
   }
 
-  const api = { live, profit, ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { exportMarkdown, live, profit, ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

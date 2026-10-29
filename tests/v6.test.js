@@ -133,3 +133,13 @@ test('beleggingen up-to-date met de beurs: aantallen van de laatste stand × nie
   // Een nieuwere stand van Degiro gaat voor op oudere koersen
   assert.equal(Invest.live(Object.assign({}, inv, { positionsDate: '2026-10-29' })).liveDate, undefined);
 });
+
+test('export voor Claude: alle beleggingsgegevens als Markdown, met definities en cijfers die kloppen', () => {
+  const S = require('../js/store.js');
+  const iv = Invest.live(Invest.view(S.demoState().investments));
+  const md = Invest.exportMarkdown(iv, { today: '2026-10-29' });
+  for (const h of ['## Samenvatting', '## Posities nu', '## Verkochte posities', '## Rendement per jaar', '## Waarde door de tijd', '## Aan- en verkopen', '## Kasbewegingen']) assert.ok(md.includes(h), h);
+  const pf = Invest.profit(iv);
+  assert.ok(md.includes('- Effectieve winst: ' + (pf.total / 100).toFixed(2)));
+  assert.equal(md.split('\n').filter(l => /^\| \d{4}-\d{2}-\d{2} \|/.test(l) && l.split('|').length === 10).length, iv.trades.length, 'elke aan- en verkoop staat erin');
+});
