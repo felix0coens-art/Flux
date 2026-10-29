@@ -50,6 +50,14 @@ test('php: zoektermen voor tegenpartijen zoals js/lookup.js', { skip }, async ()
   assert.deepEqual(r.result, cases.map(([n, d]) => Lookup.searchTerms(n, d)));
 });
 
+test('php: zoekvolgorde voor koersen zoals server/prices.js', { skip }, async () => {
+  const cases = [['US02079K3059', 'Alphabet Inc. Class A', 'GOOGL'], ['LU0171310443', 'BGF World Technology Fund A2 USD', ''], ['', 'Vanguard FTSE All-World UCITS ETF (Acc)', ''], ['BE0974293251', 'Anheuser-Busch Inbev SA', 'ABI'], ['', 'Société Générale SA', '']];
+  const r = await php('search_queries', cases);
+  assert.deepEqual(r.result, cases.map(([i, n, h]) => Prices.searchQueries(i, n, h)));
+  assert.deepEqual(Prices.searchQueries('US02079K3059', 'Alphabet Inc. Class A', 'GOOGL'), ['US02079K3059', 'Alphabet Inc. Class A', 'Alphabet', 'GOOGL']);
+  assert.equal(Prices.simpleName('BGF World Technology Fund A2 USD'), 'BlackRock Global Funds World Technology');
+});
+
 test('php: goud- en zilverprijs zoals server/prices.js', { skip }, async () => {
   const t = Date.parse('2026-10-14T20:00:00Z') / 1000;
   const fake = [

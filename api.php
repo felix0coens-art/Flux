@@ -302,8 +302,11 @@ function handle(string $method, string $path): void {
                 'name' => substr((string) ($i['name'] ?? ''), 0, 80),
                 'currency' => substr((string) ($i['currency'] ?? 'EUR'), 0, 4),
                 'from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($i['from'] ?? '')) ? $i['from'] : '2015-01-01',
+                // Zelf ingevulde beurscode (bv. GOOGL) en de code die de broker meegaf
+                'symbol' => preg_match('/^[A-Za-z0-9.^=-]{1,20}$/', (string) ($i['symbol'] ?? '')) ? (string) $i['symbol'] : '',
+                'hint' => preg_match('/^[A-Za-z0-9.-]{1,15}$/', (string) ($i['hint'] ?? '')) ? (string) $i['hint'] : '',
             ];
-            if ($ins['key'] !== '' && ($ins['isin'] !== '' || $ins['name'] !== '')) $list[] = $ins;
+            if ($ins['key'] !== '' && ($ins['isin'] !== '' || $ins['name'] !== '' || $ins['symbol'] !== '')) $list[] = $ins;
         }
         send(200, fetch_prices('http_fetch', $list));
         return;

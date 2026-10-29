@@ -17,16 +17,33 @@ async function getJson(fetchFn, url) {
   return res.json();
 }
 
-/** Zoekt het Yahoo-symbool bij een ISIN (voorkeur voor een Europese beurs in EUR). */
-async function findSymbol(fetchFn, isin, name, preferredCurrency) {
-  const q = encodeURIComponent(isin || name);
-  const r = await getJson(fetchFn, `https://query1.finance.yahoo.com/v1/finance/search?q=${q}&quotesCount=8&newsCount=0`);
-  const quotes = (r.quotes || []).filter(x => x.symbol && ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'].includes(x.quoteType || 'EQUITY'));
-  // Niets op ISIN (gebeurt bij sommige fondsen)? Dan op naam
-  if (!quotes.length && isin && name) return findSymbol(fetchFn, '', name, preferredCurrency);
-  if (!quotes.length) return null;
+/**
+ * Eenvoudigere zoeknaam: zonder rechtsvorm, aandelenklasse en munt, hoogstens 5 woorden.
+ * Bv. "Alphabet Inc. Class A" → "Alphabet", "BGF World Technology Fund A2 USD" → "BlackRock Global Funds World Technology".
+ */
+const NAME_NOISE = new Set(['inc', 'incorporated', 'corp', 'corporation', 'co', 'company', 'ltd', 'limited', 'plc', 'sa', 'nv', 'se', 'ag', 'ab', 'asa', 'spa', 'oyj', 'class', 'cl', 'shares', 'share', 'acc', 'dist', 'usd', 'eur', 'gbp', 'chf', 'fund', 'ucits', 'etf', 'the', 'reg', 'ord']);
+function simpleName(name) {
+  const words = String(name || '').replace(/^BGF\b/i, 'BlackRock Global Funds').replace(/[^A-Za-zÀ-ÿ0-9 &-]+/g, ' ').split(/\s+/)
+    .filter(w => w && !NAME_NOISE.has(w.toLowerCase()) && !/^[A-Z]\d?$/i.test(w));
+  return words.slice(0, 5).join(' ');
+}
+
+/** Zoekvolgorde: eigen code (ticker), ISIN, volledige naam, eenvoudigere naam, code van de broker. */
+function searchQueries(isin, name, hint) {
+  const out = [];
+  for (const q of [isin, name, simpleName(name), hint]) { const t = String(q || '').trim(); if (t && !out.includes(t)) out.push(t); }
+  return out;
+}
+
+/** Zoekt het Yahoo-symbool bij een ISIN of naam (voorkeur voor een Europese beurs in EUR). */
+async function findSymbol(fetchFn, isin, name, preferredCurrency, hint) {
   const score = x => (EU_EXCHANGES.includes(x.exchange) ? 2 : 0) + (preferredCurrency && preferredCurrency !== 'EUR' && !EU_EXCHANGES.includes(x.exchange) ? 3 : 0);
-  return quotes.slice().sort((a, b) => score(b) - score(a))[0].symbol;
+  for (const query of searchQueries(isin, name, hint)) {
+    const r = await getJson(fetchFn, `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`);
+    const quotes = (r.quotes || []).filter(x => x.symbol && ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'].includes(x.quoteType || 'EQUITY'));
+    if (quotes.length) return quotes.slice().sort((a, b) => score(b) - score(a))[0].symbol;
+  }
+  return null;
 }
 
 /** Wekelijkse slotkoersen sinds een datum: [{date, close}] + munt. */
@@ -77,11 +94,11 @@ async function fetchPrices(fetchFn, instruments, cache) {
   const out = { series: {}, errors: {} };
   const fxCache = {};
   for (const ins of instruments.slice(0, 40)) {
-    const cacheKey = (ins.isin || ins.name) + '|' + ins.from + '|v2';
+    const cacheKey = (ins.symbol ? '$' + ins.symbol : ins.isin || ins.name) + '|' + ins.from + '|v3';
     const hit = cache && cache.get(cacheKey);
     if (hit) { out.series[ins.key] = await withQuote(fetchFn, hit, cache); continue; }
     try {
-      const symbol = await findSymbol(fetchFn, ins.isin, ins.name, ins.currency);
+      const symbol = ins.symbol || await findSymbol(fetchFn, ins.isin, ins.name, ins.currency, ins.hint);
       if (!symbol) { out.errors[ins.key] = 'niet gevonden'; continue; }
       const h = await history(fetchFn, symbol, ins.from);
       if (!h || !h.points.length) { out.errors[ins.key] = 'geen koersen'; continue; }
@@ -146,4 +163,4 @@ async function metalPrices(fetchFn) {
   return { gold: perGram(g.price), silver: perGram(s.price), at: g.at, source: 'Yahoo Finance' };
 }
 
-module.exports = { fetchPrices, findSymbol, history, toEur, metalPrices };
+module.exports = { fetchPrices, findSymbol, simpleName, searchQueries, history, toEur, metalPrices };

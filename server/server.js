@@ -639,8 +639,11 @@ async function handleApi(req, res, pathname, query) {
     const list = (Array.isArray(b.instruments) ? b.instruments : []).slice(0, 40).map(i => ({
       key: String(i.key || '').slice(0, 60), isin: /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(i.isin || '') ? i.isin : '',
       name: String(i.name || '').slice(0, 80), currency: String(i.currency || 'EUR').slice(0, 4),
-      from: /^\d{4}-\d{2}-\d{2}$/.test(i.from || '') ? i.from : '2015-01-01'
-    })).filter(i => i.key && (i.isin || i.name));
+      from: /^\d{4}-\d{2}-\d{2}$/.test(i.from || '') ? i.from : '2015-01-01',
+      // Zelf ingevulde beurscode (bv. GOOGL) en de code die de broker meegaf
+      symbol: /^[A-Za-z0-9.^=-]{1,20}$/.test(i.symbol || '') ? i.symbol : '',
+      hint: /^[A-Za-z0-9.-]{1,15}$/.test(i.hint || '') ? i.hint : ''
+    })).filter(i => i.key && (i.isin || i.name || i.symbol));
     return send(res, 200, await Prices.fetchPrices(fetch, list, priceCache));
   }
 

@@ -15,18 +15,35 @@ function prices_json(callable $fetch, string $url) {
 }
 
 /** Yahoo-symbool bij een ISIN (voorkeur voor een Europese beurs in EUR). */
-function find_symbol(callable $fetch, string $isin, string $name, string $preferredCurrency): ?string {
-    $q = rawurlencode($isin !== '' ? $isin : $name);
-    $r = prices_json($fetch, "https://query1.finance.yahoo.com/v1/finance/search?q=$q&quotesCount=8&newsCount=0");
-    $quotes = array_values(array_filter($r['quotes'] ?? [], fn($x) => !empty($x['symbol']) && in_array($x['quoteType'] ?? 'EQUITY', ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'], true)));
-    // Niets op ISIN (gebeurt bij sommige fondsen)? Dan op naam
-    if (!$quotes && $isin !== '' && $name !== '') return find_symbol($fetch, '', $name, $preferredCurrency);
-    if (!$quotes) return null;
+const PRICE_NAME_NOISE = ['inc', 'incorporated', 'corp', 'corporation', 'co', 'company', 'ltd', 'limited', 'plc', 'sa', 'nv', 'se', 'ag', 'ab', 'asa', 'spa', 'oyj', 'class', 'cl', 'shares', 'share', 'acc', 'dist', 'usd', 'eur', 'gbp', 'chf', 'fund', 'ucits', 'etf', 'the', 'reg', 'ord'];
+
+/** Eenvoudigere zoeknaam (zelfde als simpleName in server/prices.js). */
+function price_simple_name(string $name): string {
+    $s = preg_replace('/^BGF\b/i', 'BlackRock Global Funds', $name) ?? $name;
+    $s = preg_replace('/[^A-Za-z\x{00C0}-\x{00FF}0-9 &-]+/u', ' ', $s) ?? $s;
+    $words = array_values(array_filter(preg_split('/\s+/', $s) ?: [], fn($w) => $w !== '' && !in_array(mb_strtolower($w), PRICE_NAME_NOISE, true) && !preg_match('/^[A-Z]\d?$/i', $w)));
+    return implode(' ', array_slice($words, 0, 5));
+}
+
+/** Zoekvolgorde: ISIN, volledige naam, eenvoudigere naam, code van de broker. */
+function price_search_queries(string $isin, string $name, string $hint = ''): array {
+    $out = [];
+    foreach ([$isin, $name, price_simple_name($name), $hint] as $q) { $t = trim($q); if ($t !== '' && !in_array($t, $out, true)) $out[] = $t; }
+    return $out;
+}
+
+function find_symbol(callable $fetch, string $isin, string $name, string $preferredCurrency, string $hint = ''): ?string {
     $score = fn($x) => (in_array($x['exchange'] ?? '', EU_EXCHANGES, true) ? 2 : 0)
         + ($preferredCurrency !== '' && $preferredCurrency !== 'EUR' && !in_array($x['exchange'] ?? '', EU_EXCHANGES, true) ? 3 : 0);
-    $best = $quotes[0];
-    foreach ($quotes as $x) if ($score($x) > $score($best)) $best = $x;
-    return $best['symbol'];
+    foreach (price_search_queries($isin, $name, $hint) as $query) {
+        $r = prices_json($fetch, 'https://query1.finance.yahoo.com/v1/finance/search?q=' . rawurlencode($query) . '&quotesCount=8&newsCount=0');
+        $quotes = array_values(array_filter($r['quotes'] ?? [], fn($x) => !empty($x['symbol']) && in_array($x['quoteType'] ?? 'EQUITY', ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'], true)));
+        if (!$quotes) continue;
+        $best = $quotes[0];
+        foreach ($quotes as $x) if ($score($x) > $score($best)) $best = $x;
+        return $best['symbol'];
+    }
+    return null;
 }
 
 /** Wekelijkse slotkoersen sinds een datum: ['currency' => .., 'points' => [['date', 'close']]] */
@@ -143,11 +160,11 @@ function fetch_prices(callable $fetch, array $instruments, bool $useCache = true
     $fresh = [];
     foreach (array_slice($instruments, 0, 40) as $ins) {
         $k = $ins['key'];
-        $cacheKey = ($ins['isin'] !== '' ? $ins['isin'] : $ins['name']) . '|' . $ins['from'] . '|v2';
+        $cacheKey = (($ins['symbol'] ?? '') !== '' ? '$' . $ins['symbol'] : ($ins['isin'] !== '' ? $ins['isin'] : $ins['name'])) . '|' . $ins['from'] . '|v3';
         $hit = $useCache ? price_cache_get($cacheKey) : null;
         if ($hit) { $out['series']->$k = price_with_quote($fetch, $hit, $useCache, $fresh); continue; }
         try {
-            $symbol = find_symbol($fetch, $ins['isin'], $ins['name'], $ins['currency']);
+            $symbol = ($ins['symbol'] ?? '') !== '' ? $ins['symbol'] : find_symbol($fetch, $ins['isin'], $ins['name'], $ins['currency'], $ins['hint'] ?? '');
             if (!$symbol) { $out['errors']->$k = 'niet gevonden'; continue; }
             $h = price_history($fetch, $symbol, $ins['from']);
             if (!$h || !$h['points']) { $out['errors']->$k = 'geen koersen'; continue; }

@@ -237,7 +237,37 @@
     const e = iv.market && iv.market.errors && iv.market.errors[key];
     if (!e) return '';
     const why = e === 'niet gevonden' ? 'niet gevonden bij Yahoo Finance' : e === 'geen koersen' ? 'geen koersen gevonden' : e === 'wisselkoers ontbreekt' ? 'wisselkoers ontbreekt' : 'ophalen mislukt';
-    return `<div class="small muted" title="${esc(e)}">geen koers: ${esc(why)}</div>`;
+    return `<div class="small muted" title="${esc(e)}">geen koers: ${esc(why)}</div><button class="btn small ghost" data-action="price-symbol" data-key="${esc(key)}">🔎 Beurscode invullen</button>`;
+  }
+
+  /** Zelf de beurscode (Yahoo-symbool) van een product invullen, bv. GOOGL. */
+  function priceSymbolModal() {
+    const m = modal;
+    const iv = inv();
+    const name = (iv && ((iv.trades || []).find(t => (t.isin || t.name) === m.key) || (iv.positions || []).find(p => (p.isin || p.key || p.name) === m.key)) || {}).name || m.key;
+    const cur = ((state.settings && state.settings.priceSymbols) || {})[m.key] || '';
+    const look = 'https://finance.yahoo.com/lookup/?s=' + encodeURIComponent(m.key.length === 12 ? m.key : name);
+    return modalShell('Beurscode voor ' + name, `
+      <p class="small">Helder vond geen koers voor <strong>${esc(name)}</strong> (${esc(m.key)}). Vul de code in waaronder het op Yahoo Finance staat; Helder haalt de koers daarna altijd zo op.</p>
+      <ol class="small">
+        <li>Open <a href="${esc(look)}" target="_blank" rel="noopener">Yahoo Finance ↗</a> en zoek op de naam of de ISIN.</li>
+        <li>Neem de code over die naast de naam staat, bv. <code>GOOGL</code> (Alphabet) of <code>ABI.BR</code> (AB InBev in Brussel). Fondsen hebben er vaak een die met <code>0P</code> begint.</li>
+      </ol>
+      <label class="field"><span>Beurscode</span><input type="text" id="ps-symbol" value="${esc(cur)}" placeholder="bv. GOOGL" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+      <div class="errors" id="ps-errors"></div>`,
+      `${cur ? '<button class="btn ghost danger" data-action="price-symbol-clear">Wissen</button>' : ''}<span class="spacer"></span><button class="btn" data-action="close-modal">Annuleren</button><button class="btn primary" data-action="price-symbol-save">Bewaren en koers ophalen</button>`);
+  }
+
+  function savePriceSymbol(clear) {
+    const m = modal;
+    const v = clear ? '' : ($('#ps-symbol').value || '').trim().toUpperCase();
+    if (!clear && !/^[A-Z0-9.^=-]{1,20}$/.test(v)) { $('#ps-errors').textContent = 'Een beurscode bestaat uit letters, cijfers, punten of streepjes, bv. GOOGL of ABI.BR.'; return; }
+    const map = Object.assign({}, (state.settings && state.settings.priceSymbols) || {});
+    if (v) map[m.key] = v; else delete map[m.key];
+    state.settings = Object.assign({}, state.settings, { priceSymbols: map });
+    closeModal();
+    commit(v ? 'Beurscode ' + v + ' bewaard, koers wordt opgehaald…' : 'Beurscode gewist');
+    maybeFetchPrices(true);
   }
 
   function soldCard(iv) {
@@ -572,8 +602,11 @@
     if (!force && fetchedAt && Date.now() - Date.parse(fetchedAt) < 4 * 3600000) return;
     if (!force && data.market && data.market.failedAt && Date.now() - Date.parse(data.market.failedAt) < 3 * 3600000) return;
     const keys = {};
-    for (const t of data.trades || []) { const k = t.isin || t.name; if (!keys[k] || t.date < keys[k].from) keys[k] = { key: k, isin: t.isin, name: t.name, currency: t.currency, from: t.date }; }
-    for (const p of data.positions || []) { const k = p.isin || p.key || p.name; if (!keys[k]) keys[k] = { key: k, isin: p.isin, name: p.name, currency: p.currency, from: data.positionsDate || today }; }
+    for (const t of data.trades || []) { const k = t.isin || t.name; if (!keys[k] || t.date < keys[k].from) keys[k] = Object.assign({ key: k, isin: t.isin, name: t.name, currency: t.currency, from: t.date }, keys[k] && keys[k].hint ? { hint: keys[k].hint } : {}); }
+    for (const p of data.positions || []) { const k = p.isin || p.key || p.name; if (!keys[k]) keys[k] = { key: k, isin: p.isin, name: p.name, currency: p.currency, from: data.positionsDate || today }; if (p.symbol) keys[k].hint = p.symbol; }
+    // Zelf ingevulde beurscodes (voor wat Yahoo niet vindt op ISIN of naam)
+    const own = (state.settings && state.settings.priceSymbols) || {};
+    for (const k of Object.keys(keys)) if (own[k]) keys[k].symbol = own[k];
     // Eerst wat je nu hebt (nodig voor je waarde), dan wat je verkocht (recentste eerst); per 40 tegelijk
     const held = new Set((data.positions || []).filter(p => p.quantity > 0).map(p => p.isin || p.key || p.name));
     const lastTrade = {};
