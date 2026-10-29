@@ -10,7 +10,7 @@ const G = require('../js/groups.js');
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 const WRITE_LIMIT = 300; // wijzigingen per uur per IP-adres
 
-function create({ readJson, writeJson, withLock, remove, httpError }) {
+function create({ readJson, writeJson, withLock, remove, listFiles, httpError }) {
   const fileOf = token => 'group-' + crypto.createHash('sha256').update(token).digest('hex').slice(0, 32) + '.json';
   const writes = new Map();
 
@@ -40,6 +40,29 @@ function create({ readJson, writeJson, withLock, remove, httpError }) {
     });
   }
 
+  /** Nieuwe geheime link; de oude werkt daarna niet meer (enkel de eigenaar). */
+  async function rotate(owner, b) {
+    const token = b && b.token;
+    return withLock('group:' + String(token), async () => {
+      const g = await load(token);
+      if (g.owner !== owner) throw httpError(403, 'Enkel wie de groep maakte, kan de link vernieuwen.');
+      const fresh = crypto.randomBytes(24).toString('base64url');
+      await writeJson(fileOf(fresh), g);
+      await remove(fileOf(token));
+      return { token: fresh };
+    });
+  }
+
+  /** Alle groepen van een account wissen (bij het verwijderen van dat account). */
+  async function removeOwned(owner) {
+    let n = 0;
+    for (const f of (await listFiles()).filter(f => /^group-[0-9a-f]{32}\.json$/.test(f))) {
+      const g = await readJson(f, null);
+      if (g && g.owner === owner) { await remove(f); n++; }
+    }
+    return n;
+  }
+
   async function publicLoad(b) { return G.publicGroup(await load(b && b.t)); }
 
   async function publicOp(ip, b) {
@@ -58,7 +81,7 @@ function create({ readJson, writeJson, withLock, remove, httpError }) {
     });
   }
 
-  return { createGroup, removeGroup, publicLoad, publicOp };
+  return { createGroup, removeGroup, rotate, removeOwned, publicLoad, publicOp };
 }
 
 module.exports = { create };

@@ -218,6 +218,30 @@ function group_remove(string $owner, array $b): array {
     });
 }
 
+/** Nieuwe geheime link; de oude werkt daarna niet meer (enkel de eigenaar). */
+function group_rotate(string $owner, array $b): array {
+    $token = $b['token'] ?? null;
+    return with_lock('group-' . substr(hash('sha256', (string) $token), 0, 32), function () use ($owner, $token) {
+        $g = group_load($token);
+        if (($g['owner'] ?? null) !== $owner) throw new HttpError(403, 'Enkel wie de groep maakte, kan de link vernieuwen.');
+        $fresh = b64url(random_bytes(24));
+        write_json(group_file($fresh), $g);
+        @unlink(data_dir() . '/' . group_file($token));
+        return ['token' => $fresh];
+    });
+}
+
+/** Alle groepen van een account wissen (bij het verwijderen van dat account). */
+function groups_remove_owned(string $owner): int {
+    $n = 0;
+    foreach (glob(data_dir() . '/group-*.json') ?: [] as $f) {
+        if (!preg_match('/^group-[0-9a-f]{32}\.json$/', basename($f))) continue;
+        $g = json_decode((string) @file_get_contents($f), true);
+        if (is_array($g) && ($g['owner'] ?? null) === $owner) { @unlink($f); $n++; }
+    }
+    return $n;
+}
+
 function group_public_op(array $b): array {
     with_lock('group-writes', function () {
         $all = read_json('group-writes.json', []);

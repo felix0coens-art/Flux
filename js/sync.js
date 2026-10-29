@@ -283,6 +283,7 @@
   const groups = {
     create: (name, me, others) => api('POST', '/api/groups/create', { name, me, others }),
     remove: token => api('POST', '/api/groups/delete', { token }),
+    rotate: token => api('POST', '/api/groups/rotate', { token }),
     load: token => api('POST', '/api/g/load', { t: token }),
     op: (token, actor, op, data) => api('POST', '/api/g/op', { t: token, actor, op, data })
   };

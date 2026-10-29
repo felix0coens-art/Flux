@@ -21,6 +21,8 @@ require __DIR__ . '/php/lib/accounts.php';
 @set_time_limit(300);
 ini_set('display_errors', '0');
 
+const PUBLIC_MAX_BODY = 262144; // verzoeken zonder aanmelden (gedeelde groepen)
+
 const SECURITY_HEADERS = [
     'X-Content-Type-Options' => 'nosniff',
     'Referrer-Policy' => 'same-origin',
@@ -33,15 +35,16 @@ function send(int $status, $body, array $headers = []): void {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     foreach (SECURITY_HEADERS + $headers as $k => $v) header("$k: $v", true);
+    if (is_secure()) header('Strict-Transport-Security: max-age=31536000', true);
     echo json_out($body);
 }
 
 /** Leest de JSON-body. $assoc=false voor gegevens (behoudt {} versus []). */
-function body(bool $assoc = true) {
+function body(bool $assoc = true, int $limit = MAX_BODY) {
     static $raw = null;
     if ($raw === null) {
-        $raw = (string) file_get_contents('php://input', false, null, 0, MAX_BODY + 1);
-        if (strlen($raw) > MAX_BODY) throw new HttpError(413, 'Te groot');
+        $raw = (string) file_get_contents('php://input', false, null, 0, $limit + 1);
+        if (strlen($raw) > $limit) throw new HttpError(413, 'Te groot');
     }
     if (trim($raw) === '') return $assoc ? [] : new stdClass();
     $data = json_decode($raw, $assoc);
@@ -178,8 +181,8 @@ function handle(string $method, string $path): void {
     }
 
     // Groepen via een gedeelde link: zonder aanmelden, de token in de link geeft toegang tot die ene groep
-    if ($path === '/api/g/load' && $method === 'POST') { send(200, group_public(group_load(body()['t'] ?? null))); return; }
-    if ($path === '/api/g/op' && $method === 'POST') { send(200, group_public_op(body())); return; }
+    if ($path === '/api/g/load' && $method === 'POST') { send(200, group_public(group_load(body(true, PUBLIC_MAX_BODY)['t'] ?? null))); return; }
+    if ($path === '/api/g/op' && $method === 'POST') { send(200, group_public_op(body(true, PUBLIC_MAX_BODY))); return; }
 
     if (!$user || !$me || !empty($me['disabled'])) throw new HttpError(401, 'Niet aangemeld');
 
@@ -199,6 +202,7 @@ function handle(string $method, string $path): void {
     // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
     $dataUser = data_user($user, $me);
     if ($path === '/api/groups/create' && $method === 'POST') { send(200, group_create($dataUser, body())); return; }
+    if ($path === '/api/groups/rotate' && $method === 'POST') { send(200, group_rotate($dataUser, body())); return; }
     if ($path === '/api/groups/delete' && $method === 'POST') { send(200, group_remove($dataUser, body())); return; }
     if ($path === '/api/household' && $method === 'GET') { send(200, household_status($user)); return; }
     if ($path === '/api/household/invite' && $method === 'POST') { send(200, household_invite($user)); return; }
@@ -214,6 +218,7 @@ function handle(string $method, string $path): void {
         if ($role !== 'member') throw new HttpError(400, 'Dit account kan je hier niet verwijderen');
         if (($b['confirm'] ?? '') !== 'VERWIJDER') throw new HttpError(400, 'Typ VERWIJDER om te bevestigen');
         delete_own_account($user);
+        groups_remove_owned($user); // ook de gedeelde groepen die dit account maakte
         send(200, ['ok' => true], ['Set-Cookie' => session_cookie('', 0)]);
         return;
     }
@@ -272,9 +277,12 @@ function handle(string $method, string $path): void {
 
     if ($path === '/api/password' && $method === 'POST') {
         $b = body();
-        if (!verify_password((string) ($b['current'] ?? ''), get_users()[$user] ?? null)) throw new HttpError(401, 'Huidig wachtwoord klopt niet');
+        // Zelfde limiet als bij aanmelden: wie je sessie heeft, kan je wachtwoord niet raden
+        if (rate_limited()) throw new HttpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+        if (!verify_password((string) ($b['current'] ?? ''), get_users()[$user] ?? null)) { record_attempt(); throw new HttpError(401, 'Huidig wachtwoord klopt niet'); }
         if (!valid_password($b['password'] ?? null)) throw new HttpError(400, 'Nieuw wachtwoord: minstens 8 tekens');
         set_password($user, $b['password']);
+        end_other_sessions($user); // andere toestellen moeten opnieuw aanmelden
         send(200, ['ok' => true]);
         return;
     }

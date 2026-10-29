@@ -2492,7 +2492,10 @@
         <li>Iedereen voegt toe wat hij betaalde en voor wie. Helder rekent uit wie wie hoeveel moet.</li>
         <li>Hier in <strong>Opvolgen</strong> zie je wat er nog in je boekhouding moet: je eigen betalingen koppelen en jouw deel van wat anderen betaalden boeken.</li>
       </ol>
-      <p class="small muted">Wie de link heeft, kan de groep bekijken en aanpassen. Deel ze enkel met de groep. Ze geeft geen toegang tot de rest van je Helder.</p>`,
+      <p class="small muted">Wie de link heeft, kan de groep bekijken en aanpassen. Deel ze enkel met de groep. Ze geeft geen toegang tot de rest van je Helder.</p>
+      ${g.owner ? `<details class="small"><summary>Link per ongeluk met de verkeerde persoon gedeeld?</summary>
+        <p>Maak een nieuwe link. De oude werkt daarna niet meer; de groep zelf blijft zoals ze is. Stuur de nieuwe link opnieuw naar de groep.</p>
+        <button class="btn small" data-action="group-rotate" data-id="${esc(g.id)}">🔄 Nieuwe link maken</button></details>` : ''}`,
       `${navigator.share ? `<button class="btn" data-action="group-share-native" data-id="${esc(g.id)}">Delen…</button>` : ''}<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Openen ↗</a><span class="spacer"></span><button class="btn primary" data-action="close-modal">Klaar</button>`);
   }
 
@@ -2747,7 +2750,19 @@
     return groupList().reduce((s, g) => { const pg = groupUi.data[g.id]; return s + (pg && g.memberId ? ((GRP.balances(pg)[g.memberId] || {}).net || 0) : 0); }, 0);
   }
 
+  async function groupRotate(el) {
+    const g = groupById(el.dataset.id);
+    if (!g || !confirm('Een nieuwe link maken?\n\nDe oude link werkt daarna niet meer. Iedereen in de groep heeft de nieuwe link nodig.')) return;
+    try {
+      const r = await Sync.groups.rotate(g.token);
+      g.token = r.token;
+      commit('Nieuwe link gemaakt. Stuur hem opnieuw naar de groep.');
+      openModal({ type: 'groupShare', id: g.id });
+    } catch (e) { toast(e.message); }
+  }
+
   const groupActions = {
+    'group-rotate': groupRotate,
     'group-new': el => openModal({ type: 'groupNew', then: el && el.dataset.tx ? { txId: el.dataset.tx } : null }),
     'group-create': groupCreate,
     'group-join': groupJoin,

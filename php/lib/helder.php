@@ -170,6 +170,16 @@ function session_user(): ?string {
     return $s['username'];
 }
 
+/** Alle sessies van deze gebruiker beëindigen, behalve de huidige. */
+function end_other_sessions(string $username): void {
+    $keep = session_token() !== '' ? token_hash(session_token()) : null;
+    with_lock('sessions', function () use ($username, $keep) {
+        $sessions = read_json('sessions.json', []);
+        foreach ($sessions as $k => $s) if (($s['username'] ?? '') === $username && $k !== $keep) unset($sessions[$k]);
+        write_json('sessions.json', $sessions);
+    });
+}
+
 function destroy_session(bool $everywhere): void {
     $token = session_token();
     if ($token === '') return;

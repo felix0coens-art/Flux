@@ -124,7 +124,7 @@ const Files = FilesLib.create(DATA_DIR, (status, message) => httpError(status, m
 
 // Gedeelde boekhouding (huishouden)
 const House = HouseholdLib.create({ readJson, writeJson, withLock, getUsers: () => getUsers(), httpError: (s, m) => httpError(s, m) });
-const Groups = GroupsLib.create({ readJson, writeJson, withLock, remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}), httpError: (s, m) => httpError(s, m) });
+const Groups = GroupsLib.create({ readJson, writeJson, withLock, remove: file => fsp.unlink(path.join(DATA_DIR, file)).catch(() => {}), listFiles: () => fsp.readdir(DATA_DIR).catch(() => []), httpError: (s, m) => httpError(s, m) });
 /** Accountgegevens voor de browser, met wiens boekhouding gebruikt wordt. */
 async function publicUser(name, u) { return Object.assign(Accounts.userPublic(name, u), { dataUser: House.dataUserSync(await getUsers(), name) }); }
 
@@ -203,6 +203,17 @@ async function destroySession(req, allForUser) {
     if (allForUser && own) {
       for (const [k, s] of Object.entries(sessions)) if (s.username === own.username) delete sessions[k];
     } else delete sessions[tokenHash(token)];
+    await writeJson('sessions.json', sessions);
+  });
+}
+
+/** Alle sessies van deze gebruiker beëindigen, behalve de huidige. */
+async function endOtherSessions(req, username) {
+  const token = parseCookies(req.headers.cookie || '').flux_session;
+  await withLock('sessions', async () => {
+    const sessions = await readJson('sessions.json', {});
+    const keep = token ? tokenHash(token) : null;
+    for (const [k, s] of Object.entries(sessions)) if (s.username === username && k !== keep) delete sessions[k];
     await writeJson('sessions.json', sessions);
   });
 }
@@ -384,16 +395,26 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 };
 
-function readBody(req) {
+const PUBLIC_MAX_BODY = 256 * 1024; // verzoeken zonder aanmelden (gedeelde groepen)
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
-    let size = 0;
+    let size = 0, tooBig = false;
     const chunks = [];
     req.on('data', c => {
       size += c.length;
-      if (size > MAX_BODY) { reject(httpError(413, 'Te groot')); req.destroy(); return; }
+      if (tooBig) return;
+      if (size > (limit || MAX_BODY)) {
+        tooBig = true;
+        chunks.length = 0;
+        reject(httpError(413, 'Te groot'));
+        // Kleine limiet (publieke verzoeken): de rest weggooien, zodat het antwoord nog aankomt
+        if (!limit) req.destroy();
+        return;
+      }
       chunks.push(c);
     });
     req.on('end', () => {
+      if (tooBig) return;
       if (!chunks.length) return resolve({});
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
       catch (e) { reject(httpError(400, 'Ongeldige JSON')); }
@@ -541,8 +562,8 @@ async function handleApi(req, res, pathname, query) {
   }
 
   // Groepen via een gedeelde link: zonder aanmelden, de token in de link geeft toegang tot die ene groep
-  if (pathname === '/api/g/load' && req.method === 'POST') return send(res, 200, await Groups.publicLoad(await readBody(req)));
-  if (pathname === '/api/g/op' && req.method === 'POST') return send(res, 200, await Groups.publicOp(clientIp(req), await readBody(req)));
+  if (pathname === '/api/g/load' && req.method === 'POST') return send(res, 200, await Groups.publicLoad(await readBody(req, PUBLIC_MAX_BODY)));
+  if (pathname === '/api/g/op' && req.method === 'POST') return send(res, 200, await Groups.publicOp(clientIp(req), await readBody(req, PUBLIC_MAX_BODY)));
 
   if (!user || !me || me.disabled) throw httpError(401, 'Niet aangemeld');
 
@@ -560,6 +581,7 @@ async function handleApi(req, res, pathname, query) {
   // Gedeelde boekhouding: gegevens, bonnetjes en synchronisatie van de eigenaar van het huishouden
   const dataUser = await House.dataUser(user);
   if (pathname === '/api/groups/create' && req.method === 'POST') return send(res, 200, await Groups.createGroup(dataUser, await readBody(req)));
+  if (pathname === '/api/groups/rotate' && req.method === 'POST') return send(res, 200, await Groups.rotate(dataUser, await readBody(req)));
   if (pathname === '/api/groups/delete' && req.method === 'POST') return send(res, 200, await Groups.removeGroup(dataUser, await readBody(req)));
   if (pathname === '/api/household' && req.method === 'GET') return send(res, 200, await House.status(user));
   if (pathname === '/api/household/invite' && req.method === 'POST') return send(res, 200, await House.invite(user));
@@ -577,6 +599,7 @@ async function handleApi(req, res, pathname, query) {
     if (role !== 'member') throw httpError(400, 'Dit account kan je hier niet verwijderen');
     if (b.confirm !== 'VERWIJDER') throw httpError(400, 'Typ VERWIJDER om te bevestigen');
     await Acc.deleteOwn(req, user);
+    await Groups.removeOwned(user); // ook de gedeelde groepen die dit account maakte
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
 
@@ -670,9 +693,12 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/password' && req.method === 'POST') {
     const b = await readBody(req);
     const users = await getUsers();
-    if (!verifyPassword(b.current || '', users[user])) throw httpError(401, 'Huidig wachtwoord klopt niet');
+    // Zelfde limiet als bij aanmelden: wie je sessie heeft, kan je wachtwoord niet raden
+    if (rateLimited(req)) throw httpError(429, 'Te veel pogingen, probeer binnen 15 minuten opnieuw');
+    if (!verifyPassword(b.current || '', users[user])) { recordAttempt(req); throw httpError(401, 'Huidig wachtwoord klopt niet'); }
     if (!validPassword(b.password)) throw httpError(400, 'Nieuw wachtwoord: minstens 8 tekens');
     await setPassword(user, b.password);
+    await endOtherSessions(req, user); // andere toestellen moeten opnieuw aanmelden
     return send(res, 200, { ok: true });
   }
 

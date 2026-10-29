@@ -147,8 +147,22 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       assert.ok(other);
       assert.equal((await call('/api/groups/delete', { token: t }, other)).status, 403);
       results[name] = shape(g, {});
-      assert.equal((await call('/api/groups/delete', { token: t }, me)).status, 200);
-      assert.equal((await call('/api/g/load', { t })).status, 404);
+      // Nieuwe link: de oude werkt niet meer, de groep blijft
+      assert.equal((await call('/api/groups/rotate', { token: t }, other)).status, 403);
+      const rot = await call('/api/groups/rotate', { token: t }, me);
+      assert.equal(rot.status, 200, rot.text);
+      assert.equal((await call('/api/g/load', { t })).status, 404, 'oude link werkt niet meer');
+      const t2 = rot.json.token;
+      assert.equal((await call('/api/g/load', { t: t2 })).json.expenses.length, g.expenses.length);
+      // Een te groot publiek verzoek wordt geweigerd
+      assert.equal((await call('/api/g/op', { t: t2, actor: felix, op: 'member.add', data: { name: 'x'.repeat(300000) } })).status, 413);
+      assert.equal((await call('/api/groups/delete', { token: t2 }, me)).status, 200);
+      assert.equal((await call('/api/g/load', { t: t2 })).status, 404);
+      // Wie zijn account verwijdert, verwijdert ook zijn groepen
+      const own = await call('/api/groups/create', { name: 'Van iemand', me: 'Iemand' }, other);
+      assert.equal((await call('/api/g/load', { t: own.json.token })).status, 200);
+      assert.equal((await call('/api/account/delete', { confirm: 'VERWIJDER' }, other)).status, 200);
+      assert.equal((await call('/api/g/load', { t: own.json.token })).status, 404, 'groep mee gewist');
     } finally {
       srv.stop();
       fs.rmSync(dir, { recursive: true, force: true });
