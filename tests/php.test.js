@@ -70,6 +70,9 @@ test('php: historische koersen zoals server/prices.js', { skip }, async () => {
   const fake = [
     ['/search?q=US0378331005', 200, { quotes: [{ symbol: 'AAPL', exchange: 'NMS', quoteType: 'EQUITY' }, { symbol: 'APC.F', exchange: 'FRA', quoteType: 'EQUITY' }] }],
     ['/search?q=IE00B3RBWM25', 200, { quotes: [{ symbol: 'VWRL.AS', exchange: 'AMS', quoteType: 'ETF' }] }],
+    ['/search?q=LU0171310443', 200, { quotes: [] }],
+    ['/search?q=BGF%20World%20Technology', 200, { quotes: [{ symbol: '0P00000SMQ.F', exchange: 'FRA', quoteType: 'MUTUALFUND' }] }],
+    ['/chart/0P00000SMQ.F', 200, { chart: { result: [{ meta: { currency: 'EUR', regularMarketPrice: 95.5, regularMarketTime: Date.parse('2026-01-15T10:00:00Z') / 1000 }, timestamp: ts, indicators: { quote: [{ close: [90, 92] }] } }] } }],
     ['/chart/AAPL', 200, { chart: { result: [{ meta: { currency: 'USD' }, timestamp: ts, indicators: { quote: [{ close: [200, 210] }] } }] } }],
     ['/chart/EURUSD%3DX', 200, { chart: { result: [{ meta: { currency: 'USD' }, timestamp: ts, indicators: { quote: [{ close: [1.25, 1.05] }] } }] } }],
     ['/chart/VWRL.AS', 200, { chart: { result: [{ meta: { currency: 'EUR', regularMarketPrice: 112.25, regularMarketTime: Date.parse('2026-01-14T16:30:00Z') / 1000 }, timestamp: ts, indicators: { quote: [{ close: [110.5, null] }] } }] } }]
@@ -77,7 +80,8 @@ test('php: historische koersen zoals server/prices.js', { skip }, async () => {
   const list = [
     { key: 'US0378331005', isin: 'US0378331005', name: '', currency: 'USD', from: '2026-01-01' },
     { key: 'IE00B3RBWM25', isin: 'IE00B3RBWM25', name: '', currency: 'EUR', from: '2026-01-01' },
-    { key: 'ONBEKEND', isin: 'XS0000000000', name: '', currency: 'EUR', from: '2026-01-01' }
+    { key: 'ONBEKEND', isin: 'XS0000000000', name: '', currency: 'EUR', from: '2026-01-01' },
+    { key: 'LU0171310443', isin: 'LU0171310443', name: 'BGF World Technology Fund A2 USD', currency: 'USD', from: '2026-01-01' }
   ];
   const r = await php('fetch_prices', [list], fake);
   const expected = await Prices.fetchPrices(nodeFetch(fake), list);
@@ -85,6 +89,9 @@ test('php: historische koersen zoals server/prices.js', { skip }, async () => {
   assert.deepEqual(r.result.series.US0378331005.points.map(p => p.eur), [16000, 20000]);
   // De koers van vandaag komt er als laatste punt bij (de weekkoersen staan op maandag)
   assert.deepEqual(r.result.series.IE00B3RBWM25.points.map(p => [p.date, p.eur]), [['2026-01-05', 11050], ['2026-01-14', 11225]]);
+  // Fonds dat niet op ISIN gevonden wordt: op naam, met de koers van vandaag als laatste punt
+  assert.equal(r.result.series.LU0171310443.symbol, '0P00000SMQ.F');
+  assert.deepEqual(r.result.series.LU0171310443.points.map(p => [p.date, p.eur]), [['2026-01-05', 9000], ['2026-01-12', 9200], ['2026-01-15', 9550]]);
 });
 
 function degiroFake(withOtp) {

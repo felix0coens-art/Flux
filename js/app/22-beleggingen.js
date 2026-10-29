@@ -155,7 +155,7 @@
           <tbody>${s.positions.map(p => `<tr>
             <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin || p.symbol || '')}${p.currency !== 'EUR' ? ' · ' + esc(p.currency) : ''}${iv.brokers ? ' · ' + esc(p.broker === 'saxo' ? 'Saxo' : 'Degiro') : ''}</div></td>
             <td class="right">${String(p.quantity).replace('.', ',')}</td>
-            <td class="amount">${money(p.valueEur)}${p.priceDate ? `<div class="small muted" title="Koers van ${fmtDate(p.priceDate)}">à ${money(Math.round(p.priceEur))}</div>` : iv.liveDate ? '<div class="small muted" title="Geen koers gevonden: waarde van je laatste stand">stand</div>' : ''}</td>
+            <td class="amount">${money(p.valueEur)}${p.priceDate ? `<div class="small muted" title="Koers van ${fmtDate(p.priceDate)}">à ${money(Math.round(p.priceEur))}</div>` : iv.liveDate ? `<div class="small muted" title="Geen koers gevonden: waarde van je laatste stand">stand</div>${noPriceWhy(iv, p.isin || p.key || p.name)}` : ''}</td>
             <td class="amount">${p.costEur != null ? money(p.costEur) : '—'}</td>
             <td class="amount ${p.gainEur >= 0 ? 'pos' : 'negv'}">${p.gainEur != null ? signMoney(p.gainEur) + `<div class="small">${p.costEur ? pct(p.gainEur / p.costEur) : ''}</div>` : '—'}</td>
             <td class="amount">${(() => { const v = pf.realizedByKey[p.isin] ?? pf.realizedByKey[p.key] ?? pf.realizedByKey[p.name]; return v != null ? `<span class="${v >= 0 ? 'pos' : 'negv'}">${signMoney(v)}</span>` : '—'; })()}</td>
@@ -232,6 +232,14 @@
     </div>`;
   }
 
+  /** Waarom er geen koers is voor een product (zoals de server het meldde). */
+  function noPriceWhy(iv, key) {
+    const e = iv.market && iv.market.errors && iv.market.errors[key];
+    if (!e) return '';
+    const why = e === 'niet gevonden' ? 'niet gevonden bij Yahoo Finance' : e === 'geen koersen' ? 'geen koersen gevonden' : e === 'wisselkoers ontbreekt' ? 'wisselkoers ontbreekt' : 'ophalen mislukt';
+    return `<div class="small muted" title="${esc(e)}">geen koers: ${esc(why)}</div>`;
+  }
+
   function soldCard(iv) {
     const r = Invest.realized(iv);
     if (!r.positions.length) {
@@ -260,7 +268,7 @@
           <td class="amount">${money(p.costSold)}</td>
           <td class="amount">${money(p.proceeds)}</td>
           <td class="amount ${p.result >= 0 ? 'pos' : 'negv'}"><strong>${p.result >= 0 ? '▲ ' : '▼ '}${money(p.result)}</strong><div class="small">${p.pct != null ? pct(p.pct) : ''}</div></td>
-          <td class="amount">${p.todayValue != null ? money(p.todayValue) + `<div class="small muted">à ${money(Math.round(p.lastPrice))} · ${fmtDate(p.lastDate)}</div>` : '—'}</td>
+          <td class="amount">${p.todayValue != null ? money(p.todayValue) + `<div class="small muted">à ${money(Math.round(p.lastPrice))} · ${fmtDate(p.lastDate)}</div>` : `—${noPriceWhy(iv, p.key)}`}</td>
           <td class="amount ${p.diff == null ? '' : p.diff >= 0 ? 'pos' : 'negv'}">${p.diff != null ? `<strong>${p.diff >= 0 ? '▲ ' : '▼ '}${money(p.diff)}</strong><div class="small">${pct(p.diffPct)}</div>` : '—'}</td>
           <td><button class="btn small ghost" data-action="watch-from-sold" data-key="${esc(p.key)}" title="Volgen bij je favorieten, met je verkoopkoers als start">⭐</button></td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="3"><strong>Totaal</strong></td><td class="amount">${money(r.costSold)}</td><td class="amount">${money(r.proceeds)}</td><td class="amount ${r.total >= 0 ? 'pos' : 'negv'}"><strong>${money(r.total)}</strong><div class="small">${r.pct != null ? pct(r.pct) : ''}</div></td>
@@ -566,14 +574,28 @@
     const keys = {};
     for (const t of data.trades || []) { const k = t.isin || t.name; if (!keys[k] || t.date < keys[k].from) keys[k] = { key: k, isin: t.isin, name: t.name, currency: t.currency, from: t.date }; }
     for (const p of data.positions || []) { const k = p.isin || p.key || p.name; if (!keys[k]) keys[k] = { key: k, isin: p.isin, name: p.name, currency: p.currency, from: data.positionsDate || today }; }
-    const instruments = Object.values(keys);
+    // Eerst wat je nu hebt (nodig voor je waarde), dan wat je verkocht (recentste eerst); per 40 tegelijk
+    const held = new Set((data.positions || []).filter(p => p.quantity > 0).map(p => p.isin || p.key || p.name));
+    const lastTrade = {};
+    for (const t of data.trades || []) { const k = t.isin || t.name; if (!lastTrade[k] || t.date > lastTrade[k]) lastTrade[k] = t.date; }
+    const instruments = Object.values(keys).sort((a, b) => (held.has(b.key) - held.has(a.key)) || String(lastTrade[b.key] || '').localeCompare(String(lastTrade[a.key] || '')));
     if (!instruments.length) return;
     pricesBusy = true;
     try {
-      const r = await Sync.prices(instruments);
-      const okCount = Object.keys(r.series || {}).length;
-      state.investments = Object.assign({}, state.investments, { market: okCount ? { series: r.series, errors: r.errors, fetchedAt: new Date().toISOString() } : Object.assign({}, data.market || {}, { failedAt: new Date().toISOString(), errors: r.errors }) });
-      commit(force ? (okCount ? `Koersen opgehaald voor ${okCount} product(en)` : 'Geen koersen gevonden') : undefined);
+      const r = { series: {}, errors: {} };
+      for (let i = 0; i < instruments.length; i += 40) {
+        const part = await Sync.prices(instruments.slice(i, i + 40));
+        Object.assign(r.series, part.series || {});
+        Object.assign(r.errors, part.errors || {});
+      }
+      const okCount = Object.keys(r.series).length;
+      // Wat nu niet lukte, houdt zijn vorige koersen
+      const old = (data.market && data.market.series) || {};
+      const series = Object.assign({}, old, r.series);
+      for (const k of Object.keys(r.series)) delete r.errors[k];
+      state.investments = Object.assign({}, state.investments, { market: okCount ? { series, errors: r.errors, fetchedAt: new Date().toISOString() } : Object.assign({}, data.market || {}, { failedAt: new Date().toISOString(), errors: r.errors }) });
+      const failed = Object.keys(r.errors).length;
+      commit(force ? (okCount ? `Koersen opgehaald voor ${okCount} product(en)${failed ? `, voor ${failed} niet gevonden` : ''}` : 'Geen koersen gevonden') : undefined);
     } catch (e) {
       if (force) toast('Koersen ophalen lukte niet: ' + e.message);
     } finally { pricesBusy = false; }

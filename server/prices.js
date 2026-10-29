@@ -22,6 +22,8 @@ async function findSymbol(fetchFn, isin, name, preferredCurrency) {
   const q = encodeURIComponent(isin || name);
   const r = await getJson(fetchFn, `https://query1.finance.yahoo.com/v1/finance/search?q=${q}&quotesCount=8&newsCount=0`);
   const quotes = (r.quotes || []).filter(x => x.symbol && ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'].includes(x.quoteType || 'EQUITY'));
+  // Niets op ISIN (gebeurt bij sommige fondsen)? Dan op naam
+  if (!quotes.length && isin && name) return findSymbol(fetchFn, '', name, preferredCurrency);
   if (!quotes.length) return null;
   const score = x => (EU_EXCHANGES.includes(x.exchange) ? 2 : 0) + (preferredCurrency && preferredCurrency !== 'EUR' && !EU_EXCHANGES.includes(x.exchange) ? 3 : 0);
   return quotes.slice().sort((a, b) => score(b) - score(a))[0].symbol;
@@ -77,7 +79,7 @@ async function fetchPrices(fetchFn, instruments, cache) {
   for (const ins of instruments.slice(0, 40)) {
     const cacheKey = (ins.isin || ins.name) + '|' + ins.from + '|v2';
     const hit = cache && cache.get(cacheKey);
-    if (hit) { out.series[ins.key] = hit; continue; }
+    if (hit) { out.series[ins.key] = await withQuote(fetchFn, hit, cache); continue; }
     try {
       const symbol = await findSymbol(fetchFn, ins.isin, ins.name, ins.currency);
       if (!symbol) { out.errors[ins.key] = 'niet gevonden'; continue; }
@@ -87,6 +89,7 @@ async function fetchPrices(fetchFn, instruments, cache) {
       if (!points) { out.errors[ins.key] = 'wisselkoers ontbreekt'; continue; }
       out.series[ins.key] = { symbol, currency: h.currency, points };
       if (cache) cache.set(cacheKey, out.series[ins.key]);
+      out.series[ins.key] = await withQuote(fetchFn, out.series[ins.key], cache);
     } catch (e) {
       out.errors[ins.key] = e.message;
     }
@@ -95,6 +98,34 @@ async function fetchPrices(fetchFn, instruments, cache) {
 }
 
 const TROY_OZ = 31.1034768;
+const QUOTE_MAX_AGE = 3600000; // de koers van vandaag hoogstens een uur oud, de historiek 12 uur
+
+/**
+ * De historiek blijft 12 uur bewaard; de koers van vandaag wordt apart (elk uur) vernieuwd en als
+ * laatste punt toegevoegd. Lukt dat niet, dan blijft de reeks zoals ze was.
+ */
+async function withQuote(fetchFn, series, cache) {
+  try {
+    const qKey = 'quote|' + series.symbol;
+    let q = cache && cache.get(qKey, QUOTE_MAX_AGE);
+    if (!q) {
+      const last = await lastPrice(fetchFn, series.symbol);
+      let cur = series.currency, factor = 1;
+      if (cur === 'GBp' || cur === 'GBX') { cur = 'GBP'; factor = 0.01; }
+      const rate = cur === 'EUR' ? 1 : (await lastPrice(fetchFn, `EUR${cur}=X`)).price;
+      q = { date: last.at.slice(0, 10), eur: Math.round(last.price * factor / rate * 10000) / 100 };
+      if (cache) cache.set(qKey, q);
+    }
+    const points = series.points.slice();
+    const end = points[points.length - 1];
+    if (!end || q.date > end.date) points.push(q);
+    else if (q.date === end.date) points[points.length - 1] = q;
+    else return series;
+    return Object.assign({}, series, { points });
+  } catch (e) {
+    return series;
+  }
+}
 
 /** Laatste koers van een Yahoo-symbool. */
 async function lastPrice(fetchFn, symbol) {

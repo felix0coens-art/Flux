@@ -19,6 +19,8 @@ function find_symbol(callable $fetch, string $isin, string $name, string $prefer
     $q = rawurlencode($isin !== '' ? $isin : $name);
     $r = prices_json($fetch, "https://query1.finance.yahoo.com/v1/finance/search?q=$q&quotesCount=8&newsCount=0");
     $quotes = array_values(array_filter($r['quotes'] ?? [], fn($x) => !empty($x['symbol']) && in_array($x['quoteType'] ?? 'EQUITY', ['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX'], true)));
+    // Niets op ISIN (gebeurt bij sommige fondsen)? Dan op naam
+    if (!$quotes && $isin !== '' && $name !== '') return find_symbol($fetch, '', $name, $preferredCurrency);
     if (!$quotes) return null;
     $score = fn($x) => (in_array($x['exchange'] ?? '', EU_EXCHANGES, true) ? 2 : 0)
         + ($preferredCurrency !== '' && $preferredCurrency !== 'EUR' && !in_array($x['exchange'] ?? '', EU_EXCHANGES, true) ? 3 : 0);
@@ -69,10 +71,39 @@ function to_eur(callable $fetch, array $series, string $fromDate, array &$fxCach
 }
 
 /** Koerscache: 12 uur, in de gegevensmap (geen persoonsgegevens). */
-function price_cache_get(string $key): ?array {
+function price_cache_get(string $key, int $maxAge = 12 * 3600000): ?array {
     $c = read_json('price-cache.json', []);
     $hit = $c[$key] ?? null;
-    return $hit && now_ms() - $hit['at'] < 12 * 3600000 ? $hit['value'] : null;
+    return $hit && now_ms() - $hit['at'] < $maxAge ? $hit['value'] : null;
+}
+
+/**
+ * De historiek blijft 12 uur bewaard; de koers van vandaag wordt apart (elk uur) vernieuwd en als
+ * laatste punt toegevoegd (zelfde als withQuote in server/prices.js). Lukt dat niet, dan blijft de reeks.
+ */
+function price_with_quote(callable $fetch, array $series, bool $useCache, array &$fresh): array {
+    try {
+        $qKey = 'quote|' . $series['symbol'];
+        $q = $useCache ? price_cache_get($qKey, 3600000) : null;
+        if (!$q) {
+            [$price, $at] = last_price($fetch, $series['symbol']);
+            $cur = $series['currency'];
+            $factor = 1.0;
+            if ($cur === 'GBp' || $cur === 'GBX') { $cur = 'GBP'; $factor = 0.01; }
+            $rate = $cur === 'EUR' ? 1.0 : last_price($fetch, "EUR$cur=X")[0];
+            $q = ['date' => substr($at, 0, 10), 'eur' => round($price * $factor / $rate * 10000) / 100];
+            $fresh[$qKey] = $q;
+        }
+        $points = $series['points'];
+        $n = count($points);
+        if (!$n || $q['date'] > $points[$n - 1]['date']) $points[] = $q;
+        elseif ($q['date'] === $points[$n - 1]['date']) $points[$n - 1] = $q;
+        else return $series;
+        $series['points'] = $points;
+        return $series;
+    } catch (Throwable $e) {
+        return $series;
+    }
 }
 
 function price_cache_set(array $entries): void {
@@ -114,7 +145,7 @@ function fetch_prices(callable $fetch, array $instruments, bool $useCache = true
         $k = $ins['key'];
         $cacheKey = ($ins['isin'] !== '' ? $ins['isin'] : $ins['name']) . '|' . $ins['from'] . '|v2';
         $hit = $useCache ? price_cache_get($cacheKey) : null;
-        if ($hit) { $out['series']->$k = $hit; continue; }
+        if ($hit) { $out['series']->$k = price_with_quote($fetch, $hit, $useCache, $fresh); continue; }
         try {
             $symbol = find_symbol($fetch, $ins['isin'], $ins['name'], $ins['currency']);
             if (!$symbol) { $out['errors']->$k = 'niet gevonden'; continue; }
@@ -124,6 +155,7 @@ function fetch_prices(callable $fetch, array $instruments, bool $useCache = true
             if ($points === null) { $out['errors']->$k = 'wisselkoers ontbreekt'; continue; }
             $out['series']->$k = ['symbol' => $symbol, 'currency' => $h['currency'], 'points' => $points];
             $fresh[$cacheKey] = $out['series']->$k;
+            $out['series']->$k = price_with_quote($fetch, $out['series']->$k, $useCache, $fresh);
         } catch (Throwable $e) {
             $out['errors']->$k = $e->getMessage();
         }

@@ -35,7 +35,7 @@ const Accounts = require('./accounts.js');
 // Koerscache in het geheugen (12 uur)
 const priceCache = {
   map: new Map(),
-  get(k) { const v = this.map.get(k); return v && Date.now() - v.at < 12 * 3600000 ? v.value : null; },
+  get(k, maxAge) { const v = this.map.get(k); return v && Date.now() - v.at < (maxAge || 12 * 3600000) ? v.value : null; },
   set(k, value) { this.map.set(k, { at: Date.now(), value }); }
 };
 
