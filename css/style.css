@@ -1110,3 +1110,15 @@ svg text.gain-down { fill: var(--red); font-weight: 600; }
 .check-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
 .live-note { margin: 0 0 14px; }
 div.live-note { padding: 10px 14px; }
+
+/* Grafiek beleggingen: keuzes */
+.ivc-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ivc-seg button { padding: 4px 10px; font-size: 13px; }
+.chip.ivc-tog { border-style: solid; }
+.chip.ivc-tog.on { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
+.ivc-bench { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.ivc-bench select { font-size: 13px; padding: 3px 6px; }
+.ivc-sum { margin: 4px 0 8px; }
+.flow-tick { stroke-width: 2; }
+.flow-tick.dep { stroke: var(--series-2); }
+.flow-tick.wd { stroke: var(--muted); }

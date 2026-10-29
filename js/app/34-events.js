@@ -438,6 +438,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'degiro-connect': () => openModal({ type: 'degiro' }),
     'fetch-prices': () => maybeFetchPrices(true),
+    'ivc': el => setIvc({ [el.dataset.k]: el.dataset.v }),
+    'ivc-toggle': el => setIvc({ [el.dataset.k]: !ivcOpts()[el.dataset.k] }),
     'invest-export': () => openModal({ type: 'investExport' }),
     'invest-export-download': () => { download('helder-beleggingen-' + today + '.md', investExportText(), 'text/markdown;charset=utf-8'); toast('Gedownload. Sleep het bestand in een gesprek met Claude.'); },
     'invest-export-copy': () => { Promise.resolve().then(() => navigator.clipboard.writeText(investExportText())).then(() => toast('Gekopieerd. Plak het in een gesprek met Claude.')).catch(() => toast('Kopiëren lukte niet: gebruik Downloaden.')); },
@@ -565,6 +567,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
     if (el.dataset.assignInput) return;
     if (groupChange(el)) return;
+    if (el.dataset.ivcBench != null) { setIvc({ bench: el.value }); return; }
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
     if (modal && modal.type === 'search' && el.id === 'global-search-cat') { modal.cat = el.value; const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); return; }
     if (el.dataset.filter === 'bank.category') { ui.bank.category = el.value; if (el.value && ui.bank.status === 'todo' && el.value !== '__none__') ui.bank.status = ''; render(); return; }

@@ -3764,95 +3764,188 @@
       ${parts.length ? `<div class="profit-parts">${parts.map(([l, v, t]) => `<div class="pp-row" title="${esc(t)}"><span class="pp-l">${l}</span><span class="pp-bar"><i class="${v >= 0 ? 'up' : 'down'}" style="width:${Math.max(3, Math.round(Math.abs(v) / max * 100))}%"></i></span><span class="pp-v ${v >= 0 ? 'pos' : 'negv'}">${signMoney(v)}</span></div>`).join('')}</div>` : ''}
     </div>`;
   }
+  // ----- Grafiek "Portefeuille door de jaren": periode, weergave, lagen en vergelijken met een index -----
+
+  const IVC_RANGES = [['1m', '1M', 1], ['3m', '3M', 3], ['6m', '6M', 6], ['ytd', 'Dit jaar'], ['1y', '1J', 12], ['3y', '3J', 36], ['all', 'Alles']];
+  const IVC_MODES = [['value', 'Waarde en inleg'], ['gain', 'Winst in €'], ['pct', 'Winst in %']];
+  const IVC_BENCH = [['', 'Geen vergelijking'], ['IWDA.AS', 'MSCI World (IWDA)'], ['VWCE.DE', 'FTSE All-World (VWCE)'], ['CSPX.AS', 'S&P 500 (CSPX)'], ['EXSA.DE', 'Europa Stoxx 600 (EXSA)']];
+  const IVC_DEFAULT = { range: 'all', mode: 'value', zone: true, flows: true, sells: true, bench: '' };
+  function ivcOpts() {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem('helder-ivchart') || '{}') || {}; } catch (e) { /* geen opslag */ }
+    return Object.assign({}, IVC_DEFAULT, o);
+  }
+  function setIvc(patch) {
+    const o = Object.assign(ivcOpts(), patch);
+    try { localStorage.setItem('helder-ivchart', JSON.stringify(o)); } catch (e) { /* niet erg */ }
+    render();
+  }
+
+  // Koersen van de vergelijkingsindex (via de server, enkel in het geheugen)
+  const benchCache = {};
+  function benchSeries(symbol, from) {
+    if (!symbol) return null;
+    const c = benchCache[symbol];
+    if (c && c.from <= from) return c;
+    if (c && c.status === 'loading') return c;
+    if (!(Sync && Sync.mode === 'server' && !demo)) return { status: 'off' };
+    benchCache[symbol] = { status: 'loading', from };
+    Sync.prices([{ key: '__bench', symbol, isin: '', name: '', currency: 'EUR', from }])
+      .then(r => { const sr = r.series && r.series.__bench; benchCache[symbol] = sr && sr.points.length ? { status: 'ok', from, points: sr.points.filter(p => p.eur > 0) } : { status: 'error', from }; })
+      .catch(() => { benchCache[symbol] = { status: 'error', from }; })
+      .finally(() => { if (ui.view === 'invest' && !modal) render(); });
+    return benchCache[symbol];
+  }
+  /** Wat je portefeuille waard zou zijn als je elke storting (en opname) in de index had gestoken. */
+  function benchValues(points, flows, dates) {
+    const priceAt = d => { let p = null; for (const x of points) { if (x.date <= d) p = x.eur; else break; } return p != null ? p : points[0].eur; };
+    let units = 0, i = 0;
+    const fl = flows.slice().sort((a, b) => a.date.localeCompare(b.date));
+    return dates.map(d => {
+      while (i < fl.length && fl[i].date <= d) { units += fl[i].amount / priceAt(fl[i].date); i++; }
+      return Math.round(Math.max(0, units) * priceAt(d));
+    });
+  }
+
+  function ivcRangeStart(o, first, end) {
+    const r = IVC_RANGES.find(x => x[0] === o.range) || IVC_RANGES[IVC_RANGES.length - 1];
+    let d = r[0] === 'all' ? first : r[0] === 'ytd' ? end.slice(0, 4) + '-01-01' : C.addMonths(end, -r[2]);
+    return d < first ? first : d;
+  }
+
   function investChart(perf) {
-    // Echte waarderingen + reconstructie op elk maandeinde (of per week bij een korte historiek)
-    const actualVals = Invest.valuations(inv()).filter(v => v.date >= perf.start);
+    const o = ivcOpts();
+    const iv = inv();
+    const actualVals = Invest.valuations(iv).filter(v => v.date >= perf.start);
     const lastActual = actualVals.length ? actualVals[actualVals.length - 1].date : perf.end;
-    const spanDays = C.daysBetween(perf.start, lastActual);
-    const extra = [];
-    if (Invest.canEstimate(inv())) {
-      for (let d = perf.start; d < lastActual; d = spanDays > 200 ? C.addDays(C.addMonths(C.addDays(d, 1).slice(0, 8) + '01', 1), -1) : C.addDays(d, 7)) if (d > perf.start) extra.push(d);
+    const start = ivcRangeStart(o, perf.start, lastActual);
+    const spanDays = Math.max(1, C.daysBetween(start, lastActual));
+    // Punten: echte standen + reconstructie (dichter bij een korte periode)
+    const isAll = start === perf.start;
+    // Bij een deel van de historiek: ook een punt op de begindatum (vanaf het begin start alles op 0)
+    const extra = isAll ? [] : [start];
+    if (Invest.canEstimate(iv)) {
+      const stepDays = spanDays <= 70 ? 2 : spanDays <= 400 ? 7 : 0;
+      for (let d = start; d < lastActual; d = stepDays ? C.addDays(d, stepDays) : C.addDays(C.addMonths(C.addDays(d, 1).slice(0, 8) + '01', 1), -1)) if (d > start) extra.push(d);
     }
-    const est = Invest.valueSeries(inv(), extra);
-    const vals = actualVals.map(v => ({ date: v.date, value: v.value, actual: true })).concat(est.filter(e => !actualVals.some(v => v.date === e.date)).map(e => ({ date: e.date, value: e.valueEur, actual: false })))
+    const est = Invest.valueSeries(iv, extra);
+    const vals = actualVals.filter(v => v.date >= start).map(v => ({ date: v.date, value: v.value, actual: true }))
+      .concat(est.filter(e => !actualVals.some(v => v.date === e.date) && e.date >= start).map(e => ({ date: e.date, value: e.valueEur, actual: false })))
       .sort((a, b) => a.date.localeCompare(b.date));
-    const flows = perf.flows;
     if (!vals.length) return '<p class="muted">Nog geen waarderingen.</p>';
-    const start = perf.start, end = vals[vals.length - 1].date;
+    if (isAll && vals[0].date !== start) vals.unshift({ date: start, value: 0, actual: false, zero: true });
+    const flows = perf.flows;
+    const end = vals[vals.length - 1].date;
     const span = Math.max(1, C.daysBetween(start, end));
-    let cum = 0;
-    const steps = [{ date: start, value: 0 }];
-    for (const f of flows.filter(f => f.date <= end)) { cum += f.amount; steps.push({ date: f.date, value: cum, flow: f.amount }); }
-    const maxV = Math.max(1, ...vals.map(v => v.value), ...steps.map(d => d.value));
-    // Op een smal scherm (iPhone) een smallere tekening, zodat de tekst leesbaar blijft
+    const inleg = d => flows.filter(f => f.date <= d).reduce((a, f) => a + f.amount, 0);
+    const pf = Invest.profit(iv);
+    // Vergelijking met een index
+    const bs = o.bench ? benchSeries(o.bench, perf.start) : null;
+    const bench = bs && bs.status === 'ok' ? benchValues(bs.points, flows.filter(f => f.date <= end), vals.map(v => v.date)) : null;
+    const benchLabel = (IVC_BENCH.find(b => b[0] === o.bench) || [, ''])[1];
+    // Wat er getekend wordt, per weergave
+    const pts = vals.map((v, i) => {
+      const inl = v.zero ? 0 : inleg(v.date);
+      const b = bench ? bench[i] : null;
+      const f = val => o.mode === 'value' ? val : o.mode === 'gain' ? val - inl : inl > 0 ? (val - inl) / inl * 100 : null;
+      return { date: v.date, actual: v.actual, value: v.value, inleg: inl, bench: b, a: f(v.value), base: o.mode === 'value' ? inl : 0, c: b != null ? f(b) : null };
+    }).filter(p => p.a != null);
+    if (!pts.length) return '<p class="muted">Nog geen waarderingen in deze periode.</p>';
+    const all = pts.flatMap(p => [p.a, p.base].concat(p.c != null ? [p.c] : []));
+    let lo = Math.min(...all), hi = Math.max(...all);
+    if (o.mode === 'value' && o.range === 'all') lo = 0;
+    if (o.mode !== 'value') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+    const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+    if (!(o.mode === 'value' && o.range === 'all')) lo -= pad;
+    if (o.mode === 'value' && lo < 0) lo = 0;
+    hi += pad;
     const narrow = window.innerWidth < 700;
     const W = narrow ? 400 : 760, H = narrow ? 260 : 300, L = narrow ? 58 : 70, R = narrow ? 64 : 96, T = 16, B = 30;
     const x = d => L + (C.daysBetween(start, d) / span) * (W - L - R);
-    const top = maxV * 1.08;
-    const y = v => T + (1 - Math.max(0, v) / top) * (H - T - B);
-    const valuePath = [{ date: start, value: 0 }].concat(vals).map((v, i) => (i ? 'L' : 'M') + x(v.date).toFixed(1) + ' ' + y(v.value).toFixed(1)).join(' ');
-    // Inleg als trap: [x, y]-punten (ook gebruikt om de winstzone af te bakenen)
-    const stepPts = [];
-    steps.forEach((d, i) => {
-      const px = x(d.date);
-      if (i) stepPts.push([px, y(steps[i - 1].value)]);
-      stepPts.push([px, y(d.value)]);
-    });
-    stepPts.push([x(end), y(cum)]);
+    const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
     const pt = p => p[0].toFixed(1) + ' ' + p[1].toFixed(1);
-    const stepPath = stepPts.map((p, i) => (i ? 'L' : 'M') + pt(p)).join(' ');
-    // Winstzone: tussen de waarde en de inleg; groen waar de waarde erboven ligt, rood eronder
-    const valPts = [{ date: start, value: 0 }].concat(vals).map(v => [x(v.date), y(v.value)]);
-    const zone = 'M' + valPts.map(pt).join(' L') + ' L' + stepPts.slice().reverse().map(pt).join(' L') + ' Z';
-    const above = 'M' + stepPts.map(pt).join(' L') + ` L${x(end).toFixed(1)} ${T} L${x(start).toFixed(1)} ${T} Z`;
-    const below = 'M' + stepPts.map(pt).join(' L') + ` L${x(end).toFixed(1)} ${H - B} L${x(start).toFixed(1)} ${H - B} Z`;
-    // Verkopen op de waardelijn, met hun gerealiseerde winst
-    const pf = Invest.profit(inv());
-    const valueAt = d => { let best = vals[0]; for (const v of vals) if (Math.abs(C.daysBetween(v.date, d)) < Math.abs(C.daysBetween(best.date, d))) best = v; return best.value; };
-    const sells = (pf ? pf.sells : []).filter(s => s.date >= start && s.date <= end);
+    const aPts = pts.map(p => [x(p.date), y(p.a)]);
+    // Basislijn: de inleg als trap (waarde), of de nullijn (winst)
+    let basePts;
+    if (o.mode === 'value') {
+      let cur = isAll ? 0 : inleg(start);
+      basePts = [[x(start), y(cur)]];
+      for (const f of flows.filter(f => (isAll ? f.date >= start : f.date > start) && f.date <= end)) { const px = x(f.date); basePts.push([px, y(cur)]); cur += f.amount; basePts.push([px, y(cur)]); }
+      basePts.push([x(end), y(cur)]);
+    } else basePts = [[x(start), y(0)], [x(end), y(0)]];
+    const basePath = 'M' + basePts.map(pt).join(' L');
+    const zone = 'M' + aPts.map(pt).join(' L') + ' L' + basePts.slice().reverse().map(pt).join(' L') + ' Z';
+    const above = basePath + ` L${x(end).toFixed(1)} ${T} L${x(start).toFixed(1)} ${T} Z`;
+    const below = basePath + ` L${x(end).toFixed(1)} ${H - B} L${x(start).toFixed(1)} ${H - B} Z`;
+    const cPath = bench ? 'M' + pts.filter(p => p.c != null).map(p => pt([x(p.date), y(p.c)])).join(' L') : '';
     // Rasterlijnen op mooie stappen
-    const raw = top / 4;
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    const stepV = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+    const raw = (hi - lo) / 4;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+    const stepV = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= raw) || mag * 10;
     const ticks = [];
-    for (let v = 0; v <= top; v += stepV) ticks.push(v);
-    const years = [];
-    for (let yr = Number(start.slice(0, 4)) + 1; yr <= Number(end.slice(0, 4)); yr++) years.push(yr + '-01-01');
-    const lastVal = vals[vals.length - 1];
-    chartData = { start, span, W, vals, flows: flows.filter(f => f.date <= end), x0: L, x1: W - R, realizedUntil: pf ? pf.realizedUntil : () => 0, sells };
-    const compact = v => Math.abs(v) >= 100000000 ? '€ ' + (v / 100000000).toFixed(1).replace('.', ',') + ' mln' : Math.abs(v) >= 1000000 || (narrow && Math.abs(v) >= 100000) ? '€ ' + (Math.round(v / 10000) / 10).toString().replace('.', ',') + 'k' : money(v);
-    const yLast = y(lastVal.value), yCum = y(cum);
-    const apart = Math.abs(yLast - yCum) < 16;
+    for (let v = Math.ceil(lo / stepV) * stepV; v <= hi; v += stepV) ticks.push(v);
+    // Tijdas: jaren, of maanden bij een korte periode
+    const xt = [];
+    if (span > 500) for (let yr = Number(start.slice(0, 4)) + 1; yr <= Number(end.slice(0, 4)); yr++) xt.push([yr + '-01-01', String(yr)]);
+    else for (let d = C.addMonths(start.slice(0, 8) + '01', 1); d <= end; d = C.addMonths(d, span > 200 ? 2 : 1)) xt.push([d, MONTHS_SHORT[Number(d.slice(5, 7)) - 1] + (d.slice(5, 7) === '01' ? ' ' + d.slice(2, 4) : '')]);
+    const compact = v => Math.abs(v) >= 100000000 ? '€ ' + (v / 100000000).toFixed(1).replace('.', ',') + ' mln' : Math.abs(v) >= 1000000 || (narrow && Math.abs(v) >= 100000) ? '€ ' + (Math.round(v / 10000) / 10).toString().replace('.', ',') + 'k' : money(Math.round(v));
+    const fmt = v => o.mode === 'pct' ? (v > 0 ? '+' : '') + v.toFixed(Math.abs(hi - lo) < 10 ? 1 : 0).replace('.', ',') + '%' : (o.mode === 'gain' && v > 0 ? '+' : '') + compact(v);
+    const sells = o.sells && pf ? pf.sells.filter(sl => sl.date >= start && sl.date <= end) : [];
+    const aAt = d => { let best = pts[0]; for (const p of pts) if (Math.abs(C.daysBetween(p.date, d)) < Math.abs(C.daysBetween(best.date, d))) best = p; return best.a; };
+    const flowPts = o.flows ? flows.filter(f => (isAll ? f.date >= start : f.date > start) && f.date <= end) : [];
+    const last = pts[pts.length - 1], first = pts[0];
+    chartData = { start, span, W, pts, mode: o.mode, flows: flows.filter(f => f.date <= end), x0: L, x1: W - R, realizedUntil: pf ? pf.realizedUntil : () => 0, sells, benchLabel: bench ? benchLabel : '' };
+    // Samenvatting van de gekozen periode
+    const periodGain = isAll ? last.value - last.inleg : (last.value - first.value) - (last.inleg - first.inleg);
+    const basis = isAll ? last.inleg : first.value + Math.max(0, last.inleg - first.inleg);
+    const summaryLine = `<p class="small ivc-sum">${isAll ? `Sinds ${fmtDate(start)}` : `Van ${fmtDate(first.date)} tot ${fmtDate(last.date)}`}: winst <strong class="${periodGain >= 0 ? 'pos' : 'negv'}">${signMoney(periodGain)}</strong>${basis > 0 ? ` (${pct(periodGain / basis)})` : ''}${!isAll ? ` · waarde ${money(first.value)} → ${money(last.value)}${last.inleg !== first.inleg ? `, waarvan ${signMoney(last.inleg - first.inleg)} gestort` : ''}` : ''}${bench && last.bench != null ? ` · <span class="ivc-bench-sum">met ${esc(benchLabel)} had je nu ${money(last.bench)} (${signMoney(last.bench - last.inleg)} winst), jij ${money(last.value)}</span>` : ''}</p>`;
+    const seg = (k, list) => `<div class="seg ivc-seg" role="group">${list.map(([v, label]) => `<button class="${o[k] === v ? 'active' : ''}" data-action="ivc" data-k="${k}" data-v="${v}" aria-pressed="${o[k] === v}">${label}</button>`).join('')}</div>`;
+    const tog = (k, label) => `<button class="chip ivc-tog ${o[k] ? 'on' : ''}" data-action="ivc-toggle" data-k="${k}" aria-pressed="${!!o[k]}">${o[k] ? '✓ ' : ''}${label}</button>`;
+    const server = Sync && Sync.mode === 'server' && !demo;
+    const benchNote = o.bench && bs ? (bs.status === 'loading' ? ' <span class="small muted">koersen ophalen…</span>' : bs.status === 'error' ? ' <span class="small warn-text">niet gevonden</span>' : bs.status === 'off' ? ' <span class="small muted">kan enkel op je server</span>' : '') : '';
+    const yLast = y(last.a), yBase = y(last.base);
+    const apart = Math.abs(yLast - yBase) < 16;
     return `
-      <div class="legend"><span><i class="sw line s1"></i>Waarde portefeuille</span>
-        <span><i class="sw line s2"></i>Totale inleg (netto stortingen)</span>
-        <span><i class="sw area up"></i>Winst</span><span><i class="sw area down"></i>Verlies</span>${sells.length ? '<span><i class="sw sell"></i>Verkoop</span>' : ''}
-        <span><i class="sw dot s2"></i>Bijstorting</span><span><i class="sw dot hollow"></i>Opname</span><span><i class="sw dot s1"></i>Werkelijke stand</span></div>
+      <div class="ivc-controls">
+        ${seg('range', IVC_RANGES)}
+        ${seg('mode', IVC_MODES)}
+      </div>
+      <div class="ivc-controls small">
+        ${tog('zone', o.mode === 'value' ? 'Winstzone' : 'Kleur winst/verlies')}${tog('flows', 'Stortingen')}${pf && pf.sells.length ? tog('sells', 'Verkopen') : ''}
+        <label class="ivc-bench">Vergelijk met <select data-ivc-bench aria-label="Vergelijken met een index" ${server || o.bench ? '' : 'disabled'}>${IVC_BENCH.map(([v, l]) => `<option value="${v}" ${o.bench === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${benchNote}
+      </div>
+      ${summaryLine}
+      <div class="legend"><span><i class="sw line s1"></i>${o.mode === 'value' ? 'Waarde portefeuille' : o.mode === 'gain' ? 'Effectieve winst (€)' : 'Winst in % van je inleg'}</span>
+        ${o.mode === 'value' ? '<span><i class="sw line s2"></i>Totale inleg (netto stortingen)</span>' : '<span><i class="sw line s2"></i>Nullijn</span>'}
+        ${o.zone ? '<span><i class="sw area up"></i>Winst</span><span><i class="sw area down"></i>Verlies</span>' : ''}${bench ? `<span><i class="sw line" style="background:var(--purple)"></i>Als alles in ${esc(benchLabel)}</span>` : ''}${sells.length ? '<span><i class="sw sell"></i>Verkoop</span>' : ''}
+        ${flowPts.length ? '<span><i class="sw dot s2"></i>Bijstorting</span><span><i class="sw dot hollow"></i>Opname</span>' : ''}</div>
       <div class="chart-wrap" id="invest-chart">
-        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Waarde van je portefeuille en je totale inleg door de tijd">
-          ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-line"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${compact(v)}</text>`).join('')}
-          ${years.map(d => `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${H - B}" class="grid-line"/><text x="${x(d)}" y="${H - 10}" text-anchor="middle">${d.slice(0, 4)}</text>`).join('')}
-          <defs><clipPath id="iv-above"><path d="${above}"/></clipPath><clipPath id="iv-below"><path d="${below}"/></clipPath></defs>
+        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Portefeuille door de tijd">
+          ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-line"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`).join('')}
+          ${xt.map(([d, label]) => `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${H - B}" class="grid-line"/><text x="${x(d)}" y="${H - 10}" text-anchor="middle">${label}</text>`).join('')}
+          ${o.zone ? `<defs><clipPath id="iv-above"><path d="${above}"/></clipPath><clipPath id="iv-below"><path d="${below}"/></clipPath></defs>
           <path d="${zone}" class="gain-zone up" clip-path="url(#iv-above)"/>
-          <path d="${zone}" class="gain-zone down" clip-path="url(#iv-below)"/>
-          <path d="${stepPath}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round"/>
-          <path d="${valuePath}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>
-          ${steps.slice(1).map(d => `<circle cx="${x(d.date)}" cy="${y(d.value)}" r="4" class="${d.flow > 0 ? 'dep' : 'wd'}"><title>${fmtDate(d.date)}: ${d.flow > 0 ? 'storting' : 'opname'} ${money(Math.abs(d.flow))}</title></circle>`).join('')}
-          ${vals.filter(v => v.actual).map(v => `<circle cx="${x(v.date)}" cy="${y(v.value)}" r="3" class="actual"><title>${fmtDate(v.date)}: werkelijke stand ${money(v.value)}</title></circle>`).join('')}
-          ${sells.map(sl => { const cx = x(sl.date), cy = y(valueAt(sl.date)) - 9; return `<path d="M${(cx - 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${(cx + 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${cx.toFixed(1)} ${(cy + 4).toFixed(1)} Z" class="sell-mark ${sl.result >= 0 ? 'up' : 'down'}"><title>${fmtDate(sl.date)}: ${esc(sl.name)} verkocht voor ${money(sl.proceeds)} · ${sl.result >= 0 ? 'winst' : 'verlies'} ${money(Math.abs(sl.result))}</title></path>`; }).join('')}
-          <text x="${W - R + 8}" y="${(apart && yLast > yCum ? yLast + 10 : yLast) + 4}" class="direct">${compact(lastVal.value)}</text>
-          <text x="${W - R + 8}" y="${(apart && yCum >= yLast ? yCum + 10 : yCum) + 4}" class="direct muted-fill">${compact(cum)}${narrow ? '' : ' inleg'}</text>
-          ${apart ? '' : `<text x="${W - R + 8}" y="${((yLast + yCum) / 2 + 4).toFixed(1)}" class="direct ${lastVal.value - cum >= 0 ? 'gain-up' : 'gain-down'}">${lastVal.value - cum >= 0 ? '+' : '−'}${compact(Math.abs(lastVal.value - cum)).replace('€ ', '€')}</text>`}
+          <path d="${zone}" class="gain-zone down" clip-path="url(#iv-below)"/>` : ''}
+          <path d="${basePath}" fill="none" stroke="var(--series-2)" stroke-width="${o.mode === 'value' ? 2 : 1}" stroke-linejoin="round" ${o.mode === 'value' ? '' : 'stroke-dasharray="4 3"'}/>
+          ${cPath ? `<path d="${cPath}" fill="none" stroke="var(--purple)" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>` : ''}
+          <path d="M${aPts.map(pt).join(' L')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>
+          ${o.mode === 'value' ? flowPts.map(f => `<circle cx="${x(f.date)}" cy="${y(inleg(f.date))}" r="4" class="${f.amount > 0 ? 'dep' : 'wd'}"><title>${fmtDate(f.date)}: ${f.amount > 0 ? 'storting' : 'opname'} ${money(Math.abs(f.amount))}</title></circle>`).join('')
+            : flowPts.map(f => `<line x1="${x(f.date)}" x2="${x(f.date)}" y1="${H - B - 6}" y2="${H - B}" class="${f.amount > 0 ? 'flow-tick dep' : 'flow-tick wd'}"><title>${fmtDate(f.date)}: ${f.amount > 0 ? 'storting' : 'opname'} ${money(Math.abs(f.amount))}</title></line>`).join('')}
+          ${pts.filter(p => p.actual).map(p => `<circle cx="${x(p.date)}" cy="${y(p.a)}" r="3" class="actual"><title>${fmtDate(p.date)}: werkelijke stand ${money(p.value)}</title></circle>`).join('')}
+          ${sells.map(sl => { const cx = x(sl.date), cy = y(aAt(sl.date)) - 9; return `<path d="M${(cx - 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${(cx + 5).toFixed(1)} ${(cy - 4).toFixed(1)} L${cx.toFixed(1)} ${(cy + 4).toFixed(1)} Z" class="sell-mark ${sl.result >= 0 ? 'up' : 'down'}"><title>${fmtDate(sl.date)}: ${esc(sl.name)} verkocht voor ${money(sl.proceeds)} · ${sl.result >= 0 ? 'winst' : 'verlies'} ${money(Math.abs(sl.result))}</title></path>`; }).join('')}
+          <text x="${W - R + 8}" y="${(apart && yLast > yBase ? yLast + 10 : yLast) + 4}" class="direct">${fmt(last.a)}</text>
+          ${o.mode === 'value' ? `<text x="${W - R + 8}" y="${(apart && yBase >= yLast ? yBase + 10 : yBase) + 4}" class="direct muted-fill">${compact(last.inleg)}${narrow ? '' : ' inleg'}</text>` : ''}
+          ${o.mode === 'value' && !apart ? `<text x="${W - R + 8}" y="${((yLast + yBase) / 2 + 4).toFixed(1)}" class="direct ${last.value - last.inleg >= 0 ? 'gain-up' : 'gain-down'}">${last.value - last.inleg >= 0 ? '+' : '−'}${compact(Math.abs(last.value - last.inleg)).replace('€ ', '€')}</text>` : ''}
           <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>
         </svg>
         <div class="chart-tip" hidden></div>
       </div>
       <details><summary class="small">Toon als tabel</summary>
-        <div class="table-wrap"><table><thead><tr><th>Datum</th><th class="right">Waarde</th><th class="right">Inleg tot dan</th><th class="right">Effectieve winst</th><th class="right">Waarvan verkocht</th></tr></thead>
-        <tbody>${vals.map(v => { const inl = inlegOn(v.date); const g = v.value - inl; const rz = pf ? pf.realizedUntil(v.date) : 0; return `<tr><td>${fmtDate(v.date)}${v.actual ? '' : ' <span class="muted small">(geschat)</span>'}</td><td class="amount">${money(v.value)}</td><td class="amount">${money(inl)}</td><td class="amount ${g >= 0 ? 'pos' : 'negv'}">${signMoney(g)}${inl > 0 ? `<div class="small">${pct(g / inl)}</div>` : ''}</td><td class="amount">${rz ? signMoney(rz) : '—'}</td></tr>`; }).join('')}</tbody></table></div>
-      </details>`;
+        <div class="table-wrap"><table><thead><tr><th>Datum</th><th class="right">Waarde</th><th class="right">Inleg tot dan</th><th class="right">Effectieve winst</th><th class="right">Waarvan verkocht</th>${bench ? `<th class="right">${esc(benchLabel)}</th>` : ''}</tr></thead>
+        <tbody>${pts.map(p => { const g = p.value - p.inleg; const rz = pf ? pf.realizedUntil(p.date) : 0; return `<tr><td>${fmtDate(p.date)}${p.actual ? '' : ' <span class="muted small">(geschat)</span>'}</td><td class="amount">${money(p.value)}</td><td class="amount">${money(p.inleg)}</td><td class="amount ${g >= 0 ? 'pos' : 'negv'}">${signMoney(g)}${p.inleg > 0 ? `<div class="small">${pct(g / p.inleg)}</div>` : ''}</td><td class="amount">${rz ? signMoney(rz) : '—'}</td>${bench ? `<td class="amount">${p.bench != null ? money(p.bench) : ''}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>
+      </details>
+      ${bench ? `<p class="small muted">Vergelijking: alsof je elke storting en opname op dezelfde dag in ${esc(benchLabel)} had gestoken (koersen van Yahoo Finance, zonder kosten of taksen). De grafiek gebruikt wekelijkse koersen.</p>` : ''}`;
   }
-  function inlegOn(date) { return (chartData ? chartData.flows : []).filter(f => f.date <= date).reduce((s, f) => s + f.amount, 0); }
 
   function onChartMove(ev) {
     const wrap = $('#invest-chart');
@@ -3863,19 +3956,18 @@
     if (sx < chartData.x0 - 10 || sx > chartData.x1 + 10) return;
     const dayOff = Math.round(Math.min(1, Math.max(0, (sx - chartData.x0) / (chartData.x1 - chartData.x0))) * chartData.span);
     const date = C.addDays(chartData.start, dayOff);
-    let best = chartData.vals[0];
-    for (const v of chartData.vals) if (Math.abs(C.daysBetween(v.date, date)) < Math.abs(C.daysBetween(best.date, date))) best = v;
-    const inl = inlegOn(best.date);
+    let best = chartData.pts[0];
+    for (const p of chartData.pts) if (Math.abs(C.daysBetween(p.date, date)) < Math.abs(C.daysBetween(best.date, date))) best = p;
     const near = chartData.flows.filter(f => Math.abs(C.daysBetween(f.date, date)) <= Math.max(3, chartData.span / 120));
     const bx = chartData.x0 + C.daysBetween(chartData.start, best.date) / chartData.span * (chartData.x1 - chartData.x0);
     const line = $('.crosshair', svg);
     line.setAttribute('x1', bx); line.setAttribute('x2', bx); line.style.display = '';
     const tip = $('.chart-tip', wrap);
     tip.hidden = false;
-    const g = best.value - inl;
+    const g = best.value - best.inleg;
     const rz = chartData.realizedUntil(best.date);
     const sold = chartData.sells.filter(sl => Math.abs(C.daysBetween(sl.date, date)) <= Math.max(3, chartData.span / 120));
-    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong>${best.actual ? '' : ' <span class="muted">(gereconstrueerd)</span>'}<br>Waarde: ${money(best.value)}<br>Inleg: ${money(inl)}<br><strong class="${g >= 0 ? 'pos' : 'negv'}">${g >= 0 ? 'Winst' : 'Verlies'}: ${signMoney(g)}${inl > 0 ? ' (' + pct(g / inl) + ')' : ''}</strong>${rz ? '<br><span class="muted">waarvan al verkocht: ' + signMoney(rz) + '</span>' : ''}${sold.length ? '<hr>' + sold.map(sl => 'Verkoop ' + esc(sl.name) + ': ' + signMoney(sl.result)).join('<br>') : ''}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
+    tip.innerHTML = `<strong>${fmtDate(best.date)}</strong>${best.actual ? '' : ' <span class="muted">(gereconstrueerd)</span>'}<br>Waarde: ${money(best.value)}<br>Inleg: ${money(best.inleg)}<br><strong class="${g >= 0 ? 'pos' : 'negv'}">${g >= 0 ? 'Winst' : 'Verlies'}: ${signMoney(g)}${best.inleg > 0 ? ' (' + pct(g / best.inleg) + ')' : ''}</strong>${rz ? '<br><span class="muted">waarvan al verkocht: ' + signMoney(rz) + '</span>' : ''}${best.bench != null ? `<hr>${esc(chartData.benchLabel)}: ${money(best.bench)} <span class="muted">(${signMoney(best.bench - best.inleg)})</span>` : ''}${sold.length ? '<hr>' + sold.map(sl => 'Verkoop ' + esc(sl.name) + ': ' + signMoney(sl.result)).join('<br>') : ''}${near.length ? '<hr>' + near.map(f => (f.amount > 0 ? 'Storting ' : 'Opname ') + money(Math.abs(f.amount)) + ' · ' + fmtDate(f.date)).join('<br>') : ''}`;
     const left = (bx / chartData.W) * rect.width;
     tip.style.left = Math.min(rect.width - 200, Math.max(0, left + 12)) + 'px';
   }
@@ -6051,6 +6143,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'degiro-connect': () => openModal({ type: 'degiro' }),
     'fetch-prices': () => maybeFetchPrices(true),
+    'ivc': el => setIvc({ [el.dataset.k]: el.dataset.v }),
+    'ivc-toggle': el => setIvc({ [el.dataset.k]: !ivcOpts()[el.dataset.k] }),
     'invest-export': () => openModal({ type: 'investExport' }),
     'invest-export-download': () => { download('helder-beleggingen-' + today + '.md', investExportText(), 'text/markdown;charset=utf-8'); toast('Gedownload. Sleep het bestand in een gesprek met Claude.'); },
     'invest-export-copy': () => { Promise.resolve().then(() => navigator.clipboard.writeText(investExportText())).then(() => toast('Gekopieerd. Plak het in een gesprek met Claude.')).catch(() => toast('Kopiëren lukte niet: gebruik Downloaden.')); },
@@ -6178,6 +6272,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     if (el.dataset.selectAll != null) { for (const id of el.dataset.selectAll.split(',').filter(Boolean)) { if (el.checked) ui.selected.add(id); else ui.selected.delete(id); } render(); return; }
     if (el.dataset.assignInput) return;
     if (groupChange(el)) return;
+    if (el.dataset.ivcBench != null) { setIvc({ bench: el.value }); return; }
     if (el.dataset.filter === 'bank.account') { ui.bank.account = el.value; render(); return; }
     if (modal && modal.type === 'search' && el.id === 'global-search-cat') { modal.cat = el.value; const r = $('#search-results'); if (r) r.innerHTML = searchListHtml(modal.q, modal.cat); return; }
     if (el.dataset.filter === 'bank.category') { ui.bank.category = el.value; if (el.value && ui.bank.status === 'todo' && el.value !== '__none__') ui.bank.status = ''; render(); return; }
