@@ -206,6 +206,10 @@ for (const [name, start] of [['node', startNode], ['php', startPhp]]) {
       const carla = await call('POST', '/api/login', { username: 'carla', password: 'carla-geheim-1' });
       assert.equal(carla.json.role, 'member');
       assert.equal((await call('POST', '/api/password', { current: 'carla-geheim-1', password: 'carla-nieuw-22' }, carla.cookie)).status, 200);
+      // Een nieuw wachtwoord verandert niets anders aan het account (rol, naam, ...)
+      const after = (await call('GET', '/api/session', null, carla.cookie)).json;
+      assert.deepEqual([after.role, after.displayName], ['member', 'Carla V.']);
+      assert.equal((await call('POST', '/api/login', { username: 'carla', password: 'carla-nieuw-22' })).json.role, 'member');
 
       // Bert maakt een account en verwijdert het zelf weer: alles meteen weg
       const bert = (await googleLogin({ sub: '1003', email: 'bert@example.com', name: 'Bert' })).cookie;

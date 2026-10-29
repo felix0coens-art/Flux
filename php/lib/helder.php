@@ -136,7 +136,9 @@ function set_password(string $username, string $password): void {
     with_lock('users', function () use ($username, $password) {
         $users = get_users();
         if (!isset($users[$username])) throw new HttpError(404, 'Onbekende gebruiker');
-        $users[$username] = ['pw' => password_hash($password, PASSWORD_DEFAULT), 'created' => $users[$username]['created'] ?? gmdate('c')];
+        // Enkel het wachtwoord vervangen: rol, Google-koppeling, huishouden, ... blijven (zoals setPassword in Node)
+        $users[$username]['pw'] = password_hash($password, PASSWORD_DEFAULT);
+        if (!isset($users[$username]['created'])) $users[$username]['created'] = gmdate('c');
         write_json('users.json', $users);
     });
 }
