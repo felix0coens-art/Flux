@@ -420,3 +420,33 @@ test('js/app.js is exact de samenvoeging van de stukken in js/app/', () => {
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
   assert.equal(build() === app, true, 'voer "npm run build:app" uit na het wijzigen van een stuk in js/app/');
 });
+
+test('regels: nieuwe transacties krijgen een voorstel dat je bevestigt (uit te zetten)', () => {
+  const s = Store.defaultState();
+  const cat = s.categories.find(c => c.kind === 'expense');
+  s.rules.push({ id: 'r1', name: 'Colruyt', field: 'counterparty', operator: 'name', value: 'colruyt', categoryId: cat.id, direction: 'out', enabled: true, priority: 10 });
+  s.settings.rulesConfirmSince = Date.parse('2026-10-01T00:00:00Z');
+  const oud = { id: 'oud', accountId: 'acc_cash', date: '2026-09-01', amount: -1000, counterparty: 'Colruyt', description: '', splits: [], source: 'import', createdAt: Date.parse('2026-09-02T00:00:00Z') };
+  const nieuw = { id: 'nieuw', accountId: 'acc_cash', date: '2026-10-20', amount: -2000, counterparty: 'Colruyt', description: '', splits: [], source: 'import', createdAt: Date.parse('2026-10-21T00:00:00Z') };
+  s.transactions.push(oud, nieuw);
+  C.recompute(s);
+  assert.equal(oud.categoryId, cat.id, 'wat er al was, blijft automatisch');
+  assert.equal(nieuw.categoryId, null, 'nieuw blijft te verwerken');
+  assert.equal(nieuw.ruleSuggest, 'r1');
+  // Het voorstel synchroniseert niet als wijziging (het wordt op elk toestel berekend)
+  assert.equal(C.entityHash(nieuw), C.entityHash(Object.assign({}, nieuw, { ruleSuggest: undefined })));
+  // Bevestigen: een gewone koppeling die bewaard en gesynchroniseerd wordt
+  assert.ok(C.confirmRuleSuggestion(s, nieuw));
+  C.recompute(s);
+  assert.deepEqual([nieuw.categoryId, nieuw.categorySource, nieuw.ruleConfirmed, nieuw.ruleSuggest], [cat.id, 'manual', 'r1', undefined]);
+  // Instelling uit: regels verwerken weer vanzelf
+  const t3 = Object.assign({}, nieuw, { id: 't3', categoryId: null, categorySource: null, ruleConfirmed: undefined });
+  s.transactions.push(t3);
+  C.recompute(s);
+  assert.equal(t3.categoryId, null);
+  s.settings.rulesConfirm = false;
+  C.recompute(s);
+  assert.equal(t3.categoryId, cat.id);
+  assert.equal(t3.categorySource, 'rule');
+  assert.equal(t3.ruleSuggest, undefined);
+});

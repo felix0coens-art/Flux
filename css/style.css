@@ -1100,3 +1100,11 @@ a.todo-row:hover { background: var(--surface-2); border-radius: 8px; }
 .sell-mark.down { fill: var(--red); }
 svg text.gain-up { fill: var(--green); font-weight: 600; }
 svg text.gain-down { fill: var(--red); font-weight: 600; }
+
+/* Voorstel van een regel, nog te bevestigen */
+.rule-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px; background: var(--primary-soft); font-size: 13px; }
+.rule-suggest .grow { flex: 1 1 160px; min-width: 0; }
+.notice .rule-suggest { background: transparent; padding: 0; margin: 0; }
+.rule-suggest-help { margin: 0 0 8px; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin: 8px 0; }
+.check-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }

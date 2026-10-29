@@ -374,6 +374,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'copy': el => { try { navigator.clipboard.writeText(el.dataset.copy); toast('Gekopieerd'); } catch (e) { toast('Kopiëren lukte niet: selecteer en kopieer de tekst zelf.'); } },
     'edit-tx': el => { const t = txById(el.dataset.id); if (t) openModal({ type: 'tx', tx: JSON.parse(JSON.stringify(t)) }); },
     'save-tx': saveTx,
+    'rule-confirm': el => { const t = txById(el.dataset.id); if (t) { if (modal && modal.type === 'tx') closeModal(); confirmSuggestions([t]); } },
+    'bulk-rule-confirm': () => { const list = Array.from(ui.selected).map(txById).filter(t => ruleSuggestion(t)); confirmSuggestions(list); },
     'delete-tx': () => {
       const t = txById(modal.tx.id);
       if (!t) return;
@@ -592,6 +594,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       return;
     }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
+    if (el.dataset.rulesConfirm != null) {
+      state.settings = Object.assign({}, state.settings, el.checked ? { rulesConfirm: true, rulesConfirmSince: Date.now() } : { rulesConfirm: false });
+      commit(el.checked ? 'Regels doen voortaan een voorstel dat je bevestigt' : 'Regels verwerken nieuwe transacties weer vanzelf');
+      return;
+    }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx' && el.id === 'tx-refund' && el.value === '__search__') { const back = modal; openModal({ type: 'refundPick', txId: back.tx.id, back, search: '' }); return; }

@@ -71,7 +71,7 @@ Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagsc
 
 **Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijderen kan je altijd terugdraaien: meteen via **Ongedaan maken** in de melding, of later via de **🗑 Prullenbak** onderaan het tabblad Bank. Zolang transacties uit een bankbestand of de bankkoppeling in de prullenbak staan, komen ze bij een volgende import niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
 
-Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij worden vanzelf gekoppeld. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
+Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij krijgen vanzelf een **voorstel** (💡). Een transactie is pas verwerkt als je dat voorstel bevestigt met **✓** (of je vinkt er meerdere aan en bevestigt ze samen). Wil je dat regels nieuwe transacties meteen zelf verwerken, zet dat dan uit in *Instellingen → Automatisch indelen*. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 
 ### Inkomsten met kosten
 

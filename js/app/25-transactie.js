@@ -14,6 +14,7 @@
     const people = Array.from(new Set(adv.items.map(x => x.person))).sort();
 
     const body = `
+      ${!isNew && ruleSuggestion(t) && !t.categoryId ? `<div class="notice info small">${ruleSuggestHtml(t)}</div>` : ''}
       <div class="provenance small">${imported ? `📄 Uit bestand <strong>${esc(i ? i.fileName : '?')}</strong>${i ? ` (${esc(i.bankName || '')}, opgeladen ${esc(fmtDateTime(i.importedAt))})` : ''}. Correcties blijven bewaard.` : isNew ? '✎ Nieuwe manuele transactie' : '✎ Manueel ingevoerd'}</div>
       <label class="field"><span>Eigen titel <span class="muted">(optioneel — waarvoor was dit?)</span></span>
         <input type="text" id="tx-title" value="${esc(t.title || '')}" placeholder="bv. Verjaardagscadeau mama, Treinticket Brussel, Etentje met collega's"></label>
@@ -261,6 +262,7 @@
       return;
     }
     if (value === 'refund') { render(); openModal({ type: 'refundPick', txId: t.id, search: '' }); return; }
+    if (value === 'rule-ok') { if (!confirmSuggestions([t])) render(); return; }
     if (value === 'group:new') { render(); openModal({ type: 'groupNew', then: { txId: t.id } }); return; }
     if (value.startsWith('group:')) { render(); openModal({ type: 'groupAssign', txId: t.id, groupId: value.slice(6) }); return; }
     if (value === 'split' || value === 'cat:' + C.SYS_ADVANCE) {

@@ -240,34 +240,76 @@
     return part > 0 ? Math.sign(amount) * part : 0;
   }
 
+  /**
+   * Regels bevestigen (standaard aan): een regel zet een nieuwe transactie niet meer zelf op verwerkt,
+   * maar doet een voorstel (tx.ruleSuggest) dat je per transactie bevestigt. Transacties die er al
+   * waren vóór je dit aanzette, blijven zoals ze waren. Geeft het tijdstip terug vanaf wanneer, of null (uit).
+   */
+  const RULES_CONFIRM_DEFAULT_SINCE = Date.parse('2026-10-29T00:00:00Z');
+  function rulesConfirmSince(state) {
+    const s = state.settings || {};
+    if (s.rulesConfirm === false) return null;
+    return Number(s.rulesConfirmSince) || RULES_CONFIRM_DEFAULT_SINCE;
+  }
+  /** Moet deze transactie eerst bevestigd worden voor een regel ze mag verwerken? */
+  function needsRuleConfirm(state, tx, since) {
+    if (since === undefined) since = rulesConfirmSince(state);
+    return since != null && Number(tx.createdAt) >= since;
+  }
+
+  /** Wat een regel met een transactie doet (categorie, deel als voorschot, persoon). source: 'rule' of 'manual'. */
+  function ruleEffect(tx, rule, source) {
+    let changed = 0;
+    const newCat = rule ? rule.categoryId || null : null;
+    const newSrc = rule ? source : null;
+    const newRule = rule && source === 'rule' ? rule.id : null;
+    if (tx.categoryId !== newCat || tx.categorySource !== newSrc || (tx.ruleId || null) !== newRule) {
+      tx.categoryId = newCat; tx.categorySource = newSrc; tx.ruleId = newRule; changed++;
+    }
+    const part = rule ? ruleSharePart(rule.share, tx.amount) : 0;
+    const byRule = source === 'rule';
+    if (part) {
+      const sp = [{ categoryId: SYS_ADVANCE, amount: part, person: String(rule.share.person).trim(), note: rule.share.note || '' }];
+      if (JSON.stringify(tx.splits || []) !== JSON.stringify(sp) || (byRule ? tx.splitByRule !== rule.id : tx.splitByRule)) {
+        tx.splits = sp; changed++;
+        if (byRule) tx.splitByRule = rule.id; else delete tx.splitByRule;
+      }
+    } else if (tx.splitByRule) { tx.splits = []; delete tx.splitByRule; changed++; }
+    const person = rule && rule.categoryId === SYS_ADVANCE && rule.person ? String(rule.person).trim() : '';
+    if (person) {
+      if (tx.person !== person) { tx.person = person; changed++; }
+      if (byRule) tx.personByRule = true; else delete tx.personByRule;
+    } else if (tx.personByRule) { delete tx.person; delete tx.personByRule; changed++; }
+    return changed;
+  }
+
+  /** Het voorstel van een regel bevestigen: wordt een gewone (eigen) koppeling die mee synchroniseert. */
+  function confirmRuleSuggestion(state, tx) {
+    const rule = (state.rules || []).find(r => r.id === tx.ruleSuggest);
+    if (!rule) return false;
+    ruleEffect(tx, rule, 'manual');
+    tx.ruleConfirmed = rule.id;
+    delete tx.ruleSuggest;
+    return true;
+  }
+
   function applyRules(state) {
     let changed = 0;
     const rules = sortedRules(state.rules);
+    const since = rulesConfirmSince(state);
     for (const tx of state.transactions) {
       // Een splitsing die een regel maakte, mag die regel ook bijwerken; een eigen splitsing niet
-      if (tx.categorySource === 'manual' || tx.categorySource === 'system' || (tx.splits && tx.splits.length && !tx.splitByRule) || tx.isTransfer || tx.refundOf) continue;
+      if (tx.categorySource === 'manual' || tx.categorySource === 'system' || (tx.splits && tx.splits.length && !tx.splitByRule) || tx.isTransfer || tx.refundOf) { if (tx.ruleSuggest) { delete tx.ruleSuggest; changed++; } continue; }
       const rule = rules.find(r => (r.categoryId || r.share) && ruleMatches(r, tx));
-      const newCat = rule ? rule.categoryId || null : null;
-      const newSrc = rule ? 'rule' : null;
-      const newRule = rule ? rule.id : null;
-      if (tx.categoryId !== newCat || tx.categorySource !== newSrc || tx.ruleId !== newRule) {
-        tx.categoryId = newCat;
-        tx.categorySource = newSrc;
-        tx.ruleId = newRule;
-        changed++;
+      if (needsRuleConfirm(state, tx, since)) {
+        // Enkel een voorstel: de transactie blijft "te verwerken" tot je het bevestigt
+        changed += ruleEffect(tx, null, 'rule');
+        if (rule) { if (tx.ruleSuggest !== rule.id) { tx.ruleSuggest = rule.id; changed++; } }
+        else if (tx.ruleSuggest) { delete tx.ruleSuggest; changed++; }
+        continue;
       }
-      // Deel als voorschot voor iemand (bv. de helft van Telenet voor je huisgenoot): de rest blijft in de categorie
-      const part = rule ? ruleSharePart(rule.share, tx.amount) : 0;
-      if (part) {
-        const sp = [{ categoryId: SYS_ADVANCE, amount: part, person: String(rule.share.person).trim(), note: rule.share.note || '' }];
-        if (JSON.stringify(tx.splits || []) !== JSON.stringify(sp) || tx.splitByRule !== rule.id) { tx.splits = sp; tx.splitByRule = rule.id; changed++; }
-      } else if (tx.splitByRule) { tx.splits = []; delete tx.splitByRule; changed++; }
-      // Voorschot-regels kunnen ook zeggen voor wie (anders: "Onbekend")
-      const person = rule && rule.categoryId === SYS_ADVANCE && rule.person ? String(rule.person).trim() : '';
-      if (person) {
-        if (tx.person !== person) { tx.person = person; tx.personByRule = true; changed++; }
-        else if (!tx.personByRule) tx.personByRule = true;
-      } else if (tx.personByRule) { delete tx.person; delete tx.personByRule; changed++; }
+      if (tx.ruleSuggest) { delete tx.ruleSuggest; changed++; }
+      changed += ruleEffect(tx, rule, 'rule');
     }
     return changed;
   }
@@ -1221,7 +1263,7 @@
 
   function entityHash(item) {
     const copy = Object.assign({}, item);
-    delete copy.updatedAt; delete copy.isTransfer; delete copy.transferPairId; delete copy.ruleId;
+    delete copy.updatedAt; delete copy.isTransfer; delete copy.transferPairId; delete copy.ruleId; delete copy.ruleSuggest;
     if (copy.categorySource === 'rule' || copy.categorySource === 'system') { delete copy.categoryId; delete copy.categorySource; }
     if (copy.splitByRule) { delete copy.splits; delete copy.splitByRule; } // wordt op elk toestel uit de regel berekend
     if (copy.categorySource == null) delete copy.categorySource;
@@ -1493,7 +1535,7 @@
   const api = {
     uid, parseAmount, formatMoney, centsToInput, parseDate, daysBetween, addDays, addMonths, todayStr,
     normalizeIban, formatIban, normalizeName, normalizeText, median, distribute,
-    RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, applyRuleActions, ruleSharePart, sortedRules,
+    RULE_FIELDS, RULE_OPERATORS, ruleMatches, findRule, applyRules, rulesConfirmSince, needsRuleConfirm, confirmRuleSuggestion, applyRuleActions, ruleSharePart, sortedRules,
     detectTransfers, splitLines, validateSplits, refundAllocation, allocations, forgivenList, surplusList, savingsIn, actionSummary, refundTotals, suggestRefundTargets, cancellationPairs, looksLikeRefund,
     periodRange, inRange, summarize, budgetStatus,
     FREQUENCIES, MONTH_NAMES, detectRecurring, recurringKey,

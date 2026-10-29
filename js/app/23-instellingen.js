@@ -83,6 +83,11 @@
 `,
       auto: () => `
         <div class="card">
+          <h2>Regels</h2>
+          ${rulesConfirmToggle()}
+          <p class="small muted">De regels zelf beheer je bij <a href="#bank" data-view-link="bank">Bank</a>, onderaan.</p>
+        </div>
+        <div class="card" style="margin-top:16px">
           <h2>Online opzoeken</h2>
           <p class="small muted">Onbekende tegenpartijen worden online opgezocht (Wikidata, OpenStreetMap${aiOn ? ', AI' : ''}) en via de zoekwoorden van je categorieën gekoppeld. Jij keurt elk voorstel goed.</p>
           <div class="form-grid">

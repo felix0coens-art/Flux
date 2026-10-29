@@ -789,6 +789,29 @@
 
   /** Eén keuzelijst om een transactie te koppelen aan wat ze is. */
   /** Keuzes om een transactie te koppelen (zelfde opties als vroeger in de keuzelijst). */
+  /** Het voorstel van een regel voor deze transactie (of null), met een leesbare omschrijving. */
+  function ruleSuggestion(t) {
+    if (!t || !t.ruleSuggest) return null;
+    const r = (state.rules || []).find(x => x.id === t.ruleSuggest);
+    if (!r) return null;
+    const parts = [];
+    if (r.categoryId === C.SYS_ADVANCE) parts.push((t.amount > 0 ? '↙ Terugbetaling' : '↗ Voorgeschoten') + (r.person ? (t.amount > 0 ? ' van ' : ' voor ') + r.person : ''));
+    else if (r.categoryId) parts.push(catLabel(r.categoryId));
+    if (r.share) { const part = C.ruleSharePart(r.share, t.amount); if (part) parts.push('🤝 ' + money(Math.abs(part)) + ' voor ' + r.share.person); }
+    return { rule: r, label: parts.join(' + ') || r.name };
+  }
+  function ruleSuggestHtml(t) {
+    const s = ruleSuggestion(t);
+    if (!s) return '';
+    return `<div class="rule-suggest"><span class="grow">💡 <strong>${esc(s.label)}</strong> <span class="small muted">voorstel van regel “${esc(s.rule.name)}”</span></span>
+      <button class="btn small primary" data-action="rule-confirm" data-id="${esc(t.id)}" title="Zo inboeken">✓ Bevestig</button></div>`;
+  }
+  function confirmSuggestions(list) {
+    const done = list.filter(t => C.confirmRuleSuggestion(state, t));
+    if (done.length) commit(done.length === 1 ? 'Bevestigd: ' + (catName(done[0].categoryId) || 'ingeboekt') : done.length + ' voorstellen bevestigd');
+    return done.length;
+  }
+
   function assignOptions(t, bulk) {
     const incoming = t ? t.amount > 0 : false;
     const out = [];
@@ -807,6 +830,8 @@
     const refundGroup = '↩ Terugbetaling van een uitgave';
     const addRefunds = () => refunds.forEach(r => add('refund:' + r.tx.id, '↩ ' + (r.tx.title || r.tx.counterparty || r.tx.description || 'uitgave') + ' ' + money(r.tx.amount), refundGroup, fmtDate(r.tx.date) + (r.openAmount < -r.tx.amount ? ' · nog ' + money(r.openAmount) + ' open' : '')));
     const strong = refunds.length && Math.abs(C.daysBetween(refunds[0].tx.date, t.date)) <= 7;
+    const sg = ruleSuggestion(t);
+    if (sg) add('rule-ok', '💡 ' + sg.label, 'Voorstel van een regel', 'regel “' + sg.rule.name + '” · Enter = bevestigen');
     if (incoming) add('whatis', '❓ Wat is dit geld? — ik help je kiezen', 'Hulp');
     if (strong) addRefunds();
     cats(incoming ? 'income' : 'expense', incoming ? 'Inkomst' : 'Uitgave');
@@ -840,7 +865,7 @@
     if (t.groupRef && groupById(t.groupRef.groupId)) return `<button class="btn small" data-action="edit-tx" data-id="${esc(t.id)}">👥 ${esc(groupById(t.groupRef.groupId).name)} — bekijk</button>`;
     if (k === 'split' || k === 'refund' || (t.splits && t.splits.length)) return `<button class="btn small" data-action="edit-tx" data-id="${esc(t.id)}">${k === 'refund' ? '↩ Terugbetaling' : '✂ Gesplitst'} — bekijk</button>`;
     const label = assignLabel(t);
-    return `<div class="assign-box ${label ? '' : 'todo'}"><input type="text" class="assign-input" data-assign-input="${esc(t.id)}" value="${esc(label)}" data-label="${esc(label)}"
+    return `${!label ? ruleSuggestHtml(t) : ''}<div class="assign-box ${label ? '' : 'todo'}"><input type="text" class="assign-input" data-assign-input="${esc(t.id)}" value="${esc(label)}" data-label="${esc(label)}"
       placeholder="Te verwerken — typ…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-label="Koppelen"><span class="assign-caret" aria-hidden="true">▾</span></div>`;
   }
 
@@ -948,6 +973,7 @@
     if (!n) return '';
     return `<div class="select-bar" role="region" aria-label="Selectie">
       <strong>${n} geselecteerd</strong>
+      ${(() => { const n2 = Array.from(ui.selected).map(txById).filter(t => ruleSuggestion(t)).length; return n2 ? `<button class="btn small primary" data-action="bulk-rule-confirm" title="Elk geselecteerde voorstel inboeken zoals de regel voorstelt">✓ ${n2 === 1 ? 'Voorstel' : n2 + ' voorstellen'} bevestigen</button>` : ''; })()}
       <div class="assign-box bulk"><input type="text" class="assign-input" data-assign-input="__bulk__" data-label="" value="" placeholder="Koppelen aan… (typ)" autocomplete="off" role="combobox" aria-expanded="false"><span class="assign-caret" aria-hidden="true">▾</span></div>
       ${(() => { const r = bulkRefundTarget(); return r ? `<button class="btn small primary" data-action="bulk-refund" title="De inkomende bedragen tellen als terugbetaling van deze uitgave">↩ ${r.incomes.length === 1 ? 'Terugbetaling' : r.incomes.length + ' terugbetalingen'} van ${esc((r.expense.title || r.expense.counterparty || 'de uitgave').slice(0, 24))} koppelen</button>` : ''; })()}
       <select class="bulk-action" data-bulk-action aria-label="Actie toevoegen"><option value="">✅ Actie toevoegen…</option>${ACTION_IDEAS.map(x => `<option value="idea:${esc(x)}">${esc(x)}</option>`).join('')}${(state.actions || []).some(a => !a.closed) ? `<optgroup label="Bij een open actie">${actionLists().open.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}</optgroup>` : ''}<option value="__new__">+ Andere actie…</option></select>
@@ -1050,6 +1076,7 @@
     if (k === 'advance' || k === 'repayment') extra.push(`<span class="badge advance">👤 ${esc(C.splitLines(t).filter(l => l.categoryId === C.SYS_ADVANCE).map(l => l.person || t.person || '?').join(', '))}</span>`);
     if (opts.recurring && opts.recurring[t.id]) extra.push(`<span class="badge recurring" title="Automatisch herkend als terugkerend">🔁 ${esc(opts.recurring[t.id].frequency.label.toLowerCase())}</span>`);
     if (t.categorySource === 'rule') extra.push('<span class="badge small muted" title="Automatisch via een regel">⚙ regel</span>');
+    if (t.ruleConfirmed && t.categorySource === 'manual') extra.push('<span class="badge small muted" title="Voorstel van een regel, door jou bevestigd">⚙ regel ✓</span>');
     if (t.categorySource === 'system') extra.push('<span class="badge small muted" title="Automatisch herkend">⚙ automatisch</span>');
     if (C.looksLikeRefund(t)) extra.push('<span class="badge maybe">Van een vriend?</span>');
     if ((t.attachments || []).length) extra.push(`<span class="badge small" title="${t.attachments.length} bonnetje(s)">📎 ${t.attachments.length}</span>`);
@@ -1078,10 +1105,16 @@
     const lim = (opts && opts.limit) || 150;
     const shown = list.slice(0, lim);
     const allSel = shown.length && shown.every(t => ui.selected.has(t.id));
-    return `${selectionBar()}<div class="table-wrap"><table class="tx-table">
+    const sugg = shown.filter(t => !t.categoryId && ruleSuggestion(t)).length;
+    return `${selectionBar()}${sugg && !ui.selected.size ? `<p class="small muted rule-suggest-help">💡 ${sugg === 1 ? 'Eén transactie heeft' : sugg + ' transacties hebben'} een voorstel van een regel. Klopt het? Tik op <strong>✓ Bevestig</strong>, of vink ze aan en bevestig ze samen.</p>` : ''}<div class="table-wrap"><table class="tx-table">
       <thead><tr><th class="sel-cell"><input type="checkbox" data-select-all="${esc(shown.map(t => t.id).join(','))}" ${allSel ? 'checked' : ''} aria-label="Alles selecteren"></th><th>Datum</th><th>Omschrijving</th><th class="right">Bedrag</th><th>Gekoppeld aan</th></tr></thead>
       <tbody>${(() => { const o = Object.assign({ refunds: C.refundTotals(state) }, opts); return shown.map(t => txRow(t, o)).join(''); })()}</tbody></table></div>
       ${list.length > lim ? `<p style="text-align:center"><button class="btn" data-action="more" data-key="${opts && opts.moreKey || 'list'}">Toon meer (${list.length - lim})</button></p>` : ''}`;
+  }
+
+  function rulesConfirmToggle() {
+    const on = C.rulesConfirmSince(state) != null;
+    return `<label class="check-row"><input type="checkbox" data-rules-confirm ${on ? 'checked' : ''}> <span><strong>Voorstellen van regels eerst zelf bevestigen</strong><br><span class="small muted">${on ? 'Aan: nieuwe transacties blijven “te verwerken” tot je het voorstel bevestigt.' : 'Uit: regels zetten nieuwe transacties meteen op verwerkt.'}</span></span></label>`;
   }
 
   /** Automatische regels (staan bij Bank, waar je ook de transacties koppelt). */
@@ -1091,7 +1124,8 @@
     for (const t of state.transactions) if (t.ruleId) ruleCount[t.ruleId] = (ruleCount[t.ruleId] || 0) + 1;
     return `        <div class="card rules-card" style="margin-top:24px">
           <h2>Automatische regels</h2>
-          <p class="small muted">Regels koppelen nieuwe transacties vanzelf. Je maakt ze het makkelijkst met <em>⚙ Altijd zo</em> nadat je een transactie koppelde. De bovenste regel die past wint; manuele koppelingen worden nooit overschreven.</p>
+          <p class="small muted">${C.rulesConfirmSince(state) != null ? 'Regels doen een <strong>voorstel</strong> voor nieuwe transacties; jij bevestigt elke transactie met <strong>✓</strong>.' : 'Regels koppelen nieuwe transacties vanzelf.'} Je maakt ze het makkelijkst met <em>⚙ Altijd zo</em> nadat je een transactie koppelde. De bovenste regel die past wint; manuele koppelingen worden nooit overschreven.</p>
+          ${rulesConfirmToggle()}
           ${rules.length ? `<div class="list scroll">${rules.map((r, i) => `<div class="list-row" style="${r.enabled === false ? 'opacity:.5' : ''}">
             <div class="grow"><strong>${esc(r.name)}</strong> → ${r.categoryId ? catBadge(r.categoryId) : ''}${r.share ? ` <span class="badge" title="Deel als voorschot">🤝 ${r.share.mode === 'amount' ? money(r.share.value) : String(r.share.value).replace('.', ',') + '%'} voor ${esc(r.share.person)}</span>` : ''}${r.action ? ` <span class="badge action-badge" title="Koppelt ook aan een actie">✅ ${esc(r.action.name)}${r.action.perMonth ? ' · elke maand' : ''}</span>` : ''}${r.categoryId === C.SYS_ADVANCE ? ` <span class="small">${r.person ? 'voor ' + esc(r.person) : '<span class="warn-text">voor wie?</span>'}</span>` : ''}<div class="small muted">${esc(C.RULE_FIELDS[r.field])} ${esc(C.RULE_OPERATORS[r.operator])} “${esc(r.value)}” · ${ruleCount[r.id] || 0} treffers</div></div>
             <button class="btn small ghost" data-action="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Hoger">▲</button>
@@ -4125,6 +4159,11 @@
 `,
       auto: () => `
         <div class="card">
+          <h2>Regels</h2>
+          ${rulesConfirmToggle()}
+          <p class="small muted">De regels zelf beheer je bij <a href="#bank" data-view-link="bank">Bank</a>, onderaan.</p>
+        </div>
+        <div class="card" style="margin-top:16px">
           <h2>Online opzoeken</h2>
           <p class="small muted">Onbekende tegenpartijen worden online opgezocht (Wikidata, OpenStreetMap${aiOn ? ', AI' : ''}) en via de zoekwoorden van je categorieën gekoppeld. Jij keurt elk voorstel goed.</p>
           <div class="form-grid">
@@ -4242,6 +4281,7 @@
     const people = Array.from(new Set(adv.items.map(x => x.person))).sort();
 
     const body = `
+      ${!isNew && ruleSuggestion(t) && !t.categoryId ? `<div class="notice info small">${ruleSuggestHtml(t)}</div>` : ''}
       <div class="provenance small">${imported ? `📄 Uit bestand <strong>${esc(i ? i.fileName : '?')}</strong>${i ? ` (${esc(i.bankName || '')}, opgeladen ${esc(fmtDateTime(i.importedAt))})` : ''}. Correcties blijven bewaard.` : isNew ? '✎ Nieuwe manuele transactie' : '✎ Manueel ingevoerd'}</div>
       <label class="field"><span>Eigen titel <span class="muted">(optioneel — waarvoor was dit?)</span></span>
         <input type="text" id="tx-title" value="${esc(t.title || '')}" placeholder="bv. Verjaardagscadeau mama, Treinticket Brussel, Etentje met collega's"></label>
@@ -4489,6 +4529,7 @@
       return;
     }
     if (value === 'refund') { render(); openModal({ type: 'refundPick', txId: t.id, search: '' }); return; }
+    if (value === 'rule-ok') { if (!confirmSuggestions([t])) render(); return; }
     if (value === 'group:new') { render(); openModal({ type: 'groupNew', then: { txId: t.id } }); return; }
     if (value.startsWith('group:')) { render(); openModal({ type: 'groupAssign', txId: t.id, groupId: value.slice(6) }); return; }
     if (value === 'split' || value === 'cat:' + C.SYS_ADVANCE) {
@@ -5854,6 +5895,8 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     'copy': el => { try { navigator.clipboard.writeText(el.dataset.copy); toast('Gekopieerd'); } catch (e) { toast('Kopiëren lukte niet: selecteer en kopieer de tekst zelf.'); } },
     'edit-tx': el => { const t = txById(el.dataset.id); if (t) openModal({ type: 'tx', tx: JSON.parse(JSON.stringify(t)) }); },
     'save-tx': saveTx,
+    'rule-confirm': el => { const t = txById(el.dataset.id); if (t) { if (modal && modal.type === 'tx') closeModal(); confirmSuggestions([t]); } },
+    'bulk-rule-confirm': () => { const list = Array.from(ui.selected).map(txById).filter(t => ruleSuggestion(t)); confirmSuggestions(list); },
     'delete-tx': () => {
       const t = txById(modal.tx.id);
       if (!t) return;
@@ -6072,6 +6115,11 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       return;
     }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
+    if (el.dataset.rulesConfirm != null) {
+      state.settings = Object.assign({}, state.settings, el.checked ? { rulesConfirm: true, rulesConfirmSince: Date.now() } : { rulesConfirm: false });
+      commit(el.checked ? 'Regels doen voortaan een voorstel dat je bevestigt' : 'Regels verwerken nieuwe transacties weer vanzelf');
+      return;
+    }
     if (el.dataset.setting) { state.settings = Object.assign({}, state.settings, { [el.dataset.setting]: el.type === 'checkbox' ? el.checked : el.value.trim() }); commit('Instelling bewaard'); return; }
     if (!modal) return;
     if (modal.type === 'tx' && el.id === 'tx-refund' && el.value === '__search__') { const back = modal; openModal({ type: 'refundPick', txId: back.tx.id, back, search: '' }); return; }
