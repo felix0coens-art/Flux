@@ -72,7 +72,7 @@ test('php: historische koersen zoals server/prices.js', { skip }, async () => {
     ['/search?q=IE00B3RBWM25', 200, { quotes: [{ symbol: 'VWRL.AS', exchange: 'AMS', quoteType: 'ETF' }] }],
     ['/chart/AAPL', 200, { chart: { result: [{ meta: { currency: 'USD' }, timestamp: ts, indicators: { quote: [{ close: [200, 210] }] } }] } }],
     ['/chart/EURUSD%3DX', 200, { chart: { result: [{ meta: { currency: 'USD' }, timestamp: ts, indicators: { quote: [{ close: [1.25, 1.05] }] } }] } }],
-    ['/chart/VWRL.AS', 200, { chart: { result: [{ meta: { currency: 'EUR' }, timestamp: ts, indicators: { quote: [{ close: [110.5, null] }] } }] } }]
+    ['/chart/VWRL.AS', 200, { chart: { result: [{ meta: { currency: 'EUR', regularMarketPrice: 112.25, regularMarketTime: Date.parse('2026-01-14T16:30:00Z') / 1000 }, timestamp: ts, indicators: { quote: [{ close: [110.5, null] }] } }] } }]
   ];
   const list = [
     { key: 'US0378331005', isin: 'US0378331005', name: '', currency: 'USD', from: '2026-01-01' },
@@ -83,6 +83,8 @@ test('php: historische koersen zoals server/prices.js', { skip }, async () => {
   const expected = await Prices.fetchPrices(nodeFetch(fake), list);
   assert.deepEqual(r.result, JSON.parse(JSON.stringify(expected)));
   assert.deepEqual(r.result.series.US0378331005.points.map(p => p.eur), [16000, 20000]);
+  // De koers van vandaag komt er als laatste punt bij (de weekkoersen staan op maandag)
+  assert.deepEqual(r.result.series.IE00B3RBWM25.points.map(p => [p.date, p.eur]), [['2026-01-05', 11050], ['2026-01-14', 11225]]);
 });
 
 function degiroFake(withOtp) {

@@ -97,7 +97,7 @@
     const blocks = {
       kpis: () => !iv ? '' : `
       <div class="grid kpis">
-        <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">stand ${fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
+        <div class="card kpi"><div class="label">Waarde</div><div class="value">${money(s.valueEur)}</div><div class="hint">${iv.liveDate ? 'aan de koers van ' + fmtDate(iv.liveDate) : 'stand ' + fmtDate(iv.positionsDate)} · waarvan cash ${money(s.cashEur)}</div></div>
         <div class="card kpi"><div class="label">Netto ingelegd</div><div class="value">${s.hasDeposits ? money(s.netDeposits) : '—'}</div><div class="hint">${s.hasDeposits ? 'stortingen ' + money(s.deposits) + (s.withdrawals ? ' − opnames ' + money(s.withdrawals) : '') : 'laad het rekeningoverzicht op'}</div></div>
         ${profitKpi(pf)}
         ${(() => {
@@ -155,7 +155,7 @@
           <tbody>${s.positions.map(p => `<tr>
             <td><strong>${esc(p.name)}</strong><div class="small muted">${esc(p.isin || p.symbol || '')}${p.currency !== 'EUR' ? ' · ' + esc(p.currency) : ''}${iv.brokers ? ' · ' + esc(p.broker === 'saxo' ? 'Saxo' : 'Degiro') : ''}</div></td>
             <td class="right">${String(p.quantity).replace('.', ',')}</td>
-            <td class="amount">${money(p.valueEur)}</td>
+            <td class="amount">${money(p.valueEur)}${p.priceDate ? `<div class="small muted" title="Koers van ${fmtDate(p.priceDate)}">à ${money(Math.round(p.priceEur))}</div>` : iv.liveDate ? '<div class="small muted" title="Geen koers gevonden: waarde van je laatste stand">stand</div>' : ''}</td>
             <td class="amount">${p.costEur != null ? money(p.costEur) : '—'}</td>
             <td class="amount ${p.gainEur >= 0 ? 'pos' : 'negv'}">${p.gainEur != null ? signMoney(p.gainEur) + `<div class="small">${p.costEur ? pct(p.gainEur / p.costEur) : ''}</div>` : '—'}</td>
             <td class="amount">${(() => { const v = pf.realizedByKey[p.isin] ?? pf.realizedByKey[p.key] ?? pf.realizedByKey[p.name]; return v != null ? `<span class="${v >= 0 ? 'pos' : 'negv'}">${signMoney(v)}</span>` : '—'; })()}</td>
@@ -205,6 +205,7 @@
         ${iv ? `<span class="small muted">Bron: ${Invest.brokers(iv).map(b => esc(b.source === 'demo' ? 'voorbeeld' : b.source === 'degiro-csv' ? 'Degiro-exports' : b.name + ' (rechtstreeks)') + ' · bijgewerkt ' + esc(fmtDateTime(b.syncedAt))).join(' — ')}</span>` : ''}</div>
       ${edit ? `<div class="iv-edit-help">Zet aan wat je wil zien, kies met ↑ ↓ de volgorde en met ▭ ◧ ◨ of een blok de volle breedte krijgt of enkel links of rechts staat (twee halve blokken komen naast elkaar). Je keuze wordt bewaard (ook op je andere toestellen). <span class="spacer"></span>
         <button class="btn small ghost" data-action="invest-reset">Standaard herstellen</button><button class="btn small primary" data-action="invest-edit">✓ Klaar</button></div>` : ''}
+      ${iv ? liveNotice(iv) : ''}
       <div class="iv-grid ${edit ? 'iv-editing' : ''}">${body}</div>
       ${!edit && hiddenList.length ? `<div class="iv-hidden-note small muted">Verborgen: ${hiddenList.map(id => `<button class="chip" data-action="invest-show" data-id="${id}" title="Terug tonen">+ ${meta(id).icon} ${esc(meta(id).label)}</button>`).join(' ')} <a href="#" data-action="invest-edit">Weergave aanpassen</a></div>` : ''}`;
   }
@@ -541,14 +542,27 @@
     }
   }
 
-  /** Haalt historische koersen op via de server als die ontbreken of ouder zijn dan 3 dagen. */
+  /** Van wanneer zijn de koersen en de aantallen? En wanneer moet je opnieuw aanmelden bij je broker? */
+  function liveNotice(iv) {
+    const server = Sync && Sync.mode === 'server' && !demo;
+    const m = iv.market || {};
+    const broker = Invest.brokers(iv).map(b => b.name).join(' of ') || 'Degiro';
+    const fresh = m.fetchedAt ? ' · bijgewerkt ' + esc(fmtDateTime(m.fetchedAt)) : '';
+    const missing = iv.liveDate ? (iv.positions || []).filter(p => p.quantity > 0 && !p.priceDate).length : 0;
+    if (!server && !iv.liveDate) return `<p class="small muted live-note">📈 Koersen van de beurs ophalen kan enkel als Helder op je server draait. Je ziet de waarde van je laatste stand (${fmtDate(iv.positionsDate)}).</p>`;
+    if (!iv.liveDate) return `<p class="small muted live-note">📈 ${pricesBusy ? 'Koersen van vandaag ophalen…' : `Waarde van je laatste stand (${fmtDate(iv.positionsDate)})${m.fetchedAt ? '; geen nieuwere koersen gevonden' + fresh : ''}.`} <a href="#" data-action="fetch-prices">Koersen nu ophalen</a></p>`;
+    return `<div class="live-note card small">📈 <strong>Up-to-date met de beurs:</strong> koersen van ${fmtDate(iv.liveDate)}${fresh}${server ? ' · <a href="#" data-action="fetch-prices">vernieuwen</a>' : ''}<br>
+      <span class="muted">Je aantallen en je cash komen van je laatste stand bij ${esc(broker)} (${fmtDate(iv.standDate)}). Kocht of verkocht je sindsdien iets, of kwam er dividend? Meld je dan opnieuw aan bij ${esc(broker)}: de rest volgt vanzelf de beurs.${missing ? ` Voor ${missing} ${missing === 1 ? 'positie' : 'posities'} vond Helder geen koers; daar telt de waarde van je laatste stand.` : ''}</span></div>`;
+  }
+
+  /** Haalt koersen op via de server (historiek + koers van vandaag) als die ontbreken of ouder zijn dan 4 uur. */
   let pricesBusy = false;
   async function maybeFetchPrices(force) {
     const data = inv();
     if (!data || demo || pricesBusy || !(Sync && Sync.mode === 'server')) return;
     const fetchedAt = data.market && data.market.fetchedAt;
-    if (!force && fetchedAt && Date.now() - Date.parse(fetchedAt) < 3 * 86400000) return;
-    if (!force && data.market && data.market.failedAt && Date.now() - Date.parse(data.market.failedAt) < 86400000) return;
+    if (!force && fetchedAt && Date.now() - Date.parse(fetchedAt) < 4 * 3600000) return;
+    if (!force && data.market && data.market.failedAt && Date.now() - Date.parse(data.market.failedAt) < 3 * 3600000) return;
     const keys = {};
     for (const t of data.trades || []) { const k = t.isin || t.name; if (!keys[k] || t.date < keys[k].from) keys[k] = { key: k, isin: t.isin, name: t.name, currency: t.currency, from: t.date }; }
     for (const p of data.positions || []) { const k = p.isin || p.key || p.name; if (!keys[k]) keys[k] = { key: k, isin: p.isin, name: p.name, currency: p.currency, from: data.positionsDate || today }; }

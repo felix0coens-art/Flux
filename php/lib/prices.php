@@ -40,6 +40,15 @@ function price_history(callable $fetch, string $symbol, string $fromDate): ?arra
         $c = $closes[$i] ?? null;
         if (is_numeric($c) && $c > 0) $points[] = ['date' => gmdate('Y-m-d', (int) $ts), 'close' => (float) $c];
     }
+    // De koers van vandaag (de weekkoersen staan op de eerste dag van de week): als laatste punt
+    $meta = $res['meta'] ?? [];
+    $mp = $meta['regularMarketPrice'] ?? null;
+    if (is_numeric($mp) && $mp > 0 && !empty($meta['regularMarketTime'])) {
+        $d = gmdate('Y-m-d', (int) $meta['regularMarketTime']);
+        $n = count($points);
+        if (!$n || $d > $points[$n - 1]['date']) $points[] = ['date' => $d, 'close' => (float) $mp];
+        elseif ($d === $points[$n - 1]['date']) $points[$n - 1]['close'] = (float) $mp;
+    }
     return ['currency' => $res['meta']['currency'] ?? 'EUR', 'points' => $points];
 }
 
@@ -103,7 +112,7 @@ function fetch_prices(callable $fetch, array $instruments, bool $useCache = true
     $fresh = [];
     foreach (array_slice($instruments, 0, 40) as $ins) {
         $k = $ins['key'];
-        $cacheKey = ($ins['isin'] !== '' ? $ins['isin'] : $ins['name']) . '|' . $ins['from'];
+        $cacheKey = ($ins['isin'] !== '' ? $ins['isin'] : $ins['name']) . '|' . $ins['from'] . '|v2';
         $hit = $useCache ? price_cache_get($cacheKey) : null;
         if ($hit) { $out['series']->$k = $hit; continue; }
         try {

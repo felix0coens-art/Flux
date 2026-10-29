@@ -275,7 +275,7 @@
   function snapshotsOf(inv) {
     const list = (inv.snapshots || []).slice();
     if (inv.positionsDate && !list.some(x => x.date === inv.positionsDate)) {
-      list.push({ date: inv.positionsDate, cashEur: inv.cashEur || 0, positions: (inv.positions || []).map(p => ({ key: keyOf(p), quantity: p.quantity || 0, valueEur: p.valueEur || 0 })) });
+      list.push({ date: inv.positionsDate, cashEur: inv.cashEur || 0, positions: (inv.positions || []).map(p => ({ key: keyOf(p), quantity: p.quantity || 0, valueEur: (p.standValueEur != null ? p.standValueEur : p.valueEur) || 0 })) });
     }
     return list.sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -681,6 +681,38 @@
     };
   }
 
+  /**
+   * Up-to-date met de beurs: je posities (aantallen van je laatste Degiro- of Saxo-stand) aan de
+   * nieuwste opgehaalde koers. Enkel als die koers nieuwer is dan je laatste stand; de cash blijft die
+   * van je laatste stand. Er komt ook een waarderingspunt op die datum bij, zodat de grafiek en het
+   * rendement tot vandaag lopen. Nieuwe aan- of verkopen ziet Helder pas na een nieuwe stand.
+   */
+  const liveCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  function live(inv) {
+    if (!inv || !inv.market || !inv.market.series || !(inv.positions || []).length) return inv;
+    if (liveCache && liveCache.has(inv)) return liveCache.get(inv);
+    const base = inv.positionsDate || '';
+    let latest = '';
+    let n = 0;
+    const positions = inv.positions.map(p => {
+      const last = lastPoint(inv.market.series[keyOf(p)]);
+      if (!last || last.date <= base || !(p.quantity > 0)) return p;
+      n++;
+      if (last.date > latest) latest = last.date;
+      return Object.assign({}, p, { valueEur: Math.round(last.eur * p.quantity), priceEur: last.eur, priceDate: last.date, standValueEur: p.valueEur });
+    });
+    let out = inv;
+    if (n) {
+      const valueEur = positions.reduce((s, p) => s + (p.valueEur || 0), 0) + (inv.cashEur || 0);
+      out = Object.assign({}, inv, {
+        positions, liveDate: latest, livePositions: n, standDate: base,
+        history: (inv.history || []).filter(h => h.date !== latest).concat([{ date: latest, valueEur, source: 'koers' }]).sort((a, b) => a.date.localeCompare(b.date))
+      });
+    }
+    if (liveCache) liveCache.set(inv, out);
+    return out;
+  }
+
   /** Soorten beleggingen voor de verdeling (vaste volgorde = vaste kleur). */
   const ASSET_CLASSES = [
     { id: 'stock', label: 'Aandelen', icon: '🏢' },
@@ -779,7 +811,7 @@
     });
   }
 
-  const api = { profit, ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
+  const api = { live, profit, ASSET_CLASSES, assetClassOf, allocation, soldVsToday, watchSummary, lastPoint, view, brokers, brokerOf, removeBroker, realized, snapshotsOf, pricePoints, holdingsAt, cashAt, estimateAt, canEstimate, valueSeries, cashFlows, valuations, xirr, modifiedDietz, performance, detectCsv, parsePortfolioCsv, parseTransactionsCsv, parseAccountCsv, movementType, mergeInvestments, summary, dividendsIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxInvest = api;
 })(typeof window !== 'undefined' ? window : globalThis);

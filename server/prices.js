@@ -40,6 +40,14 @@ async function history(fetchFn, symbol, fromDate) {
     const c = closes[i];
     if (c != null && isFinite(c) && c > 0) points.push({ date: new Date(ts * 1000).toISOString().slice(0, 10), close: c });
   });
+  // De koers van vandaag (de weekkoersen staan op de eerste dag van de week): als laatste punt
+  const meta = res.meta || {};
+  if (meta.regularMarketPrice > 0 && meta.regularMarketTime) {
+    const d = new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 10);
+    const last = points[points.length - 1];
+    if (!last || d > last.date) points.push({ date: d, close: meta.regularMarketPrice });
+    else if (d === last.date) last.close = meta.regularMarketPrice;
+  }
   return { currency: (res.meta && res.meta.currency) || 'EUR', points };
 }
 
@@ -67,7 +75,7 @@ async function fetchPrices(fetchFn, instruments, cache) {
   const out = { series: {}, errors: {} };
   const fxCache = {};
   for (const ins of instruments.slice(0, 40)) {
-    const cacheKey = (ins.isin || ins.name) + '|' + ins.from;
+    const cacheKey = (ins.isin || ins.name) + '|' + ins.from + '|v2';
     const hit = cache && cache.get(cacheKey);
     if (hit) { out.series[ins.key] = hit; continue; }
     try {

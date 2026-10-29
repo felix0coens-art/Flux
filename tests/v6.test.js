@@ -113,3 +113,23 @@ test('personen en verwijderde transacties worden gesynchroniseerd', () => {
   assert.ok(C.SYNC_COLLECTIONS.includes('people'));
   assert.deepEqual(Store.migrate({ version: 3 }).people, []);
 });
+
+test('beleggingen up-to-date met de beurs: aantallen van de laatste stand × nieuwste koers', () => {
+  const inv = {
+    positionsDate: '2026-10-01', cashEur: 5000,
+    positions: [{ isin: 'A', name: 'A', quantity: 10, valueEur: 100000 }, { isin: 'B', name: 'B', quantity: 2, valueEur: 30000 }],
+    history: [{ date: '2026-10-01', valueEur: 135000 }],
+    snapshots: [{ date: '2026-10-01', cashEur: 5000, positions: [{ key: 'A', quantity: 10, valueEur: 100000 }, { key: 'B', quantity: 2, valueEur: 30000 }] }],
+    trades: [], movements: [],
+    market: { series: { A: { points: [{ date: '2026-09-28', eur: 9900 }, { date: '2026-10-28', eur: 11000 }] }, B: { points: [{ date: '2026-09-28', eur: 15000 }] } } }
+  };
+  const l = Invest.live(inv);
+  assert.equal(l.liveDate, '2026-10-28');
+  assert.equal(l.positions[0].valueEur, 110000, '10 stuks à € 110');
+  assert.equal(l.positions[1].valueEur, 30000, 'geen nieuwere koers: waarde van de stand');
+  assert.equal(Invest.summary(l).valueEur, 110000 + 30000 + 5000);
+  assert.deepEqual(l.history[l.history.length - 1], { date: '2026-10-28', valueEur: 145000, source: 'koers' });
+  assert.equal(inv.positions[0].valueEur, 100000, 'het origineel blijft ongewijzigd');
+  // Een nieuwere stand van Degiro gaat voor op oudere koersen
+  assert.equal(Invest.live(Object.assign({}, inv, { positionsDate: '2026-10-29' })).liveDate, undefined);
+});

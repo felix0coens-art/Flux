@@ -1108,3 +1108,5 @@ svg text.gain-down { fill: var(--red); font-weight: 600; }
 .rule-suggest-help { margin: 0 0 8px; }
 .check-row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin: 8px 0; }
 .check-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.live-note { margin: 0 0 14px; }
+div.live-note { padding: 10px 14px; }

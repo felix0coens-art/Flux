@@ -30,7 +30,8 @@
   function incomeSources() { return state.categories.filter(c => c.kind === 'income'); }
   function kindOf(t) { return C.txKind(t, state.categories); }
   /** Beleggingsgegevens (null als er geen zijn of als ze gewist werden). */
-  function inv() { return state.investments && !state.investments.cleared ? Invest.view(state.investments) : null; }
+  /** Je beleggingen (alle brokers samen), gewaardeerd aan de nieuwste koers. */
+  function inv() { return state.investments && !state.investments.cleared ? Invest.live(Invest.view(state.investments)) : null; }
 
   function catBadge(id, suffix) {
     const extra = suffix ? ' ' + esc(suffix) : '';
