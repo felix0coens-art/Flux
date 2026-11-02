@@ -875,7 +875,8 @@
 
   // ----- Transacties: één tabblad met Te verwerken, Alle transacties, Uitgaven, Inkomsten en Rekeningen -----
 
-  const TX_TABS = [['verwerken', '📥 Te verwerken'], ['alle', '📋 Alle transacties'], ['uitgaven', '🧾 Uitgaven'], ['inkomsten', '💶 Inkomsten'], ['rekeningen', '🏦 Rekeningen en import']];
+  // [sleutel, icoon, naam, korte naam (gsm)]
+  const TX_TABS = [['verwerken', '📥', 'Te verwerken', 'Te doen'], ['alle', '📋', 'Alle transacties', 'Alle'], ['uitgaven', '🧾', 'Uitgaven', 'Uitgaven'], ['inkomsten', '💶', 'Inkomsten', 'Inkomsten'], ['rekeningen', '🏦', 'Rekeningen en import', 'Rekeningen']];
   function txTab() {
     if (TX_TABS.some(x => x[0] === ui.txTab)) return ui.txTab;
     return todoCount() ? 'verwerken' : 'alle';
@@ -884,11 +885,11 @@
   function renderTransactions() {
     const tab = txTab();
     const todo = todoCount();
-    const nav = `<div class="tx-tabs" role="tablist" aria-label="Transacties">${TX_TABS.map(([k, l]) => `<button role="tab" class="${tab === k ? 'active' : ''}" aria-selected="${tab === k}" data-action="tx-tab" data-tab="${k}">${l}${k === 'verwerken' && todo ? ` <span class="count">${todo}</span>` : ''}</button>`).join('')}</div>`;
+    const nav = `<div class="tx-tabs" role="tablist" aria-label="Transacties">${TX_TABS.map(([k, icon, l, short]) => `<button role="tab" class="${tab === k ? 'active' : ''}" aria-selected="${tab === k}" data-action="tx-tab" data-tab="${k}"><span class="tx-ico" aria-hidden="true">${icon}</span><span class="lbl-long">${l}</span><span class="lbl-short">${short}</span>${k === 'verwerken' && todo ? ` <span class="count">${todo}</span>` : ''}</button>`).join('')}</div>`;
     const body = { verwerken: renderInbox, alle: renderBankList, uitgaven: renderExpenses, inkomsten: renderIncome, rekeningen: renderAccounts }[tab]();
-    return `<div class="page-head"><h1>Transacties</h1><span class="spacer"></span>
-        <button class="btn" data-action="new-tx">+ Manuele transactie</button>
-        <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
+    return `<div class="page-head tx-head"><h1>Transacties</h1><span class="spacer"></span>
+        <button class="btn" data-action="new-tx" title="Manuele transactie toevoegen">+ <span class="lbl-long">Manuele transactie</span><span class="lbl-short">Manueel</span></button>
+        <button class="btn primary" data-action="import" title="Bankbestand opladen">⬆ <span class="lbl-long">Bankbestand opladen</span><span class="lbl-short">Bestand</span></button></div>
       ${nav}${body}`;
   }
 
@@ -1624,7 +1625,7 @@
         </form>
         <div class="act-ideas small">${ACTION_IDEAS.map(x => `<button class="chip" data-action="action-idea" data-name="${esc(x)}">${esc(x)}</button>`).join('')}</div>
         ${openActs.length ? `<div class="card act-list">${openActs.map(a => actionRow(a)).join('')}</div>`
-          : '<div class="card empty-state"><p>🎉 Niets meer te doen. Tip: selecteer transacties bij <strong>Bank</strong> en kies <strong>✅ Actie toevoegen</strong>.</p></div>'}
+          : '<div class="card empty-state"><p>🎉 Niets meer te doen. Tip: selecteer transacties bij <strong>Transacties → Alle transacties</strong> en kies <strong>✅ Actie toevoegen</strong>.</p></div>'}
         ${doneActs.length ? `<details class="act-done" data-keep="actDone" ${ui.keepOpen.actDone ? 'open' : ''}><summary class="small"><strong>Gedaan</strong> <span class="muted">(${doneActs.length})</span></summary>
           <div class="card act-list">${doneActs.map(a => actionRow(a)).join('')}</div></details>` : ''}
       </section>`;
@@ -4594,7 +4595,7 @@
     return `
       <div class="page-head"><h1>Instellingen</h1></div>
       <div class="settings-layout">
-        <nav class="settings-nav" aria-label="Instellingen">${tabs.map(([id, icon, label]) => `<button class="${id === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span> ${label}</button>`).join('')}</nav>
+        <nav class="settings-nav" aria-label="Instellingen">${tabs.map(([id, icon, label]) => `<button class="${id === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span> <span class="sn-label">${label}</span></button>`).join('')}</nav>
         <div class="settings-body">
           <div class="settings-intro"><h2>${cur[1]} ${cur[2]}</h2><p class="muted">${cur[3]}</p></div>
           <div class="settings-cards">${sections[tab]()}</div>

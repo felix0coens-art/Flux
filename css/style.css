@@ -1168,3 +1168,45 @@ div.live-note { padding: 10px 14px; }
   .inbox-keys { display: none; }
 }
 .inbox-tx .grow { flex: 1; min-width: 0; }
+
+/* Korte namen op de gsm */
+.lbl-short { display: none; }
+.tx-tabs .tx-ico { margin-right: 4px; }
+@media (max-width: 700px) {
+  .lbl-long { display: none; }
+  .lbl-short { display: inline; }
+  /* Transacties: kop op één lijn, tabjes als 5 gelijke knoppen (alles zichtbaar) */
+  .tx-head { flex-wrap: nowrap; gap: 8px; }
+  .tx-head h1 { font-size: 22px; }
+  .tx-head .btn { padding: 6px 10px; font-size: 14px; white-space: nowrap; }
+  .tx-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; overflow: visible; margin-bottom: 14px; }
+  .tx-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 7px; font-size: 11.5px; white-space: normal; text-align: center; line-height: 1.15; position: relative; }
+  .tx-tabs .tx-ico { margin: 0; font-size: 19px; }
+  .tx-tabs .count { position: absolute; top: 2px; right: calc(50% - 24px); font-size: 10px; min-width: 16px; padding: 0 4px; line-height: 16px; }
+  /* Kerncijfers met twee naast elkaar */
+  .grid.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .grid.kpis .kpi { padding: 12px; }
+  .grid.kpis .kpi .value { font-size: 20px; }
+  .grid.kpis .kpi .label { font-size: 11px; }
+  /* Vensters: velden blijven binnen het scherm */
+  .modal .form-grid > *, .modal .field { min-width: 0; }
+  .modal .field input, .modal .field select, .modal .field textarea, .modal input[type=date] { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+  .modal .input-row { min-width: 0; }
+  .modal .input-row > :first-child { flex: 1; min-width: 0; }
+  /* Verwerken: categorieën in twee kolommen */
+  .inbox-cats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .inbox-cat { min-width: 0; padding: 9px 10px; border-radius: 10px; }
+  .inbox-cat > :last-child, .inbox-cat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inbox-special .btn { flex: 1 1 calc(50% - 6px); }
+  .inbox-foot .check-row { flex-basis: 100%; }
+}
+@media (max-width: 700px) {
+  /* Effectieve winst over de volle breedte (de opsplitsing heeft plaats nodig) */
+  .grid.kpis .profit-kpi { grid-column: 1 / -1; }
+  /* Instellingen: tabjes als vijf gelijke knoppen, alles zichtbaar */
+  .settings-nav { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; overflow: visible !important; }
+  .settings-nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; font-size: 11px; line-height: 1.15; text-align: center; white-space: normal; }
+  .settings-nav button > span[aria-hidden] { font-size: 19px; }
+  /* Voorbeeldmodus: kleinere balk */
+  .demo-banner { padding: 8px 10px; font-size: 13px; gap: 6px; margin-bottom: 12px; }
+}

@@ -152,7 +152,7 @@
     return `
       <div class="page-head"><h1>Instellingen</h1></div>
       <div class="settings-layout">
-        <nav class="settings-nav" aria-label="Instellingen">${tabs.map(([id, icon, label]) => `<button class="${id === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span> ${label}</button>`).join('')}</nav>
+        <nav class="settings-nav" aria-label="Instellingen">${tabs.map(([id, icon, label]) => `<button class="${id === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${id}"><span aria-hidden="true">${icon}</span> <span class="sn-label">${label}</span></button>`).join('')}</nav>
         <div class="settings-body">
           <div class="settings-intro"><h2>${cur[1]} ${cur[2]}</h2><p class="muted">${cur[3]}</p></div>
           <div class="settings-cards">${sections[tab]()}</div>
