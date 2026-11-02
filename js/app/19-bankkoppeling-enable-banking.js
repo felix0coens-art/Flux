@@ -12,7 +12,7 @@
     if (!bankLinkAvailable()) return;
     try { bankLink.status = await Sync.bank.status(); bankLink.error = ''; }
     catch (e) { bankLink.error = e.message; }
-    if (ui.view === 'bank' && !modal) render();
+    if (ui.view === 'transactions' && !modal) render();
     if (opts && opts.auto) await autoFetchLinked();
   }
 
@@ -37,7 +37,7 @@
     if (!bankLinkAvailable() || bankLink.busy[conn.id]) return;
     bankLink.busy[conn.id] = true;
     bankLink.errors[conn.id] = '';
-    if (ui.view === 'bank' && !modal) render();
+    if (ui.view === 'transactions' && !modal) render();
     let added = 0, changed = false;
     const notes = [];
     try {
@@ -63,7 +63,7 @@
       bankLink.busy[conn.id] = false;
     }
     const msg = added ? `${conn.aspsp}: ${added} nieuwe transacties opgehaald${notes.length ? ' (' + notes[0] + ')' : ''}` : (opts.quiet || bankLink.errors[conn.id] ? null : `${conn.aspsp}: geen nieuwe transacties`);
-    if (changed) commit(msg); else if (ui.view === 'bank' && !modal) render();
+    if (changed) commit(msg); else if (ui.view === 'transactions' && !modal) render();
   }
 
   /** Bij het openen van Helder: rekeningen ophalen die langer dan 6 uur niet bijgewerkt werden. */

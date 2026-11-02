@@ -2,7 +2,7 @@
 
   const actions = {
     ...groupActions,
-    'goto': el => go(el.dataset.view),
+    'goto': el => { if (el.dataset.tab) ui.txTab = el.dataset.tab; go(el.dataset.view); },
     'range-preset': el => { ui.range = presetRange(el.dataset.preset, timelineMonths()); render(); },
     'import': el => openModal({ type: 'import', accountHint: (el && el.dataset.account) || '' }),
     'import-restart': () => openModal({ type: 'import', accountHint: modal.accountHint }),
@@ -28,7 +28,11 @@
       t.notRefundOf = (t.notRefundOf || []).concat([el.dataset.out]);
       commit();
     },
-    'bank-filter': el => { ui.bank.account = ui.bank.account === el.dataset.id ? '' : el.dataset.id; ui.bank.status = ''; render(); },
+    'bank-filter': el => { ui.bank.account = ui.bank.account === el.dataset.id ? '' : el.dataset.id; ui.bank.status = ''; if (el.dataset.tab) ui.txTab = el.dataset.tab; render(); },
+    'tx-tab': el => { ui.txTab = el.dataset.tab; if (location.hash !== '#transactions') history.replaceState(null, '', '#transactions'); render(); window.scrollTo(0, 0); },
+    'inbox-assign': el => inboxAssign(el.dataset.id, el.dataset.value),
+    'inbox-skip': el => { inbox.skipped.add(el.dataset.id); render(); },
+    'inbox-as-list': () => { ui.txTab = 'alle'; ui.bank.status = 'todo'; render(); },
     'bank-status': el => { ui.bank.status = el.dataset.status; ui.bank.limit = 150; render(); },
     'list-status': el => { ui.list.status = el.dataset.status; ui.list.limit = 150; render(); },
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
@@ -360,7 +364,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'auth-show-pw': () => { if (ui.auth) { ui.auth.showPw = true; render(); const u = $('[data-form=login] [name=username]'); if (u) u.focus(); } },
     'settings-tab': el => { ui.settingsTab = el.dataset.tab; try { localStorage.setItem('flux-settings-tab', ui.settingsTab); } catch (e) { /* niet erg */ } render(); window.scrollTo(0, 0); },
-    'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
+    'goto-rules': () => { ui.txTab = 'rekeningen'; go('transactions'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
     'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
     'forgive-save': saveForgive,
     'forgive-undo': el => { if (confirm('Dit ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
@@ -493,11 +497,12 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
 
   function go(view, silent) {
     if (view === 'actions') ui.owed = 'act';
+    if (view in TX_ALIAS) ui.txTab = TX_ALIAS[view];
     view = viewOf(view);
     ui.view = VIEWS.includes(view) ? view : 'dashboard';
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
-    if (ui.view === 'bank' && !bankLink.status && bankLinkAvailable()) loadBankLink();
+    if (ui.view === 'transactions' && !bankLink.status && bankLinkAvailable()) loadBankLink();
     if (ui.view === 'invest' && !saxoLink.status && saxoAvailable()) loadSaxo();
     if (ui.view === 'advances') refreshGroups();
     if (!silent) { render(); window.scrollTo(0, 0); }
@@ -603,6 +608,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       return;
     }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
+    if (el.dataset.inboxRule != null) { inbox.rule = el.checked; return; }
     if (el.dataset.rulesConfirm != null) {
       state.settings = Object.assign({}, state.settings, el.checked ? { rulesConfirm: true, rulesConfirmSince: Date.now() } : { rulesConfirm: false });
       commit(el.checked ? 'Regels doen voortaan een voorstel dat je bevestigt' : 'Regels verwerken nieuwe transacties weer vanzelf');
@@ -662,6 +668,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
 
   document.addEventListener('keydown', ev => {
+    if (inboxKey(ev)) return;
     const el = ev.target;
     // "/" of Ctrl+K: zoeken (niet terwijl je in een veld typt)
     if (((ev.key === '/' && !ev.ctrlKey && !ev.metaKey) || ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k')) && !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !ui.auth && !ui.admin) {
@@ -697,7 +704,13 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
   window.addEventListener('resize', () => { if (picker.input) renderPicker(); });
   window.addEventListener('scroll', () => { if (picker.input) renderPicker(); }, { passive: true });
-  window.addEventListener('hashchange', () => { const v = viewOf(location.hash.slice(1)); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
+  window.addEventListener('hashchange', () => {
+    const h = location.hash.slice(1);
+    const v = viewOf(h);
+    const tab = TX_ALIAS[h];
+    if (tab) { ui.txTab = tab; history.replaceState(null, '', '#transactions'); }
+    if (VIEWS.includes(v) && (v !== ui.view || tab)) { ui.view = v; render(); }
+  });
 
   document.addEventListener('submit', async ev => {
     const form = ev.target.closest('[data-form]');
@@ -786,7 +799,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       if (/[?&]google=gekoppeld/.test(location.search)) { history.replaceState(null, '', location.pathname + '#settings'); ui.view = 'settings'; ui.settingsTab = 'account'; toast('Je account is gekoppeld met Google. Je kan nu ook met Google aanmelden.'); render(); }
       if (/[?&]welkom=1/.test(location.search)) { history.replaceState(null, '', location.pathname + location.hash); toast('Welkom bij Helder! Je account is aangemaakt.'); }
       const back = /[?&]koppeling=/.test(location.search);
-      if (back) { history.replaceState(null, '', location.pathname + '#bank'); ui.view = 'bank'; render(); }
+      if (back) { history.replaceState(null, '', location.pathname + '#transactions'); ui.view = 'transactions'; ui.txTab = 'rekeningen'; render(); }
       // Terug van de aanmeldpagina van Saxo: meteen ophalen
       const saxoBack = /[?&]saxo=1/.test(location.search);
       if (saxoBack) { history.replaceState(null, '', location.pathname + '#invest'); ui.view = 'invest'; render(); }

@@ -24,11 +24,14 @@
   let snap = C.snapshot(realState);
 
   const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
-  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'invest', 'settings'];
-  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen".
-  const viewOf = v => v === 'actions' ? 'advances' : v;
+  const VIEWS = ['dashboard', 'transactions', 'advances', 'invest', 'settings'];
+  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen"; Bank, Inkomsten en
+  // Uitgaven zijn tabjes van Transacties.
+  const TX_ALIAS = { bank: 'alle', income: 'inkomsten', expenses: 'uitgaven', transacties: null };
+  const viewOf = v => v === 'actions' ? 'advances' : v in TX_ALIAS ? 'transactions' : v;
   const ui = {
     view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
+    txTab: TX_ALIAS[(location.hash || '').slice(1)] || null, // tabje binnen Transacties (null = vanzelf)
     owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
     bank: { account: '', category: '', status: 'todo', search: '', limit: 150 },

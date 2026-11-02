@@ -33,8 +33,8 @@
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
     // Te doen: alles wat je aandacht vraagt, op één plek
     const todoItems = [
-      todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
-      cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
+      todo ? `<a href="#" class="todo-row" data-action="goto" data-view="transactions" data-tab="verwerken"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
+      cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="transactions" data-tab="alle"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
       ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${moneyHtml(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
       ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">📥</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} vooruit</strong><span class="small muted">Nog voor ${esc(p.person)} te betalen (koppel die uitgave), of te veel terugbetaald</span></span><span class="todo-go">›</span></a>`),
       actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
@@ -69,7 +69,7 @@
             ${adv.totalPrepaid > 0 ? `<div class="list-row"><div class="grow">Vooruitbetaald door anderen<div class="small muted">staat op je rekening, maar moet je nog voor hen uitgeven</div></div><span class="amount">${money(-adv.totalPrepaid)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
-          ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}
+          ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Transacties → Rekeningen en import → rekening → Bewerk.</p>' : ''}
         </div>
       </details>`;
   }

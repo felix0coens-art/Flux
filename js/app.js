@@ -24,11 +24,14 @@
   let snap = C.snapshot(realState);
 
   const LOGO = '<svg class="logo-icon" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="currentColor"/><text x="32" y="47" text-anchor="middle" font-family="Rethink Sans, system-ui, sans-serif" font-weight="800" font-size="44" fill="#fff">€</text></svg>';
-  const VIEWS = ['dashboard', 'bank', 'income', 'expenses', 'advances', 'invest', 'settings'];
-  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen".
-  const viewOf = v => v === 'actions' ? 'advances' : v;
+  const VIEWS = ['dashboard', 'transactions', 'advances', 'invest', 'settings'];
+  // Oude adressen: Acties staat nu samen met Voorschotten onder "Terug te krijgen"; Bank, Inkomsten en
+  // Uitgaven zijn tabjes van Transacties.
+  const TX_ALIAS = { bank: 'alle', income: 'inkomsten', expenses: 'uitgaven', transacties: null };
+  const viewOf = v => v === 'actions' ? 'advances' : v in TX_ALIAS ? 'transactions' : v;
   const ui = {
     view: VIEWS.includes(viewOf((location.hash || '').slice(1))) ? viewOf(location.hash.slice(1)) : 'dashboard',
+    txTab: TX_ALIAS[(location.hash || '').slice(1)] || null, // tabje binnen Transacties (null = vanzelf)
     owed: (location.hash || '') === '#actions' ? 'act' : 'all', // filter op "Terug te krijgen": all | adv | act
     range: { from: today.slice(0, 7), to: today.slice(0, 7) }, // gekozen periode (maanden), gedeeld door Overzicht/Inkomsten/Uitgaven
     bank: { account: '', category: '', status: 'todo', search: '', limit: 150 },
@@ -305,25 +308,25 @@
     renderTopButtons();
     $$('#nav button, #tabbar [data-view], #tab-more [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
     const more = $('#tabbar [data-tab-more]');
-    if (more) more.classList.toggle('active', ['income', 'invest', 'settings'].includes(ui.view));
+    if (more) more.classList.toggle('active', ['invest', 'settings'].includes(ui.view));
     const tb = $('#tabbar');
     if (tb) tb.hidden = !!(ui.auth || ui.admin);
     const ts = $('#topbar-search');
     if (ts) ts.hidden = !!(ui.auth || ui.admin);
     const todo = todoCount();
-    const bankBtn = $('#nav [data-view=bank]');
-    if (bankBtn) bankBtn.innerHTML = 'Bank' + (todo ? ` <span class="count">${todo}</span>` : '');
+    const bankBtn = $('#nav [data-view=transactions]');
+    if (bankBtn) bankBtn.innerHTML = 'Transacties' + (todo ? ` <span class="count">${todo}</span>` : '');
     const acts = (state.actions || []).filter(a => !a.closed).length;
     const folBtn = $('#nav [data-view=advances]');
     if (folBtn) folBtn.innerHTML = 'Opvolgen' + (acts ? ` <span class="count soft">${acts}</span>` : '');
     const actCount = $('#tabbar .act-count');
     if (actCount) { actCount.hidden = !acts; actCount.textContent = acts > 99 ? '99+' : String(acts); }
-    const tabCount = $('#tabbar [data-view=bank] .tab-count');
+    const tabCount = $('#tabbar [data-view=transactions] .tab-count');
     if (tabCount) { tabCount.hidden = !todo; tabCount.textContent = todo > 99 ? '99+' : String(todo); }
     if (ui.auth) { $('#nav').hidden = true; $('#main').innerHTML = renderAuth(); return; }
     if (ui.admin) { $('#nav').hidden = true; $('#main').innerHTML = renderAdmin() + appFooter(); return; }
     $('#nav').hidden = false;
-    const views = { dashboard: renderDashboard, bank: renderBank, income: renderIncome, expenses: renderExpenses, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
+    const views = { dashboard: renderDashboard, transactions: renderTransactions, advances: renderAdvances, invest: renderInvest, settings: renderSettings };
     const banner = demo ? `<div class="demo-banner">🧪 <strong>Voorbeeldmodus.</strong> Verzonnen gegevens om Helder te leren kennen — volledig los van je eigen gegevens, niet gesynchroniseerd.
       <button class="btn small" data-action="exit-demo">Voorbeeld afsluiten</button></div>` : '';
     // Wie aan het typen is in een koppelveld, blijft daar (ook als de synchronisatie de pagina ververst)
@@ -397,8 +400,8 @@
     const actionsLate = actionsOpen.filter(a => a.due && a.due < today).length;
     // Te doen: alles wat je aandacht vraagt, op één plek
     const todoItems = [
-      todo ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
-      cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="bank"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
+      todo ? `<a href="#" class="todo-row" data-action="goto" data-view="transactions" data-tab="verwerken"><span class="todo-icon">📥</span><span class="grow"><strong>${todo} transactie${todo === 1 ? '' : 's'} te verwerken</strong><span class="small muted">Koppel ze aan een categorie, voorschot, …</span></span><span class="todo-go">›</span></a>` : '',
+      cancels ? `<a href="#" class="todo-row" data-action="goto" data-view="transactions" data-tab="alle"><span class="todo-icon">↩</span><span class="grow"><strong>${cancels} mogelijke annulering${cancels === 1 ? '' : 'en'}</strong><span class="small muted">Inkomst met hetzelfde bedrag als een eerdere uitgave</span></span><span class="todo-go">›</span></a>` : '',
       ...open.filter(p => p.open > 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">🤝</span><span class="grow"><strong>${esc(p.person)} is je nog ${moneyHtml(p.open)} schuldig</strong><span class="small muted">${p.items.filter(i => i.amount - i.repaid > 0).length} open voorschot(ten)</span></span><span class="todo-go">›</span></a>`),
       ...open.filter(p => p.open < 0).map(p => `<a href="#advances" class="todo-row" data-view-link="advances"><span class="todo-icon">📥</span><span class="grow"><strong>${esc(p.person)} betaalde ${moneyHtml(-p.open)} vooruit</strong><span class="small muted">Nog voor ${esc(p.person)} te betalen (koppel die uitgave), of te veel terugbetaald</span></span><span class="todo-go">›</span></a>`),
       actionsOpen.length ? `<a href="#" class="todo-row" data-action="goto" data-view="actions"><span class="todo-icon">✅</span><span class="grow"><strong>${actionsOpen.length} actie${actionsOpen.length === 1 ? '' : 's'} te doen${actionsLate ? ` <span class="warn-text">· ${actionsLate} te laat</span>` : ''}</strong><span class="small muted">${esc(actionsOpen.slice(0, 3).map(a => a.name).join(' · '))}${actionsOpen.length > 3 ? ' · …' : ''}</span></span><span class="todo-go">›</span></a>` : '',
@@ -433,7 +436,7 @@
             ${adv.totalPrepaid > 0 ? `<div class="list-row"><div class="grow">Vooruitbetaald door anderen<div class="small muted">staat op je rekening, maar moet je nog voor hen uitgeven</div></div><span class="amount">${money(-adv.totalPrepaid)}</span></div>` : ''}
             <div class="list-row total"><div class="grow"><strong>Totaal</strong></div><span class="amount">${money(worth)}</span></div>
           </div>
-          ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Bank → rekening → Bewerk.</p>' : ''}
+          ${state.accounts.some(a => a.type !== 'cash' && !C.accountBalance(state, a.id)) ? '<p class="small muted">Niet voor elke rekening is een saldo gekend. Geef het in bij Transacties → Rekeningen en import → rekening → Bewerk.</p>' : ''}
         </div>
       </details>`;
   }
@@ -870,6 +873,160 @@
       placeholder="Te verwerken — typ…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-label="Koppelen"><span class="assign-caret" aria-hidden="true">▾</span></div>`;
   }
 
+  // ----- Transacties: één tabblad met Te verwerken, Alle transacties, Uitgaven, Inkomsten en Rekeningen -----
+
+  const TX_TABS = [['verwerken', '📥 Te verwerken'], ['alle', '📋 Alle transacties'], ['uitgaven', '🧾 Uitgaven'], ['inkomsten', '💶 Inkomsten'], ['rekeningen', '🏦 Rekeningen en import']];
+  function txTab() {
+    if (TX_TABS.some(x => x[0] === ui.txTab)) return ui.txTab;
+    return todoCount() ? 'verwerken' : 'alle';
+  }
+
+  function renderTransactions() {
+    const tab = txTab();
+    const todo = todoCount();
+    const nav = `<div class="tx-tabs" role="tablist" aria-label="Transacties">${TX_TABS.map(([k, l]) => `<button role="tab" class="${tab === k ? 'active' : ''}" aria-selected="${tab === k}" data-action="tx-tab" data-tab="${k}">${l}${k === 'verwerken' && todo ? ` <span class="count">${todo}</span>` : ''}</button>`).join('')}</div>`;
+    const body = { verwerken: renderInbox, alle: renderBankList, uitgaven: renderExpenses, inkomsten: renderIncome, rekeningen: renderAccounts }[tab]();
+    return `<div class="page-head"><h1>Transacties</h1><span class="spacer"></span>
+        <button class="btn" data-action="new-tx">+ Manuele transactie</button>
+        <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
+      ${nav}${body}`;
+  }
+
+  // ----- Te verwerken: één transactie tegelijk, met voorstellen en je vaakst gebruikte categorieën -----
+
+  const inbox = { skipped: new Set(), rule: false };
+  function inboxQueue() {
+    const list = state.transactions.filter(t => kindOf(t) === 'todo').sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+    const rest = list.filter(t => !inbox.skipped.has(t.id));
+    return { list, current: rest[0] || list[0] || null, left: list.length };
+  }
+
+  /** Hoe vaak elke categorie al gebruikt werd (meest gebruikte eerst), per richting. */
+  function categoryUsage(incoming) {
+    const n = {};
+    for (const t of state.transactions) {
+      if ((t.amount > 0) !== incoming) continue;
+      for (const l of C.splitLines(t)) if (l.categoryId && !l.categoryId.startsWith('sys_')) n[l.categoryId] = (n[l.categoryId] || 0) + 1;
+    }
+    return state.categories.filter(c => incoming ? c.kind === 'income' : c.kind === 'expense')
+      .sort((a, b) => (n[b.id] || 0) - (n[a.id] || 0) || a.name.localeCompare(b.name));
+  }
+
+  /** Voorstellen voor deze transactie: regel, vorige keer bij dezelfde tegenpartij, terugbetaling, zoekwoorden. */
+  function inboxSuggestions(t) {
+    const out = [];
+    const add = (value, label, why) => { if (!out.some(x => x.value === value)) out.push({ value, label, why }); };
+    const sg = ruleSuggestion(t);
+    if (sg) add('rule-ok', sg.label, 'regel “' + sg.rule.name + '”');
+    const key = C.normalizeName(t.counterparty);
+    if (key) {
+      const prev = state.transactions.filter(o => o.id !== t.id && (o.amount > 0) === (t.amount > 0) && C.normalizeName(o.counterparty) === key && o.categoryId && kindOf(o) !== 'todo')
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (prev) {
+        if (prev.categoryId === C.SYS_ADVANCE && prev.person) add('adv:' + prev.person, (t.amount > 0 ? '🤝 Terugbetaling van ' : '🤝 Voorgeschoten voor ') + prev.person, 'zoals vorige keer');
+        else if (!prev.categoryId.startsWith('sys_')) add('cat:' + prev.categoryId, catLabel(prev.categoryId), 'zoals vorige keer (' + fmtDate(prev.date) + ')');
+      }
+    }
+    if (t.amount > 0) {
+      const r = C.suggestRefundTargets(state, t, 1)[0];
+      if (r && Math.abs(C.daysBetween(r.tx.date, t.date)) <= 30) add('refund:' + r.tx.id, '↩ Terugbetaling van ' + (r.tx.title || r.tx.counterparty || 'een uitgave') + ' (' + money(r.tx.amount) + ')', 'zelfde bedrag of naam');
+    }
+    const m = C.matchCategory([t.title, t.counterparty, t.description].filter(Boolean).join(' '), state.categories, t.amount > 0 ? 'in' : 'out');
+    if (m && m.confidence !== 'laag') add('cat:' + m.categoryId, catLabel(m.categoryId), 'zoekwoord “' + m.hits[0] + '”');
+    return out.slice(0, 4);
+  }
+
+  function renderInbox() {
+    const q = inboxQueue();
+    const t = q.current;
+    if (!t) {
+      return `<div class="card empty-state inbox-empty"><div class="inbox-big">🎉</div><h2>Alles is verwerkt</h2>
+        <p class="muted">Nieuwe transacties van je bank komen hier vanzelf terecht. Laad een bankbestand op of koppel je bank bij <a href="#" data-action="tx-tab" data-tab="rekeningen">Rekeningen en import</a>.</p></div>`;
+    }
+    const incoming = t.amount > 0;
+    const sugg = inboxSuggestions(t);
+    const cats = categoryUsage(incoming);
+    const top = cats.slice(0, 12), more = cats.slice(12);
+    const chip = c => `<button class="inbox-cat" data-action="inbox-assign" data-id="${esc(t.id)}" data-value="cat:${esc(c.id)}"><span class="dot" style="background:${esc(c.color || '#999')}"></span>${esc(C.categoryIcon(c) + ' ' + c.name)}</button>`;
+    const special = [
+      ['cat:' + C.SYS_ADVANCE, incoming ? '🤝 Terugbetaling voorschot' : '🤝 Voorgeschoten voor iemand'],
+      incoming ? ['whatis', '❓ Wat is dit geld?'] : null,
+      incoming ? ['refund', '↩ Terugbetaling van een uitgave'] : null,
+      ['split', '✂ Opsplitsen'],
+      ['transfer', '↔ Naar/van eigen rekening'],
+      ['cat:' + C.SYS_INVEST, '📈 Belegging'],
+      groupsOn() && groupList().length ? ['group:' + groupList()[0].id, '👥 In een groep'] : null
+    ].filter(Boolean);
+    const cp = t.counterparty || t.description || '';
+    const done = inbox.done || 0;
+    return `<div class="inbox">
+      <div class="inbox-progress small"><span><strong>${q.left}</strong> te verwerken${done ? ` · ${done} gedaan` : ''}</span>
+        <span class="spacer"></span><a href="#" data-action="inbox-as-list">Als lijst tonen</a></div>
+      <div class="card inbox-card">
+        <div class="inbox-tx">
+          <div class="grow">
+            <div class="small muted">${fmtDate(t.date)} · ${esc(accName(t.accountId))}${t.source === 'import' ? '' : ' · manueel'}</div>
+            <div class="inbox-who">${esc(t.title || cp || '—')}</div>
+            ${t.title && cp ? `<div class="small muted">${esc(cp)}</div>` : ''}
+            ${t.description && t.description !== cp ? `<div class="small muted inbox-desc">${esc(t.description)}</div>` : ''}
+          </div>
+          <div class="inbox-amount ${incoming ? 'pos' : ''}">${money(t.amount)}<div class="small muted">${incoming ? 'ontvangen' : 'betaald'}</div></div>
+        </div>
+        <h3 class="inbox-q">${incoming ? 'Wat is dit geld?' : 'Waarvoor was dit?'}</h3>
+        ${sugg.length ? `<div class="inbox-sugg">${sugg.map((s, i) => `<button class="inbox-sugg-btn" data-action="inbox-assign" data-id="${esc(t.id)}" data-value="${esc(s.value)}"><kbd>${i + 1}</kbd><span class="grow"><strong>${esc(s.label)}</strong><span class="small muted">💡 ${esc(s.why)}</span></span></button>`).join('')}</div>` : ''}
+        <div class="inbox-label small muted">${sugg.length ? 'Of kies een categorie' : 'Kies een categorie'}</div>
+        <div class="inbox-cats">${top.map(chip).join('')}
+          <button class="inbox-cat new" data-action="inbox-assign" data-id="${esc(t.id)}" data-value="new-cat">+ Nieuwe ${incoming ? 'inkomstenbron' : 'categorie'}</button></div>
+        ${more.length ? `<details class="inbox-more"><summary class="small">Alle categorieën (${cats.length})</summary><div class="inbox-cats">${more.map(chip).join('')}</div></details>` : ''}
+        <div class="inbox-search">${assignSelect(t)}<span class="small muted">Typ om te zoeken in alles: categorieën, personen, groepen, …</span></div>
+        <div class="inbox-label small muted">Iets anders?</div>
+        <div class="inbox-special">${special.map(([v, l]) => `<button class="btn small" data-action="inbox-assign" data-id="${esc(t.id)}" data-value="${esc(v)}">${l}</button>`).join('')}</div>
+        <div class="inbox-foot">
+          ${cp ? `<label class="check-row small"><input type="checkbox" data-inbox-rule ${inbox.rule ? 'checked' : ''}> <span>⚙ Voortaan altijd zo voor “${esc(cp.slice(0, 40))}”</span></label>` : ''}
+          <span class="spacer"></span>
+          <button class="btn small ghost" data-action="edit-tx" data-id="${esc(t.id)}">Details…</button>
+          <button class="btn small" data-action="inbox-skip" data-id="${esc(t.id)}" title="Later (S)">Overslaan ⏭</button>
+        </div>
+      </div>
+      <p class="small muted inbox-keys">Sneltoetsen: <kbd>1</kbd>–<kbd>4</kbd> voorstel kiezen · <kbd>S</kbd> overslaan · <kbd>/</kbd> zoeken</p>
+    </div>`;
+  }
+
+  /** Een keuze uit de verwerker toepassen; daarna verschijnt vanzelf de volgende transactie. */
+  function inboxAssign(id, value) {
+    const t = txById(id);
+    if (!t) return;
+    const before = { categoryId: t.categoryId || null, categorySource: t.categorySource || null, ruleId: t.ruleId || null, transferMode: t.transferMode, person: t.person, refundOf: t.refundOf || null };
+    const wantRule = inbox.rule && value.startsWith('cat:') && !value.startsWith('cat:sys_');
+    assignTx(id, value);
+    if (kindOf(t) === 'todo') return; // er ging een venster open (splitsen, voorschot, ...)
+    inbox.done = (inbox.done || 0) + 1;
+    inbox.skipped.delete(id);
+    if (wantRule && ui.ruleHint && ui.ruleHint.txId === id) { ruleFromHint(id); return; }
+    toast('✓ ' + (t.counterparty || t.title || 'Transactie') + ' → ' + (assignLabel(t) || 'verwerkt'), { label: 'Ongedaan maken', run: () => {
+      const x = txById(id);
+      if (!x) return;
+      Object.assign(x, before);
+      if (!before.person) delete x.person;
+      inbox.done = Math.max(0, (inbox.done || 1) - 1);
+      commit('Teruggezet');
+    } });
+  }
+
+  function inboxKey(ev) {
+    if (ui.view !== 'transactions' || txTab() !== 'verwerken' || modal || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+    const el = document.activeElement;
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return false;
+    const t = inboxQueue().current;
+    if (!t) return false;
+    if (/^[1-4]$/.test(ev.key)) {
+      const s = inboxSuggestions(t)[Number(ev.key) - 1];
+      if (s) { ev.preventDefault(); inboxAssign(t.id, s.value); return true; }
+    }
+    if (ev.key === 's' || ev.key === 'S') { ev.preventDefault(); inbox.skipped.add(t.id); render(); return true; }
+    if (ev.key === '/') { const i = $('.inbox-search [data-assign-input]'); if (i) { ev.preventDefault(); i.focus(); return true; } }
+    return false;
+  }
   // ----- Snel koppelen: typen, pijltjes en Enter -----
 
   const picker = { input: null, id: null, items: [], index: 0, typed: false };
@@ -1066,7 +1223,7 @@
     const total = list.reduce((sum, t) => sum + t.amount, 0);
     if (!confirm(`${list.length} transactie${list.length === 1 ? '' : 's'} verwijderen (samen ${C.formatMoney(total)})?`
       + (fromFile ? `\n\n${fromFile} ervan kwam${fromFile === 1 ? '' : 'en'} uit een bankbestand of de bankkoppeling. Helder onthoudt ze, zodat ze bij een volgende import niet terugkomen.` : '')
-      + '\n\nJe kan ze altijd terugzetten via de prullenbak (onderaan in het tabblad Bank).')) return;
+      + '\n\nJe kan ze altijd terugzetten via de prullenbak (Transacties → Rekeningen en import).')) return;
     deleteWithUndo(list.map(t => t.id));
   }
 
@@ -1118,7 +1275,7 @@
     return `<label class="check-row"><input type="checkbox" data-rules-confirm ${on ? 'checked' : ''}> <span><strong>Voorstellen van regels eerst zelf bevestigen</strong><br><span class="small muted">${on ? 'Aan: nieuwe transacties blijven “te verwerken” tot je het voorstel bevestigt.' : 'Uit: regels zetten nieuwe transacties meteen op verwerkt.'}</span></span></label>`;
   }
 
-  /** Automatische regels (staan bij Bank, waar je ook de transacties koppelt). */
+  /** Automatische regels (staan bij Transacties → Rekeningen en import). */
   function rulesCard() {
     const rules = C.sortedRules(state.rules);
     const ruleCount = {};
@@ -1165,12 +1322,9 @@
     } });
   }
 
-  function renderBank() {
-    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
-    const all = state.transactions.filter(bankTxFilter).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
-    const todo = todoCount();
+  function accountCards(imports) {
     const f = ui.bank;
-    const cards = state.accounts.map(a => {
+    return state.accounts.map(a => {
       const n = state.transactions.filter(t => t.accountId === a.id).length;
       const nTodo = state.transactions.filter(t => t.accountId === a.id && kindOf(t) === 'todo').length;
       const bal = C.accountBalance(state, a.id);
@@ -1181,20 +1335,25 @@
           <div class="amount">${bal ? money(bal.amount) : '<span class="muted small">saldo ?</span>'}</div></div>
         <div class="small muted">${n} transacties${nTodo ? ` · <strong class="warn-text">${nTodo} te verwerken</strong>` : ''}${last && last.period ? ` · bestanden t.e.m. ${fmtDate(last.period.to)}` : ''}</div>
         <div class="actions">
-          <button class="btn small" data-action="bank-filter" data-id="${esc(a.id)}">${f.account === a.id ? '✓ ' : ''}Transacties</button>
+          <button class="btn small" data-action="bank-filter" data-tab="alle" data-id="${esc(a.id)}">${f.account === a.id ? '✓ ' : ''}Transacties</button>
           ${a.type === 'cash' ? `<button class="btn small" data-action="new-tx" data-account="${esc(a.id)}">+ Cash-uitgave</button>` : `<button class="btn small" data-action="import" data-account="${esc(a.id)}">Bestand opladen</button>`}
           <button class="btn small ghost" data-action="edit-account" data-id="${esc(a.id)}">Bewerk</button>
         </div></div>`;
     }).join('');
+  }
+
+  /** Alle transacties, met filters (tabje van Transacties). */
+  function renderBankList() {
+    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const all = state.transactions.filter(bankTxFilter).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+    const todo = todoCount();
+    const f = ui.bank;
 
     return `
-      <div class="page-head"><h1>Bank</h1><span class="spacer"></span>
-        <button class="btn" data-action="new-tx">+ Manuele transactie</button>
-        <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
       ${state.transactions.length ? '' : `<p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>`}
       ${cancelCard()}
-      <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
+      ${f.account ? `<h2>${esc(accName(f.account))}</h2>` : ''}
       <div class="filters">
         <div class="seg">
           ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
@@ -1203,8 +1362,16 @@
         <select data-filter="bank.category" aria-label="Filter op categorie"><option value="">Alle categorieën</option><option value="__none__" ${f.category === '__none__' ? 'selected' : ''}>❔ Nog niet gekoppeld</option>${categoryOptions(f.category || null, { special: true, allowEmpty: false })}</select>
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
-      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
-      <h2 style="margin-top:28px">Rekeningen en bankkoppeling</h2>
+      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}`;
+  }
+
+  /** Rekeningen, bankkoppeling, regels, prullenbak en imports (tabje van Transacties). */
+  function renderAccounts() {
+    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const f = ui.bank;
+    const cards = accountCards(imports);
+    return `
+      <h2>Rekeningen en bankkoppeling</h2>
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
       ${bankLinkCard()}
       ${rulesCard()}
@@ -2912,7 +3079,7 @@
     if (!bankLinkAvailable()) return;
     try { bankLink.status = await Sync.bank.status(); bankLink.error = ''; }
     catch (e) { bankLink.error = e.message; }
-    if (ui.view === 'bank' && !modal) render();
+    if (ui.view === 'transactions' && !modal) render();
     if (opts && opts.auto) await autoFetchLinked();
   }
 
@@ -2937,7 +3104,7 @@
     if (!bankLinkAvailable() || bankLink.busy[conn.id]) return;
     bankLink.busy[conn.id] = true;
     bankLink.errors[conn.id] = '';
-    if (ui.view === 'bank' && !modal) render();
+    if (ui.view === 'transactions' && !modal) render();
     let added = 0, changed = false;
     const notes = [];
     try {
@@ -2963,7 +3130,7 @@
       bankLink.busy[conn.id] = false;
     }
     const msg = added ? `${conn.aspsp}: ${added} nieuwe transacties opgehaald${notes.length ? ' (' + notes[0] + ')' : ''}` : (opts.quiet || bankLink.errors[conn.id] ? null : `${conn.aspsp}: geen nieuwe transacties`);
-    if (changed) commit(msg); else if (ui.view === 'bank' && !modal) render();
+    if (changed) commit(msg); else if (ui.view === 'transactions' && !modal) render();
   }
 
   /** Bij het openen van Helder: rekeningen ophalen die langer dan 6 uur niet bijgewerkt werden. */
@@ -3174,7 +3341,7 @@
     }).join('');
 
     return `
-      <div class="page-head"><h1>Inkomsten</h1><span class="spacer"></span>
+      <div class="page-head sub"><h2>Inkomsten</h2><span class="spacer"></span>
         <button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>
         <button class="btn" data-action="new-category" data-kind="income">+ Inkomstenbron</button></div>
       ${timeline()}
@@ -3270,7 +3437,7 @@
     const cands = C.lookupCandidates(state).filter(c => c.direction === 'out').length;
 
     return `
-      <div class="page-head"><h1>Uitgaven</h1><span class="spacer"></span>
+      <div class="page-head sub"><h2>Uitgaven</h2><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Cash-uitgave</button></div>
       ${timeline()}
       <div class="grid kpis">
@@ -4330,7 +4497,7 @@
     const tabs = [
       ['accounts', '🏦', 'Rekeningen', 'Je rekeningen en vanaf welke datum Helder transacties bijhoudt.'],
       ['categories', '🏷️', 'Categorieën', 'Waarin je uitgaven en inkomsten worden ingedeeld.'],
-      ['auto', '✨', 'Automatisch indelen', 'Hoe Helder onbekende tegenpartijen herkent. De regels zelf staan bij Bank.'],
+      ['auto', '✨', 'Automatisch indelen', 'Hoe Helder onbekende tegenpartijen herkent. De regels zelf staan bij Transacties → Rekeningen en import.'],
       ['account', '👤', 'Account', 'Aanmelden, synchroniseren tussen je toestellen en je account.'],
       ['data', '💾', 'Gegevens & back-up', 'Wat er in Helder zit, back-ups, exporteren, de voorbeeldmodus en alles wissen.']
     ];
@@ -4360,7 +4527,7 @@
         <div class="card">
           <h2>Regels</h2>
           ${rulesConfirmToggle()}
-          <p class="small muted">De regels zelf beheer je bij <a href="#bank" data-view-link="bank">Bank</a>, onderaan.</p>
+          <p class="small muted">De regels zelf beheer je bij <a href="#" data-action="goto-rules">Transacties → Rekeningen en import</a>.</p>
         </div>
         <div class="card" style="margin-top:16px">
           <h2>Online opzoeken</h2>
@@ -4420,7 +4587,7 @@
             ${Invest.brokers(inv()).map(b => `<div class="list-row"><div class="grow">📈 ${esc(b.name)}</div><span class="small">${b.id === 'degiro' ? (inv().files || []).length + ' bestand(en)' : ''}${b.source === 'degiro-api' || b.source === 'saxo-api' ? ' · rechtstreeks' : ''}</span></div>`).join('')}
             <div class="list-row total"><div class="grow"><strong>Totaal transacties</strong></div><span>${state.transactions.length}</span></div>
           </div>
-          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
+          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in Transacties → Rekeningen en import.</p>
         </div>
 `
     };
@@ -5722,7 +5889,7 @@
 
   const actions = {
     ...groupActions,
-    'goto': el => go(el.dataset.view),
+    'goto': el => { if (el.dataset.tab) ui.txTab = el.dataset.tab; go(el.dataset.view); },
     'range-preset': el => { ui.range = presetRange(el.dataset.preset, timelineMonths()); render(); },
     'import': el => openModal({ type: 'import', accountHint: (el && el.dataset.account) || '' }),
     'import-restart': () => openModal({ type: 'import', accountHint: modal.accountHint }),
@@ -5748,7 +5915,11 @@
       t.notRefundOf = (t.notRefundOf || []).concat([el.dataset.out]);
       commit();
     },
-    'bank-filter': el => { ui.bank.account = ui.bank.account === el.dataset.id ? '' : el.dataset.id; ui.bank.status = ''; render(); },
+    'bank-filter': el => { ui.bank.account = ui.bank.account === el.dataset.id ? '' : el.dataset.id; ui.bank.status = ''; if (el.dataset.tab) ui.txTab = el.dataset.tab; render(); },
+    'tx-tab': el => { ui.txTab = el.dataset.tab; if (location.hash !== '#transactions') history.replaceState(null, '', '#transactions'); render(); window.scrollTo(0, 0); },
+    'inbox-assign': el => inboxAssign(el.dataset.id, el.dataset.value),
+    'inbox-skip': el => { inbox.skipped.add(el.dataset.id); render(); },
+    'inbox-as-list': () => { ui.txTab = 'alle'; ui.bank.status = 'todo'; render(); },
     'bank-status': el => { ui.bank.status = el.dataset.status; ui.bank.limit = 150; render(); },
     'list-status': el => { ui.list.status = el.dataset.status; ui.list.limit = 150; render(); },
     'more': el => { (el.dataset.key === 'bank' ? ui.bank : ui.list).limit += 300; render(); },
@@ -6080,7 +6251,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
     },
     'auth-show-pw': () => { if (ui.auth) { ui.auth.showPw = true; render(); const u = $('[data-form=login] [name=username]'); if (u) u.focus(); } },
     'settings-tab': el => { ui.settingsTab = el.dataset.tab; try { localStorage.setItem('flux-settings-tab', ui.settingsTab); } catch (e) { /* niet erg */ } render(); window.scrollTo(0, 0); },
-    'goto-rules': () => { go('bank'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
+    'goto-rules': () => { ui.txTab = 'rekeningen'; go('transactions'); requestAnimationFrame(() => { const r = $('.rules-card'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); },
     'forgive': el => openModal({ type: 'forgive', person: el.dataset.person }),
     'forgive-save': saveForgive,
     'forgive-undo': el => { if (confirm('Dit ongedaan maken? Het bedrag staat dan weer open.')) removeForgive(el.dataset.person, el.dataset.id); },
@@ -6213,11 +6384,12 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
 
   function go(view, silent) {
     if (view === 'actions') ui.owed = 'act';
+    if (view in TX_ALIAS) ui.txTab = TX_ALIAS[view];
     view = viewOf(view);
     ui.view = VIEWS.includes(view) ? view : 'dashboard';
     ui.list.status = ''; ui.list.limit = 150;
     if (location.hash !== '#' + ui.view) history.replaceState(null, '', '#' + ui.view);
-    if (ui.view === 'bank' && !bankLink.status && bankLinkAvailable()) loadBankLink();
+    if (ui.view === 'transactions' && !bankLink.status && bankLinkAvailable()) loadBankLink();
     if (ui.view === 'invest' && !saxoLink.status && saxoAvailable()) loadSaxo();
     if (ui.view === 'advances') refreshGroups();
     if (!silent) { render(); window.scrollTo(0, 0); }
@@ -6323,6 +6495,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       return;
     }
     if (el.id === 'data-from') { dateWhenDone(el, v => setDataFrom(v)); return; }
+    if (el.dataset.inboxRule != null) { inbox.rule = el.checked; return; }
     if (el.dataset.rulesConfirm != null) {
       state.settings = Object.assign({}, state.settings, el.checked ? { rulesConfirm: true, rulesConfirmSince: Date.now() } : { rulesConfirm: false });
       commit(el.checked ? 'Regels doen voortaan een voorstel dat je bevestigt' : 'Regels verwerken nieuwe transacties weer vanzelf');
@@ -6382,6 +6555,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
 
   document.addEventListener('keydown', ev => {
+    if (inboxKey(ev)) return;
     const el = ev.target;
     // "/" of Ctrl+K: zoeken (niet terwijl je in een veld typt)
     if (((ev.key === '/' && !ev.ctrlKey && !ev.metaKey) || ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k')) && !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !ui.auth && !ui.admin) {
@@ -6417,7 +6591,13 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
   });
   window.addEventListener('resize', () => { if (picker.input) renderPicker(); });
   window.addEventListener('scroll', () => { if (picker.input) renderPicker(); }, { passive: true });
-  window.addEventListener('hashchange', () => { const v = viewOf(location.hash.slice(1)); if (VIEWS.includes(v) && v !== ui.view) { ui.view = v; render(); } });
+  window.addEventListener('hashchange', () => {
+    const h = location.hash.slice(1);
+    const v = viewOf(h);
+    const tab = TX_ALIAS[h];
+    if (tab) { ui.txTab = tab; history.replaceState(null, '', '#transactions'); }
+    if (VIEWS.includes(v) && (v !== ui.view || tab)) { ui.view = v; render(); }
+  });
 
   document.addEventListener('submit', async ev => {
     const form = ev.target.closest('[data-form]');
@@ -6506,7 +6686,7 @@ ${n} oudere transacties worden weggehaald (ze komen terug als je de startdatum l
       if (/[?&]google=gekoppeld/.test(location.search)) { history.replaceState(null, '', location.pathname + '#settings'); ui.view = 'settings'; ui.settingsTab = 'account'; toast('Je account is gekoppeld met Google. Je kan nu ook met Google aanmelden.'); render(); }
       if (/[?&]welkom=1/.test(location.search)) { history.replaceState(null, '', location.pathname + location.hash); toast('Welkom bij Helder! Je account is aangemaakt.'); }
       const back = /[?&]koppeling=/.test(location.search);
-      if (back) { history.replaceState(null, '', location.pathname + '#bank'); ui.view = 'bank'; render(); }
+      if (back) { history.replaceState(null, '', location.pathname + '#transactions'); ui.view = 'transactions'; ui.txTab = 'rekeningen'; render(); }
       // Terug van de aanmeldpagina van Saxo: meteen ophalen
       const saxoBack = /[?&]saxo=1/.test(location.search);
       if (saxoBack) { history.replaceState(null, '', location.pathname + '#invest'); ui.view = 'invest'; render(); }

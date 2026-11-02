@@ -24,7 +24,7 @@ Helder heeft zes tabbladen:
 - **Elk bestand is een import.** Per import zie je de bestandsnaam, de bank, de rekening, de periode, het aantal toegevoegde transacties en het aantal rijen dat overgeslagen werd. Bij elke transactie zie je uit welk bestand ze komt, of dat je ze manueel invoerde.
 - **Hetzelfde bestand kan geen tweede keer opgeladen worden.** Helder herkent de inhoud, dus ook als je het bestand hernoemde.
 - **Overlappende bestanden zijn geen probleem.** Laad je bijvoorbeeld september–oktober op terwijl september er al in zit, dan worden enkel de nieuwe rijen toegevoegd. Helder toont vooraf hoeveel er nieuw is en hoeveel er al in zat, en uit welk bestand.
-- **Elke import kan je ongedaan maken.** In het tabblad Bank verwijder je met één klik alle transacties van één bestand.
+- **Elke import kan je ongedaan maken.** In *Transacties → Rekeningen en import* verwijder je met één klik alle transacties van één bestand.
 - **Voorbeeldgegevens zitten in een aparte zandbak** (*Instellingen → Voorbeeldmodus*). Zolang die aanstaat zie je bovenaan een duidelijke balk. Je eigen gegevens worden er nooit door aangeraakt en de zandbak wordt niet gesynchroniseerd.
 - **Bij de update naar deze versie zijn alle vroegere gegevens gewist**, zoals je vroeg: lokaal in elke browser en op de server. Op de server blijft een back-up bewaard (`user-….json.v2.bak` in de datamap), maar Helder zet die nooit vanzelf terug.
 
@@ -69,13 +69,15 @@ Elke transactie staat eerst op **Te verwerken**. In het veld *Gekoppeld aan* **t
 
 Je kan elke transactie ook een **eigen titel** geven, bijvoorbeeld "Verjaardagscadeau mama". Die titel wordt overal getoond, met de tekst van de bank eronder. Helder stelt een categorie voor op basis van je titel, via de zoekwoorden van je categorieën. Met AI op je server kan ook Claude de categorie kiezen aan de hand van je titel. Regels kunnen ook op de eigen titel werken.
 
-**Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijderen kan je altijd terugdraaien: meteen via **Ongedaan maken** in de melding, of later via de **🗑 Prullenbak** onderaan het tabblad Bank. Zolang transacties uit een bankbestand of de bankkoppeling in de prullenbak staan, komen ze bij een volgende import niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
+**Meerdere transacties tegelijk**: vink ze aan (of alles met het vakje bovenaan). Er verschijnt een balk waarmee je ze in één keer **koppelt** of **verwijdert**. Verwijderen kan je altijd terugdraaien: meteen via **Ongedaan maken** in de melding, of later via de **🗑 Prullenbak** in *Transacties → Rekeningen en import*. Zolang transacties uit een bankbestand of de bankkoppeling in de prullenbak staan, komen ze bij een volgende import niet terug, en het importvenster toont hoeveel er zo werden overgeslagen.
+
+**Transacties** is één tabblad met vijf tabjes: *Te verwerken*, *Alle transacties*, *Uitgaven*, *Inkomsten* en *Rekeningen en import*. In **Te verwerken** krijg je telkens één transactie, groot en duidelijk, met voorstellen (regel, wat je vorige keer koos bij die tegenpartij, een terugbetaling met hetzelfde bedrag, zoekwoorden) en je vaakst gebruikte categorieën als knoppen. Na je keuze verschijnt meteen de volgende; met *Ongedaan maken* zet je ze terug. Sneltoetsen: 1–4 (voorstel), S (overslaan), / (zoeken).
 
 Koppel je een tegenpartij voor het eerst, dan verschijnt **⚙ Altijd zo**: één klik en volgende transacties van die tegenpartij krijgen vanzelf een **voorstel** (💡). Een transactie is pas verwerkt als je dat voorstel bevestigt met **✓** (of je vinkt er meerdere aan en bevestigt ze samen). Wil je dat regels nieuwe transacties meteen zelf verwerken, zet dat dan uit in *Instellingen → Automatisch indelen*. Onbekende tegenpartijen kan je ook **online laten opzoeken** (Wikidata, OpenStreetMap, optioneel AI).
 
 ### Inkomsten met kosten
 
-Elke inkomstencategorie is een **bron**. Helder maakt er geen vooraf aan: je maakt ze zelf aan in het tabblad *Inkomsten*, of rechtstreeks vanuit een transactie via *+ Nieuwe inkomstenbron…*. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
+Elke inkomstencategorie is een **bron**. Helder maakt er geen vooraf aan: je maakt ze zelf aan in *Transacties → Inkomsten*, of rechtstreeks vanuit een transactie via *+ Nieuwe inkomstenbron…*. Een **kostcategorie** koppel je aan een bron, en die kosten worden dan van die bron afgetrokken: netto = bruto − kosten. Werd een kost al afgehouden van een betaling, bijvoorbeeld een commissie van een platform? Splits de ontvangst dan in `1000` (bron) en `-100` (kost).
 
 ### Vaste lasten
 

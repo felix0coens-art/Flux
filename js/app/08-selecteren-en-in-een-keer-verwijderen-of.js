@@ -99,7 +99,7 @@
     const total = list.reduce((sum, t) => sum + t.amount, 0);
     if (!confirm(`${list.length} transactie${list.length === 1 ? '' : 's'} verwijderen (samen ${C.formatMoney(total)})?`
       + (fromFile ? `\n\n${fromFile} ervan kwam${fromFile === 1 ? '' : 'en'} uit een bankbestand of de bankkoppeling. Helder onthoudt ze, zodat ze bij een volgende import niet terugkomen.` : '')
-      + '\n\nJe kan ze altijd terugzetten via de prullenbak (onderaan in het tabblad Bank).')) return;
+      + '\n\nJe kan ze altijd terugzetten via de prullenbak (Transacties → Rekeningen en import).')) return;
     deleteWithUndo(list.map(t => t.id));
   }
 
@@ -151,7 +151,7 @@
     return `<label class="check-row"><input type="checkbox" data-rules-confirm ${on ? 'checked' : ''}> <span><strong>Voorstellen van regels eerst zelf bevestigen</strong><br><span class="small muted">${on ? 'Aan: nieuwe transacties blijven “te verwerken” tot je het voorstel bevestigt.' : 'Uit: regels zetten nieuwe transacties meteen op verwerkt.'}</span></span></label>`;
   }
 
-  /** Automatische regels (staan bij Bank, waar je ook de transacties koppelt). */
+  /** Automatische regels (staan bij Transacties → Rekeningen en import). */
   function rulesCard() {
     const rules = C.sortedRules(state.rules);
     const ruleCount = {};
@@ -198,12 +198,9 @@
     } });
   }
 
-  function renderBank() {
-    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
-    const all = state.transactions.filter(bankTxFilter).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
-    const todo = todoCount();
+  function accountCards(imports) {
     const f = ui.bank;
-    const cards = state.accounts.map(a => {
+    return state.accounts.map(a => {
       const n = state.transactions.filter(t => t.accountId === a.id).length;
       const nTodo = state.transactions.filter(t => t.accountId === a.id && kindOf(t) === 'todo').length;
       const bal = C.accountBalance(state, a.id);
@@ -214,20 +211,25 @@
           <div class="amount">${bal ? money(bal.amount) : '<span class="muted small">saldo ?</span>'}</div></div>
         <div class="small muted">${n} transacties${nTodo ? ` · <strong class="warn-text">${nTodo} te verwerken</strong>` : ''}${last && last.period ? ` · bestanden t.e.m. ${fmtDate(last.period.to)}` : ''}</div>
         <div class="actions">
-          <button class="btn small" data-action="bank-filter" data-id="${esc(a.id)}">${f.account === a.id ? '✓ ' : ''}Transacties</button>
+          <button class="btn small" data-action="bank-filter" data-tab="alle" data-id="${esc(a.id)}">${f.account === a.id ? '✓ ' : ''}Transacties</button>
           ${a.type === 'cash' ? `<button class="btn small" data-action="new-tx" data-account="${esc(a.id)}">+ Cash-uitgave</button>` : `<button class="btn small" data-action="import" data-account="${esc(a.id)}">Bestand opladen</button>`}
           <button class="btn small ghost" data-action="edit-account" data-id="${esc(a.id)}">Bewerk</button>
         </div></div>`;
     }).join('');
+  }
+
+  /** Alle transacties, met filters (tabje van Transacties). */
+  function renderBankList() {
+    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const all = state.transactions.filter(bankTxFilter).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+    const todo = todoCount();
+    const f = ui.bank;
 
     return `
-      <div class="page-head"><h1>Bank</h1><span class="spacer"></span>
-        <button class="btn" data-action="new-tx">+ Manuele transactie</button>
-        <button class="btn primary" data-action="import">Bankbestand opladen</button></div>
       ${state.transactions.length ? '' : `<p class="muted">Koppel je bank om transacties automatisch op te halen, of laad de CSV-export van je bank op (KBC/CBC, Argenta en Belfius worden automatisch herkend).
         Elk bestand kan maar één keer opgeladen worden, en transacties die al in Helder zitten worden overgeslagen. Koppel daarna elke transactie aan wat ze is.</p>`}
       ${cancelCard()}
-      <h2>Transacties${f.account ? ' — ' + esc(accName(f.account)) : ''}</h2>
+      ${f.account ? `<h2>${esc(accName(f.account))}</h2>` : ''}
       <div class="filters">
         <div class="seg">
           ${[['todo', `Te verwerken (${todo})`], ['done', 'Verwerkt'], ['', 'Alles']].map(([v, l]) => `<button class="${f.status === v ? 'active' : ''}" data-action="bank-status" data-status="${v}">${l}</button>`).join('')}
@@ -236,8 +238,16 @@
         <select data-filter="bank.category" aria-label="Filter op categorie"><option value="">Alle categorieën</option><option value="__none__" ${f.category === '__none__' ? 'selected' : ''}>❔ Nog niet gekoppeld</option>${categoryOptions(f.category || null, { special: true, allowEmpty: false })}</select>
         <input type="search" placeholder="Zoeken…" data-filter="bank.search" value="${esc(f.search)}">
       </div>
-      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}
-      <h2 style="margin-top:28px">Rekeningen en bankkoppeling</h2>
+      ${txTable(all, { showKind: true, showSource: true, showAccount: !f.account, limit: f.limit, moreKey: 'bank', empty: f.status === 'todo' ? '🎉 Alles is verwerkt.' : 'Geen transacties.' })}`;
+  }
+
+  /** Rekeningen, bankkoppeling, regels, prullenbak en imports (tabje van Transacties). */
+  function renderAccounts() {
+    const imports = (state.imports || []).slice().sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    const f = ui.bank;
+    const cards = accountCards(imports);
+    return `
+      <h2>Rekeningen en bankkoppeling</h2>
       <div class="grid cards" style="margin-bottom:16px">${cards}</div>
       ${bankLinkCard()}
       ${rulesCard()}

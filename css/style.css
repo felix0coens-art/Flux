@@ -1122,3 +1122,49 @@ div.live-note { padding: 10px 14px; }
 .flow-tick { stroke-width: 2; }
 .flow-tick.dep { stroke: var(--series-2); }
 .flow-tick.wd { stroke: var(--muted); }
+
+/* Transacties: tabjes */
+.tx-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); margin: 0 0 18px; }
+.tx-tabs::-webkit-scrollbar { display: none; }
+.tx-tabs button { flex: none; border: 0; background: none; padding: 10px 14px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tx-tabs button:hover { color: var(--text); }
+.tx-tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tx-tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--orange); color: #fff; font-size: 12px; text-align: center; }
+.page-head.sub h2 { margin: 0; }
+
+/* Te verwerken: één transactie tegelijk */
+.inbox { max-width: 760px; margin: 0 auto; }
+.inbox-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); }
+.inbox-card { padding: 20px; }
+.inbox-tx { display: flex; gap: 16px; align-items: flex-start; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.inbox-who { font-size: 22px; font-weight: 700; margin: 2px 0; overflow-wrap: anywhere; }
+.inbox-desc { overflow-wrap: anywhere; }
+.inbox-amount { font-size: 26px; font-weight: 700; white-space: nowrap; text-align: right; }
+.inbox-q { margin: 16px 0 10px; font-size: 17px; }
+.inbox-sugg { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.inbox-sugg-btn { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border: 2px solid var(--primary); border-radius: 12px; background: var(--primary-soft); color: var(--text); font: inherit; cursor: pointer; }
+.inbox-sugg-btn:hover { filter: brightness(0.97); }
+.inbox-sugg-btn .grow { display: flex; flex-direction: column; min-width: 0; }
+.inbox-sugg-btn kbd, .inbox-keys kbd { font: 600 12px/1 inherit; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 3px 6px; background: var(--surface); color: var(--muted); }
+.inbox-label { margin: 14px 0 6px; }
+.inbox-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.inbox-cat { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.inbox-cat:hover { border-color: var(--primary); background: var(--primary-soft); }
+.inbox-cat .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.inbox-cat.new { border-style: dashed; color: var(--muted); }
+.inbox-more { margin-top: 8px; }
+.inbox-more .inbox-cats { margin-top: 8px; }
+.inbox-search { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; }
+.inbox-special { display: flex; flex-wrap: wrap; gap: 6px; }
+.inbox-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.inbox-foot .check-row { margin: 0; }
+.inbox-keys { text-align: center; margin-top: 10px; }
+.inbox-empty { text-align: center; padding: 30px 16px; }
+.inbox-big { font-size: 44px; }
+@media (max-width: 700px) {
+  .inbox-card { padding: 14px; }
+  .inbox-who { font-size: 18px; }
+  .inbox-amount { font-size: 20px; }
+  .inbox-keys { display: none; }
+}
+.inbox-tx .grow { flex: 1; min-width: 0; }

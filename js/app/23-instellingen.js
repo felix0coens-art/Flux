@@ -55,7 +55,7 @@
     const tabs = [
       ['accounts', '🏦', 'Rekeningen', 'Je rekeningen en vanaf welke datum Helder transacties bijhoudt.'],
       ['categories', '🏷️', 'Categorieën', 'Waarin je uitgaven en inkomsten worden ingedeeld.'],
-      ['auto', '✨', 'Automatisch indelen', 'Hoe Helder onbekende tegenpartijen herkent. De regels zelf staan bij Bank.'],
+      ['auto', '✨', 'Automatisch indelen', 'Hoe Helder onbekende tegenpartijen herkent. De regels zelf staan bij Transacties → Rekeningen en import.'],
       ['account', '👤', 'Account', 'Aanmelden, synchroniseren tussen je toestellen en je account.'],
       ['data', '💾', 'Gegevens & back-up', 'Wat er in Helder zit, back-ups, exporteren, de voorbeeldmodus en alles wissen.']
     ];
@@ -85,7 +85,7 @@
         <div class="card">
           <h2>Regels</h2>
           ${rulesConfirmToggle()}
-          <p class="small muted">De regels zelf beheer je bij <a href="#bank" data-view-link="bank">Bank</a>, onderaan.</p>
+          <p class="small muted">De regels zelf beheer je bij <a href="#" data-action="goto-rules">Transacties → Rekeningen en import</a>.</p>
         </div>
         <div class="card" style="margin-top:16px">
           <h2>Online opzoeken</h2>
@@ -145,7 +145,7 @@
             ${Invest.brokers(inv()).map(b => `<div class="list-row"><div class="grow">📈 ${esc(b.name)}</div><span class="small">${b.id === 'degiro' ? (inv().files || []).length + ' bestand(en)' : ''}${b.source === 'degiro-api' || b.source === 'saxo-api' ? ' · rechtstreeks' : ''}</span></div>`).join('')}
             <div class="list-row total"><div class="grow"><strong>Totaal transacties</strong></div><span>${state.transactions.length}</span></div>
           </div>
-          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in het tabblad Bank.</p>
+          <p class="small muted">Bestanden bekijken of ongedaan maken doe je in Transacties → Rekeningen en import.</p>
         </div>
 `
     };

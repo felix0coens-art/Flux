@@ -68,7 +68,7 @@
     const cands = C.lookupCandidates(state).filter(c => c.direction === 'out').length;
 
     return `
-      <div class="page-head"><h1>Uitgaven</h1><span class="spacer"></span>
+      <div class="page-head sub"><h2>Uitgaven</h2><span class="spacer"></span>
         <button class="btn" data-action="new-tx">+ Cash-uitgave</button></div>
       ${timeline()}
       <div class="grid kpis">

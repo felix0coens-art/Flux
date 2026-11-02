@@ -37,7 +37,7 @@
     }).join('');
 
     return `
-      <div class="page-head"><h1>Inkomsten</h1><span class="spacer"></span>
+      <div class="page-head sub"><h2>Inkomsten</h2><span class="spacer"></span>
         <button class="btn" data-action="tax-open" title="Bedragen voor je belastingaangifte">🧾 Jaaroverzicht aangifte</button>
         <button class="btn" data-action="new-category" data-kind="income">+ Inkomstenbron</button></div>
       ${timeline()}
